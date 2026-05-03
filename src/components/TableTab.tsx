@@ -1,0 +1,152 @@
+// @ts-nocheck
+import type { Lang } from '../types';
+import type { CalculationResult } from '../engine/calculate';
+import { itemById } from '../data/items';
+import { machineById } from '../data/machines';
+import { recipeById } from '../data/recipes';
+import { t, text } from '../i18n';
+import { formatCopper, formatNumber } from '../utils/format';
+
+export type TableTabProps = {
+  lang: Lang;
+  result: CalculationResult;
+};
+
+export function TableTab({ lang, result }: TableTabProps) {
+  const recipeRows = Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId));
+  const itemRows = Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId));
+
+  return (
+    <div className="table-tab stack">
+      <section className="panel metric-grid">
+        <div>
+          <span>{t('purchaseCost', lang)}</span>
+          <strong>{formatCopper(result.totals.purchaseCostCopperPerMin)}</strong>
+        </div>
+        <div>
+          <span>{t('revenue', lang)}</span>
+          <strong>{formatCopper(result.totals.revenueCopperPerMin)}</strong>
+        </div>
+        <div>
+          <span>{t('profit', lang)}</span>
+          <strong>{formatCopper(result.totals.profitCopperPerMin)}</strong>
+        </div>
+        <div>
+          <span>{t('conveyorSpeed', lang)}</span>
+          <strong>{formatNumber(result.totals.conveyorItemsPerMinute)}/min</strong>
+        </div>
+      </section>
+
+      {result.warnings.length > 0 && (
+        <section className="panel warnings">
+          {result.warnings.map((warning, index) => (
+            <div key={index}>⚠ {lang === 'ja' ? warning.messageJa : warning.messageEn}</div>
+          ))}
+        </section>
+      )}
+
+      <section className="panel">
+        <h2>{t('machinesTable', lang)}</h2>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{t('recipe', lang)}</th>
+                <th>{t('machines', lang)}</th>
+                <th>{lang === 'ja' ? '理論台数' : 'Theoretical'}</th>
+                <th>{lang === 'ja' ? '実台数' : 'Actual'}</th>
+                <th>{t('surplus', lang)}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recipeRows.map((row) => {
+                const recipe = recipeById[row.recipeId];
+                const machine = machineById[row.machineId];
+                const surplus = Object.entries(row.surplusOutputRates)
+                  .filter(([, value]) => value > 0)
+                  .map(([itemId, value]) => `${text(itemById[itemId]?.name ?? { ja: itemId, en: itemId }, lang)} +${formatNumber(value)}/min`)
+                  .join(', ');
+                return (
+                  <tr key={row.recipeId}>
+                    <td>{recipe ? text(recipe.name, lang) : row.recipeId}</td>
+                    <td>{machine ? text(machine.name, lang) : row.machineId}</td>
+                    <td>{formatNumber(row.theoreticalMachines, 3)}</td>
+                    <td>{formatNumber(row.actualMachines, 3)}</td>
+                    <td>{surplus || '-'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>{t('itemsTable', lang)}</h2>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{lang === 'ja' ? 'アイテム' : 'Item'}</th>
+                <th>{t('targetRequested', lang)}</th>
+                <th>{t('targetActual', lang)}</th>
+                <th>{t('consumed', lang)}</th>
+                <th>{t('produced', lang)}</th>
+                <th>{t('surplus', lang)}</th>
+                <th>{t('purchased', lang)}</th>
+                <th>{t('purchaseCost', lang)}</th>
+                <th>{t('revenue', lang)}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itemRows.map((row) => {
+                const item = itemById[row.itemId];
+                return (
+                  <tr key={row.itemId}>
+                    <td>{item ? text(item.name, lang) : row.itemId}</td>
+                    <td>{formatNumber(row.targetRequested)}</td>
+                    <td>{formatNumber(row.targetActual)}</td>
+                    <td>{formatNumber(row.consumed)}</td>
+                    <td>{formatNumber(row.produced)}</td>
+                    <td>{formatNumber(row.surplus)}</td>
+                    <td>{formatNumber(row.purchased)}</td>
+                    <td>{formatCopper(row.purchaseCostCopperPerMin)}</td>
+                    <td>{formatCopper(row.revenueCopperPerMin)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>{t('beltsTable', lang)}</h2>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>{lang === 'ja' ? '経路' : 'Route'}</th>
+                <th>{t('flow', lang)}</th>
+                <th>{t('beltCount', lang)}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.conveyorEdges.map((edge) => {
+                const item = itemById[edge.fromItemId];
+                const recipe = recipeById[edge.toRecipeId];
+                return (
+                  <tr key={edge.id}>
+                    <td>{item ? text(item.name, lang) : edge.fromItemId} → {recipe ? text(recipe.name, lang) : edge.toRecipeId}</td>
+                    <td>{formatNumber(edge.rate)}/min</td>
+                    <td>{edge.belts}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
