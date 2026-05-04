@@ -12,7 +12,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.2.2';
+const APP_VERSION = 'v0.2.3';
 
 function mergeInitialState(): AppState {
   const saved = loadState();
