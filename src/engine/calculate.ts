@@ -318,9 +318,14 @@ export function calculate(input: CalculateInput): CalculationResult {
   }
 
   for (const target of input.targets) {
-    const recipe = recipeById[target.recipeId];
-    if (!recipe) continue;
-    const outputItemId = target.outputItemId || recipe.primaryOutputId;
+    const outputItemId = target.outputItemId;
+    if (!outputItemId) continue;
+    const recipe = chooseRecipeForItem(outputItemId, input.recipePreferences);
+    if (!recipe) {
+      stat(outputItemId).targetRequested += Math.max(0, target.value);
+      requestItem(outputItemId, Math.max(0, target.value), true, undefined, target.id);
+      continue;
+    }
     const outputRatePerMachine = getOutputRatePerMachine(recipe, outputItemId, productionSpeedMultiplier);
     if (outputRatePerMachine <= 0) continue;
 
@@ -341,7 +346,7 @@ export function calculate(input: CalculateInput): CalculationResult {
   }
 
   // 最終出力は itemId ごとに実生産量で合算します。
-  const finalItemIds = new Set(input.targets.map((target) => target.outputItemId || recipeById[target.recipeId]?.primaryOutputId).filter(Boolean));
+  const finalItemIds = new Set(input.targets.map((target) => target.outputItemId).filter(Boolean));
   for (const itemId of finalItemIds) {
     const s = stat(itemId as string);
     s.targetActual = Math.max(s.targetActual, s.produced);

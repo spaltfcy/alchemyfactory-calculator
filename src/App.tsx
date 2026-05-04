@@ -12,6 +12,8 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
+const APP_VERSION = 'v0.1.4';
+
 function mergeInitialState(): AppState {
   const saved = loadState();
   if (!saved) return DEFAULT_STATE;
@@ -31,6 +33,7 @@ function mergeInitialState(): AppState {
 export function App() {
   const [state, setState] = useState<AppState>(() => mergeInitialState());
   const lang = state.language;
+  const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
 
   useEffect(() => {
     saveState(state);
@@ -66,37 +69,42 @@ export function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div>
-          <h1>{t('appTitle', lang)}</h1>
-          <p>
-            {t('purchaseCost', lang)} {formatCopper(result.totals.purchaseCostCopperPerMin)} / {t('revenue', lang)}{' '}
-            {formatCopper(result.totals.revenueCopperPerMin)} / {t('profit', lang)} {formatCopper(result.totals.profitCopperPerMin)} /{' '}
-            {t('conveyorSpeed', lang)} {formatNumber(result.totals.conveyorItemsPerMinute)}/min
-          </p>
+        <div className="app-header-left">
+          <div className="app-title-block">
+            <h1>{t('appTitle', lang)}</h1>
+            <p>
+              {t('purchaseCost', lang)} {formatCopper(result.totals.purchaseCostCopperPerMin)} / {t('revenue', lang)}{' '}
+              {formatCopper(result.totals.revenueCopperPerMin)} / {t('profit', lang)} {formatCopper(result.totals.profitCopperPerMin)} /{' '}
+              {t('conveyorSpeed', lang)} {formatNumber(result.totals.conveyorItemsPerMinute)}/min
+            </p>
+          </div>
+          <nav className="tabs header-tabs">
+            {(['graph', 'table', 'settings', 'about'] as const).map((tab) => (
+              <button key={tab} className={state.activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
+                {t(tab, lang)}
+              </button>
+            ))}
+          </nav>
         </div>
-        <select value={state.language} onChange={(e) => setState({ ...state, language: e.target.value as AppState['language'] })}>
-          <option value="ja">日本語</option>
-          <option value="en">English</option>
-        </select>
+
+        <div className="app-header-right">
+          <span className="version-badge">{APP_VERSION}</span>
+          <select value={state.language} onChange={(e) => setState({ ...state, language: e.target.value as AppState['language'] })}>
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+          </select>
+        </div>
       </header>
 
-      <nav className="tabs">
-        {(['graph', 'table', 'settings', 'about'] as const).map((tab) => (
-          <button key={tab} className={state.activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
-            {t(tab, lang)}
-          </button>
-        ))}
-      </nav>
-
-      <main className="main-layout">
-        {state.activeTab !== 'settings' && state.activeTab !== 'about' && (
+      <main className={`main-layout ${showSidebar ? '' : 'main-layout-full'}`}>
+        {showSidebar && (
           <aside className="side-pane">
             <TargetEditor lang={lang} targets={state.targets} onChange={(targets) => setState({ ...state, targets })} />
           </aside>
         )}
 
         <section className="content-pane">
-          {state.activeTab === 'graph' && (
+          <div className={`tab-panel ${state.activeTab === 'graph' ? 'is-active' : ''}`}>
             <GraphTab
               lang={lang}
               result={result}
@@ -104,10 +112,16 @@ export function App() {
               completedGraphNodeIds={state.completedGraphNodeIds}
               onToggleCompleted={toggleCompleted}
             />
-          )}
-          {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
-          {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} />}
-          {state.activeTab === 'about' && <AboutTab lang={lang} />}
+          </div>
+          <div className={`tab-panel ${state.activeTab === 'table' ? 'is-active' : ''}`}>
+            <TableTab lang={lang} result={result} />
+          </div>
+          <div className={`tab-panel ${state.activeTab === 'settings' ? 'is-active' : ''}`}>
+            <SettingsTab state={state} setState={setState} />
+          </div>
+          <div className={`tab-panel ${state.activeTab === 'about' ? 'is-active' : ''}`}>
+            <AboutTab lang={lang} />
+          </div>
         </section>
       </main>
     </div>

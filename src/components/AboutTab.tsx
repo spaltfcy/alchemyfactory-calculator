@@ -1,12 +1,14 @@
 // @ts-nocheck
 import type { Lang } from '../types';
 
+const repoUrl = 'https://github.com/spaltfcy/alchemyfactory-calculator';
+
 export function AboutTab({ lang }: { lang: Lang }) {
   if (lang === 'en') {
     return (
       <div className="about-tab stack">
-        <section className="panel">
-          <h2>About this v0.1</h2>
+        <section className="panel about-panel">
+          <h2>About this tool</h2>
           <p>This is a fresh implementation of a small Alchemy Factory production planner for GitHub Pages.</p>
           <p>The initial recipe data is based on Alchemy Factory Codex pages and is intentionally small. Replace the data files after checking the latest in-game values.</p>
           <ul>
@@ -14,12 +16,14 @@ export function AboutTab({ lang }: { lang: Lang }) {
             <li>Japanese / English UI</li>
             <li>Multiple production targets</li>
             <li>Items/min or machine-count targets</li>
-            <li>Byproduct reuse/discard settings</li>
+            <li>Byproduct reuse / discard settings</li>
             <li>Conveyor count estimation</li>
             <li>Ability values saved and defined in editable arrays</li>
-            <li>Double-click graph nodes to mark them completed</li>
+            <li>Double-click a graph node to toggle completed state</li>
           </ul>
-          <p>GitHub: put your repository link here.</p>
+          <p>
+            GitHub: <a href={repoUrl} target="_blank" rel="noreferrer">{repoUrl}</a>
+          </p>
         </section>
       </div>
     );
@@ -27,8 +31,8 @@ export function AboutTab({ lang }: { lang: Lang }) {
 
   return (
     <div className="about-tab stack">
-      <section className="panel">
-        <h2>この v0.1 について</h2>
+      <section className="panel about-panel">
+        <h2>このツールについて</h2>
         <p>GitHub Pages で使える Alchemy Factory 生産計画ツールの新規実装です。</p>
         <p>初期レシピは Alchemy Factory Codex ベースの少数データです。後でゲーム内最新値に合わせて data ファイルを差し替えてください。</p>
         <ul>
@@ -41,7 +45,9 @@ export function AboutTab({ lang }: { lang: Lang }) {
           <li>アビリティ保存と配列定義</li>
           <li>グラフノードのダブルクリックで作成済み切り替え</li>
         </ul>
-        <p>GitHubリンクはここにベタ書きで追加してください。</p>
+        <p>
+          GitHub: <a href={repoUrl} target="_blank" rel="noreferrer">{repoUrl}</a>
+        </p>
       </section>
     </div>
   );

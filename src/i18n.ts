@@ -1,7 +1,7 @@
 import type { Lang, LocalizedText } from './types';
 
 export const UI = {
-  appTitle: { ja: 'Alchemy Factory 生産計画 v0.1', en: 'Alchemy Factory Planner v0.1' },
+  appTitle: { ja: 'Alchemy Factory 生産計画', en: 'Alchemy Factory Planner' },
   graph: { ja: 'グラフ', en: 'Graph' },
   table: { ja: '表', en: 'Table' },
   settings: { ja: '設定', en: 'Settings' },
@@ -14,6 +14,8 @@ export const UI = {
   mode: { ja: '指定方法', en: 'Mode' },
   rate: { ja: '生産数/min', en: 'Items/min' },
   machines: { ja: '機械台数', en: 'Machines' },
+  rateShort: { ja: '/min', en: '/min' },
+  machinesShort: { ja: '/台', en: '/machines' },
   value: { ja: '値', en: 'Value' },
   summary: { ja: '概要', en: 'Summary' },
   purchaseCost: { ja: '購入コスト/min', en: 'Purchase cost/min' },
