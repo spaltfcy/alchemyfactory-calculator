@@ -1,5 +1,5 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
-import type { CalculationResult } from './calculate';
+import type { CalculationResult, OutputEdgeStat } from './calculate';
 import type { AppSettings, Lang } from '../types';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
@@ -7,11 +7,20 @@ import { recipeById } from '../data/recipes';
 import { text } from '../i18n';
 import { formatNumber } from '../utils/format';
 
+export type PlannerHandleData = {
+  id: string;
+  topPct: number;
+  color: string;
+};
+
 export type PlannerNodeData = {
   label: string;
   kind: 'item' | 'recipe' | 'surplus' | 'discard' | 'final';
   subLabel?: string;
   completed?: boolean;
+  tooltip?: string;
+  sourceHandles?: PlannerHandleData[];
+  targetHandles?: PlannerHandleData[];
 };
 
 const FLOW_COLORS = [
@@ -27,6 +36,7 @@ const FLOW_COLORS = [
 
 const DEFAULT_FLOW_COLOR = '#7dc4ff';
 const FINAL_FLOW_COLOR = '#9fe870';
+const DISCARD_FLOW_COLOR = '#ffd27d';
 
 function beltCount(rate: number, conveyorItemsPerMinute: number): number {
   if (rate <= 0 || conveyorItemsPerMinute <= 0) return 0;
@@ -69,6 +79,29 @@ function edgeStyle(color: string, dashed = false) {
   };
 }
 
+function isMeteorCrusherRecipe(recipeId: string): boolean {
+  const recipe = recipeById[recipeId];
+  if (!recipe) return false;
+
+  const idText = recipe.id.toLowerCase();
+  const urlText = (recipe.sourceUrl ?? '').toLowerCase();
+  const hasMeteorInput = recipe.inputs.some((input) => input.itemId.includes('meteor'));
+  const hasManyStoneCrusherOutputs = recipe.machineId === 'stone_crusher' && recipe.outputs.length >= 3;
+
+  return hasMeteorInput || idText.includes('meteor') || urlText.includes('meteor') || hasManyStoneCrusherOutputs;
+}
+
+function recipeNodeLabel(recipeId: string, lang: Lang): string {
+  const recipe = recipeById[recipeId];
+  if (!recipe) return recipeId;
+
+  if (isMeteorCrusherRecipe(recipeId) && recipe.outputs.length >= 1) {
+    return itemName(recipe.outputs[0].itemId, lang) + ' etc.';
+  }
+
+  return text(recipe.name, lang);
+}
+
 function makeEdge(args: {
   id: string;
   source: string;
@@ -79,6 +112,9 @@ function makeEdge(args: {
   color: string;
   lang: Lang;
   dashed?: boolean;
+  itemLabel?: string;
+  rateLabelText?: string;
+  outputOrder?: number;
 }): Edge {
   return {
     id: args.id,
@@ -89,11 +125,13 @@ function makeEdge(args: {
     style: edgeStyle(args.color, args.dashed ?? false),
     markerEnd: marker(args.color),
     data: {
-      itemName: itemName(args.itemId, args.lang),
-      rateLabel: rateLabel(args.rate, args.belts, args.lang),
+      itemId: args.itemId,
+      itemName: args.itemLabel ?? itemName(args.itemId, args.lang),
+      rateLabel: args.rateLabelText ?? rateLabel(args.rate, args.belts, args.lang),
       color: args.color,
       cycleSide: 0,
       labelShiftY: 0,
+      outputOrder: args.outputOrder ?? 9999,
     },
   };
 }
@@ -117,7 +155,33 @@ function addOrMergeEdge(edges: Edge[], next: Edge) {
   edges.push(next);
 }
 
-function decorateEdges(edges: Edge[]) {
+function groupDiscardedEdges(discardedEdges: OutputEdgeStat[]) {
+  const byRecipe = new Map<string, OutputEdgeStat[]>();
+
+  for (const edge of discardedEdges) {
+    const group = byRecipe.get(edge.fromRecipeId) ?? [];
+    group.push(edge);
+    byRecipe.set(edge.fromRecipeId, group);
+  }
+
+  for (const group of byRecipe.values()) {
+    group.sort((a, b) => outputSortKey(a.fromRecipeId, a.toItemId) - outputSortKey(b.fromRecipeId, b.toItemId));
+  }
+
+  return byRecipe;
+}
+
+function discardSummaryTooltip(edges: OutputEdgeStat[], lang: Lang): string {
+  return edges
+    .map((edge) => itemName(edge.toItemId, lang) + ' ' + formatNumber(edge.rate) + '/min')
+    .join('\n');
+}
+
+function discardNodeId(recipeId: string, edges: OutputEdgeStat[]): string {
+  return edges.length >= 2 ? 'discard:' + recipeId + ':summary' : 'discard:' + recipeId + ':' + edges[0].toItemId;
+}
+
+function decorateEdgesAndHandles(nodes: Node[], edges: Edge[]) {
   const directedGroups = new Map<string, Edge[]>();
   const undirectedRecipeGroups = new Map<string, Edge[]>();
 
@@ -128,8 +192,8 @@ function decorateEdges(edges: Edge[]) {
     directedGroups.set(directedKey, directed);
 
     if (edge.source.startsWith('recipe:') && edge.target.startsWith('recipe:')) {
-      const nodes = [edge.source, edge.target].sort();
-      const key = nodes[0] + '<->' + nodes[1];
+      const pair = [edge.source, edge.target].sort();
+      const key = pair[0] + '<->' + pair[1];
       const group = undirectedRecipeGroups.get(key) ?? [];
       group.push(edge);
       undirectedRecipeGroups.set(key, group);
@@ -139,12 +203,23 @@ function decorateEdges(edges: Edge[]) {
   for (const group of directedGroups.values()) {
     if (group.length <= 1) continue;
 
-    group.forEach((edge, index) => {
-      edge.data = {
-        ...(edge.data ?? {}),
-        labelShiftY: (index - (group.length - 1) / 2) * 42,
-      };
-    });
+    group
+      .sort((a, b) => {
+        const ad = a.data as Record<string, unknown> | undefined;
+        const bd = b.data as Record<string, unknown> | undefined;
+
+        return (
+          Number(ad?.outputOrder ?? 9999) - Number(bd?.outputOrder ?? 9999) ||
+          String(ad?.itemId ?? '').localeCompare(String(bd?.itemId ?? '')) ||
+          a.target.localeCompare(b.target)
+        );
+      })
+      .forEach((edge, index) => {
+        edge.data = {
+          ...(edge.data ?? {}),
+          labelShiftY: (index - (group.length - 1) / 2) * 42,
+        };
+      });
   }
 
   for (const group of undirectedRecipeGroups.values()) {
@@ -161,6 +236,67 @@ function decorateEdges(edges: Edge[]) {
         labelShiftY: currentShift + side * 24,
       };
     });
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const outgoing = new Map<string, Edge[]>();
+  const incoming = new Map<string, Edge[]>();
+
+  for (const edge of edges) {
+    const out = outgoing.get(edge.source) ?? [];
+    out.push(edge);
+    outgoing.set(edge.source, out);
+
+    const inc = incoming.get(edge.target) ?? [];
+    inc.push(edge);
+    incoming.set(edge.target, inc);
+  }
+
+  function sortPortEdges(list: Edge[]) {
+    return [...list].sort((a, b) => {
+      const ad = a.data as Record<string, unknown> | undefined;
+      const bd = b.data as Record<string, unknown> | undefined;
+
+      return (
+        Number(ad?.outputOrder ?? 9999) - Number(bd?.outputOrder ?? 9999) ||
+        String(ad?.itemId ?? '').localeCompare(String(bd?.itemId ?? '')) ||
+        a.target.localeCompare(b.target) ||
+        a.source.localeCompare(b.source)
+      );
+    });
+  }
+
+  for (const [nodeId, node] of nodeById.entries()) {
+    const nodeData = { ...(node.data as PlannerNodeData) };
+
+    const sourceEdges = sortPortEdges(outgoing.get(nodeId) ?? []);
+    const targetEdges = sortPortEdges(incoming.get(nodeId) ?? []);
+
+    nodeData.sourceHandles = sourceEdges.map((edge, index) => {
+      const data = edge.data as Record<string, unknown> | undefined;
+      const id = 's' + index;
+      edge.sourceHandle = id;
+
+      return {
+        id,
+        topPct: ((index + 1) / (sourceEdges.length + 1)) * 100,
+        color: String(data?.color ?? DEFAULT_FLOW_COLOR),
+      };
+    });
+
+    nodeData.targetHandles = targetEdges.map((edge, index) => {
+      const data = edge.data as Record<string, unknown> | undefined;
+      const id = 't' + index;
+      edge.targetHandle = id;
+
+      return {
+        id,
+        topPct: ((index + 1) / (targetEdges.length + 1)) * 100,
+        color: String(data?.color ?? DEFAULT_FLOW_COLOR),
+      };
+    });
+
+    node.data = nodeData;
   }
 }
 
@@ -187,7 +323,16 @@ export function buildFlowGraph(
   );
 
   const discardedEdges = result.outputEdges.filter((edge) => edge.discarded && edge.rate > 0);
-  const discardedNodeIds = new Set(discardedEdges.map((edge) => 'discard:' + edge.fromRecipeId + ':' + edge.toItemId));
+  const discardedByRecipe = groupDiscardedEdges(discardedEdges);
+  const discardTargetByEdgeId = new Map<string, string>();
+
+  for (const [recipeId, group] of discardedByRecipe.entries()) {
+    const nodeId = discardNodeId(recipeId, group);
+
+    for (const edge of group) {
+      discardTargetByEdgeId.set(edge.id, nodeId);
+    }
+  }
 
   const sourceItemIds = new Set(
     result.conveyorEdges
@@ -195,8 +340,6 @@ export function buildFlowGraph(
       .map((edge) => edge.fromItemId),
   );
 
-  // 購入元・最終出力だけをアイテムノードとして残す。
-  // 再利用途中の素材は中継ノードにせず、レシピ → レシピ の矢印ラベルで素材名を出す。
   for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
     const s = result.itemStats[itemId];
     const item = itemById[itemId];
@@ -249,7 +392,7 @@ export function buildFlowGraph(
       type: 'plannerNode',
       position: { x: 0, y: 0 },
       data: {
-        label: text(recipe.name, lang),
+        label: recipeNodeLabel(rs.recipeId, lang),
         kind: 'recipe',
         subLabel: lines.join('\n'),
         completed: completedGraphNodeIds[id] ?? false,
@@ -258,25 +401,40 @@ export function buildFlowGraph(
   }
 
   if (settings.showSurplus) {
-    for (const edge of discardedEdges) {
-      const item = itemById[edge.toItemId];
-      if (!item) continue;
+    for (const [recipeId, group] of discardedByRecipe.entries()) {
+      const nodeId = discardNodeId(recipeId, group);
 
-      const id = 'discard:' + edge.fromRecipeId + ':' + edge.toItemId;
-      const label = text(item.name, lang) + (lang === 'ja' ? '（破棄）' : ' (discard)');
-      const lines = [(lang === 'ja' ? '破棄 ' : 'Discard ') + formatNumber(edge.rate) + '/min'];
+      if (group.length >= 2) {
+        nodes.push({
+          id: nodeId,
+          type: 'plannerNode',
+          position: { x: 0, y: 0 },
+          data: {
+            label: lang === 'ja' ? '副産物（破棄）' : 'Byproducts (discard)',
+            kind: 'discard',
+            subLabel: (lang === 'ja' ? group.length + '種類' : group.length + ' types'),
+            tooltip: discardSummaryTooltip(group, lang),
+            completed: completedGraphNodeIds[nodeId] ?? false,
+          },
+        });
+      } else {
+        const edge = group[0];
+        const label = itemName(edge.toItemId, lang) + (lang === 'ja' ? '（破棄）' : ' (discard)');
+        const lines = [(lang === 'ja' ? '破棄 ' : 'Discard ') + formatNumber(edge.rate) + '/min'];
 
-      nodes.push({
-        id,
-        type: 'plannerNode',
-        position: { x: 0, y: 0 },
-        data: {
-          label,
-          kind: 'discard',
-          subLabel: lines.join('\n'),
-          completed: completedGraphNodeIds[id] ?? false,
-        },
-      });
+        nodes.push({
+          id: nodeId,
+          type: 'plannerNode',
+          position: { x: 0, y: 0 },
+          data: {
+            label,
+            kind: 'discard',
+            subLabel: lines.join('\n'),
+            tooltip: discardSummaryTooltip(group, lang),
+            completed: completedGraphNodeIds[nodeId] ?? false,
+          },
+        });
+      }
     }
   }
 
@@ -314,6 +472,7 @@ export function buildFlowGraph(
         belts: edge.belts,
         color,
         lang,
+        outputOrder: producerRecipeId ? outputSortKey(producerRecipeId, edge.fromItemId) : 9999,
       }),
     );
   }
@@ -328,33 +487,87 @@ export function buildFlowGraph(
     return Number(a.discarded) - Number(b.discarded);
   });
 
+  const summaryEdgeAddedByNodeId = new Set<string>();
+
   for (const edge of sortedOutputEdges) {
     const toFinal = finalItemIds.has(edge.toItemId);
-    const toDiscard = edge.discarded && settings.showSurplus && discardedNodeIds.has('discard:' + edge.fromRecipeId + ':' + edge.toItemId);
+    const discardTargetId = discardTargetByEdgeId.get(edge.id);
+    const toDiscard = edge.discarded && settings.showSurplus && discardTargetId;
 
     if (!toFinal && !toDiscard) continue;
 
-    const targetId = toDiscard ? 'discard:' + edge.fromRecipeId + ':' + edge.toItemId : 'item:' + edge.toItemId;
+    if (toDiscard) {
+      const group = discardedByRecipe.get(edge.fromRecipeId) ?? [];
+      const isSummary = group.length >= 2;
+      const targetId = discardTargetId;
+
+      if (isSummary) {
+        if (summaryEdgeAddedByNodeId.has(targetId)) continue;
+        summaryEdgeAddedByNodeId.add(targetId);
+
+        addOrMergeEdge(
+          edges,
+          makeEdge({
+            id: 'discard-summary:' + edge.fromRecipeId,
+            source: 'recipe:' + edge.fromRecipeId,
+            target: targetId,
+            itemId: '__discard_summary__',
+            rate: 0,
+            belts: 0,
+            color: DISCARD_FLOW_COLOR,
+            lang,
+            dashed: true,
+            itemLabel: lang === 'ja' ? '副産物（破棄）' : 'Byproducts (discard)',
+            rateLabelText: '',
+            outputOrder: 9998,
+          }),
+        );
+
+        continue;
+      }
+
+      const belts = beltCount(edge.rate, result.totals.conveyorItemsPerMinute);
+      const color = colorForRecipeOutput(edge.fromRecipeId, edge.toItemId);
+
+      addOrMergeEdge(
+        edges,
+        makeEdge({
+          id: 'discard:' + edge.id,
+          source: 'recipe:' + edge.fromRecipeId,
+          target: targetId,
+          itemId: edge.toItemId,
+          rate: edge.rate,
+          belts,
+          color,
+          lang,
+          dashed: true,
+          outputOrder: outputSortKey(edge.fromRecipeId, edge.toItemId),
+        }),
+      );
+
+      continue;
+    }
+
     const belts = beltCount(edge.rate, result.totals.conveyorItemsPerMinute);
     const color = toFinal ? FINAL_FLOW_COLOR : colorForRecipeOutput(edge.fromRecipeId, edge.toItemId);
 
     addOrMergeEdge(
       edges,
       makeEdge({
-        id: (toDiscard ? 'discard:' : 'out:') + edge.id,
+        id: 'out:' + edge.id,
         source: 'recipe:' + edge.fromRecipeId,
-        target: targetId,
+        target: 'item:' + edge.toItemId,
         itemId: edge.toItemId,
         rate: edge.rate,
         belts,
         color,
         lang,
-        dashed: toDiscard,
+        outputOrder: outputSortKey(edge.fromRecipeId, edge.toItemId),
       }),
     );
   }
 
-  decorateEdges(edges);
+  decorateEdgesAndHandles(nodes, edges);
 
   return { nodes, edges };
 }

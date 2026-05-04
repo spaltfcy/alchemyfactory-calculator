@@ -19,7 +19,7 @@ import {
 } from '@xyflow/react';
 import type { AppSettings, Lang } from '../types';
 import type { CalculationResult } from '../engine/calculate';
-import { buildFlowGraph, type PlannerNodeData } from '../engine/graph';
+import { buildFlowGraph } from '../engine/graph';
 import { layoutWithElk } from '../engine/layout';
 import { PlannerNode } from './PlannerNode';
 
@@ -99,20 +99,21 @@ function FlowEdge(props) {
   }
 
   const labelShiftY = Number(data?.labelShiftY ?? 0);
+  const rateLabel = data?.rateLabel ? String(data.rateLabel) : '';
 
   return (
     <>
       <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
       <EdgeLabelRenderer>
         <div
-          className="flow-edge-label"
+          className={rateLabel ? 'flow-edge-label' : 'flow-edge-label flow-edge-label-single'}
           style={{
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + labelShiftY}px)`,
             borderColor: data?.color ? `${data.color}77` : undefined,
           }}
         >
           <div className="flow-edge-label-item">{data?.itemName}</div>
-          <div className="flow-edge-label-rate">{data?.rateLabel}</div>
+          {rateLabel && <div className="flow-edge-label-rate">{rateLabel}</div>}
         </div>
       </EdgeLabelRenderer>
     </>
@@ -258,20 +259,25 @@ export function GraphTab({
   useEffect(() => {
     let disposed = false;
 
-    setEdges(raw.edges);
-
     layoutWithElk(raw.nodes, raw.edges)
       .then((layouted) => {
-        if (!disposed) setNodes(layouted);
+        if (disposed) return;
+        const layoutedRaw = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
+        const positionById = new Map(layouted.map((node) => [node.id, node.position]));
+        setNodes(layoutedRaw.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position })));
+        setEdges(layoutedRaw.edges);
       })
       .catch(() => {
-        if (!disposed) setNodes(raw.nodes);
+        if (!disposed) {
+          setNodes(raw.nodes);
+          setEdges(raw.edges);
+        }
       });
 
     return () => {
       disposed = true;
     };
-  }, [raw]);
+  }, [raw, result, lang, settings, completedGraphNodeIds]);
 
   const onNodeDoubleClick: NodeMouseHandler = (_, node) => {
     if (!isInteractive) return;

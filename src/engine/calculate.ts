@@ -105,6 +105,13 @@ export type CalculateInput = {
   itemSourceModes: Record<string, ItemSourceMode>;
 };
 
+type SurplusLot = {
+  recipeId: string;
+  itemId: string;
+  rate: number;
+  byproduct: boolean;
+};
+
 const DEFAULT_FUEL_SETTINGS: FuelSettings = {
   enabled: true,
   fuelItemId: 'charcoal_powder',
@@ -220,7 +227,7 @@ export function calculate(input: CalculateInput): CalculationResult {
     const conveyorEdgesByKey: Record<string, ConveyorEdgeStat> = {};
     const outputEdgesByKey: Record<string, OutputEdgeStat> = {};
     const warnings: PlanWarning[] = [];
-    const availableSurplus: Record<string, number> = {};
+    const surplusLotsByItemId: Record<string, SurplusLot[]> = {};
     const visiting = new Set<string>();
 
     function stat(itemId: string): ItemStat {
@@ -228,10 +235,46 @@ export function calculate(input: CalculateInput): CalculationResult {
       return itemStats[itemId];
     }
 
+    function addSurplusLot(recipeId: string, itemId: string, rate: number, byproduct: boolean): void {
+      if (rate <= 1e-9) return;
+      surplusLotsByItemId[itemId] ??= [];
+      surplusLotsByItemId[itemId].push({ recipeId, itemId, rate, byproduct });
+    }
+
+    function consumeSurplus(itemId: string, rate: number): number {
+      if (rate <= 0) return 0;
+
+      const lots = surplusLotsByItemId[itemId];
+      if (!lots?.length) return 0;
+
+      let remaining = rate;
+      let consumed = 0;
+
+      for (const lot of lots) {
+        if (remaining <= 1e-9) break;
+        if (lot.rate <= 1e-9) continue;
+
+        const take = Math.min(lot.rate, remaining);
+        lot.rate -= take;
+        remaining -= take;
+        consumed += take;
+      }
+
+      surplusLotsByItemId[itemId] = lots.filter((lot) => lot.rate > 1e-9);
+
+      if (consumed > 0) {
+        const s = stat(itemId);
+        s.reused += consumed;
+        s.surplus = Math.max(0, s.surplus - consumed);
+      }
+
+      return consumed;
+    }
+
     function addConveyorEdge(itemId: string, recipeId: string, rate: number): void {
       if (rate <= 0) return;
 
-      const id = itemId + '->' + recipeId;
+      const id = `${itemId}->${recipeId}`;
       const current = conveyorEdgesByKey[id];
 
       if (current) {
@@ -259,7 +302,7 @@ export function calculate(input: CalculateInput): CalculationResult {
       if (rate <= 0) return;
 
       const suffix = discarded ? ':discard' : '';
-      const id = recipeId + '->' + itemId + suffix;
+      const id = `${recipeId}->${itemId}${suffix}`;
       const current = outputEdgesByKey[id];
 
       if (current) {
@@ -298,8 +341,8 @@ export function calculate(input: CalculateInput): CalculationResult {
       }
 
       warnings.push({
-        messageJa: itemId + ' は購入扱いですが購入価格が未定義です。',
-        messageEn: itemId + ' is purchased, but buy price is not defined.',
+        messageJa: `${itemId} は購入扱いですが購入価格が未定義です。`,
+        messageEn: `${itemId} is purchased, but buy price is not defined.`,
       });
     }
 
@@ -319,8 +362,8 @@ export function calculate(input: CalculateInput): CalculationResult {
       }
 
       warnings.push({
-        messageJa: itemId + ' は初期投入扱いですが購入価格が未定義です。',
-        messageEn: itemId + ' is a setup input, but buy price is not defined.',
+        messageJa: `${itemId} は初期投入扱いですが購入価格が未定義です。`,
+        messageEn: `${itemId} is a setup input, but buy price is not defined.`,
       });
     }
 
@@ -336,10 +379,8 @@ export function calculate(input: CalculateInput): CalculationResult {
       const s = stat(itemId);
       s.requested += rate;
 
-      const reusable = Math.min(availableSurplus[itemId] ?? 0, rate);
+      const reusable = consumeSurplus(itemId, rate);
       if (reusable > 0) {
-        availableSurplus[itemId] -= reusable;
-        s.reused += reusable;
         rate -= reusable;
       }
 
@@ -359,8 +400,8 @@ export function calculate(input: CalculateInput): CalculationResult {
 
       if (visiting.has(itemId)) {
         warnings.push({
-          messageJa: itemId + ' のレシピが循環している可能性があるため購入扱いにしました。',
-          messageEn: itemId + ' may be in a recursive recipe loop, so it was treated as purchased.',
+          messageJa: `${itemId} のレシピが循環している可能性があるため購入扱いにしました。`,
+          messageEn: `${itemId} may be in a recursive recipe loop, so it was treated as purchased.`,
         });
         purchaseItem(itemId, rate);
         return;
@@ -369,8 +410,8 @@ export function calculate(input: CalculateInput): CalculationResult {
       const outputRatePerMachine = getOutputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
       if (outputRatePerMachine <= 0) {
         warnings.push({
-          messageJa: recipe.id + ' は ' + itemId + ' を出力しません。',
-          messageEn: recipe.id + ' does not output ' + itemId + '.',
+          messageJa: `${recipe.id} は ${itemId} を出力しません。`,
+          messageEn: `${recipe.id} does not output ${itemId}.`,
         });
         purchaseItem(itemId, rate);
         return;
@@ -423,7 +464,7 @@ export function calculate(input: CalculateInput): CalculationResult {
             addToRecord(rs.surplusOutputRates, output.itemId, surplus);
 
             if (!isFinal) {
-              availableSurplus[output.itemId] = (availableSurplus[output.itemId] ?? 0) + surplus;
+              addSurplusLot(recipe.id, output.itemId, surplus, false);
             }
           }
         } else {
@@ -431,8 +472,8 @@ export function calculate(input: CalculateInput): CalculationResult {
 
           if (policy === 'reuse') {
             os.surplus += outputRate;
-            availableSurplus[output.itemId] = (availableSurplus[output.itemId] ?? 0) + outputRate;
             addToRecord(rs.surplusOutputRates, output.itemId, outputRate);
+            addSurplusLot(recipe.id, output.itemId, outputRate, true);
           } else {
             os.discarded += outputRate;
             addToRecord(rs.discardedOutputRates, output.itemId, outputRate);
@@ -481,6 +522,23 @@ export function calculate(input: CalculateInput): CalculationResult {
       }
     }
 
+    // 再利用設定でも、最終的に一切使われなかった副産物は破棄表示へ回す。
+    for (const lots of Object.values(surplusLotsByItemId)) {
+      for (const lot of lots) {
+        if (!lot.byproduct || lot.rate <= 1e-9) continue;
+
+        const os = stat(lot.itemId);
+        os.discarded += lot.rate;
+
+        const rs = recipeStats[lot.recipeId];
+        if (rs) {
+          addToRecord(rs.discardedOutputRates, lot.itemId, lot.rate);
+        }
+
+        addOutputEdge(lot.recipeId, lot.itemId, lot.rate, true, true);
+      }
+    }
+
     const finalItemIds = new Set(input.targets.map((target) => target.outputItemId).filter(Boolean));
 
     for (const itemId of finalItemIds) {
@@ -504,8 +562,8 @@ export function calculate(input: CalculateInput): CalculationResult {
 
     if (fuelSettings.enabled && fuelHeatValue <= 0) {
       warnings.push({
-        messageJa: fuelSettings.fuelItemId + ' の燃料熱量が未定義です。',
-        messageEn: 'Fuel heat value is not defined for ' + fuelSettings.fuelItemId + '.',
+        messageJa: `${fuelSettings.fuelItemId} の燃料熱量が未定義です。`,
+        messageEn: `Fuel heat value is not defined for ${fuelSettings.fuelItemId}.`,
       });
     }
 
@@ -569,6 +627,6 @@ export function getByproductKeys(): Array<{ key: string; recipeId: string; itemI
   return RECIPES.flatMap((recipe) =>
     recipe.outputs
       .filter((output) => output.itemId !== recipe.primaryOutputId)
-      .map((output) => ({ key: recipe.id + ':' + output.itemId, recipeId: recipe.id, itemId: output.itemId })),
+      .map((output) => ({ key: `${recipe.id}:${output.itemId}`, recipeId: recipe.id, itemId: output.itemId })),
   );
 }
