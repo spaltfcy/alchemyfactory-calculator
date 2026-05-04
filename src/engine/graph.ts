@@ -26,17 +26,17 @@ export type PlannerNodeData = {
 const FLOW_COLORS = [
   '#ff6b6b',
   '#4dabf7',
-  '#ffd43b',
   '#9775fa',
-  '#ff922b',
   '#20c997',
   '#f06595',
   '#74c0fc',
+  '#38d9a9',
+  '#91a7ff',
 ] as const;
 
 const DEFAULT_FLOW_COLOR = '#7dc4ff';
 const FINAL_FLOW_COLOR = '#9fe870';
-const DISCARD_FLOW_COLOR = '#ffd27d';
+const DISCARD_FLOW_COLOR = '#ffd43b';
 
 function beltCount(rate: number, conveyorItemsPerMinute: number): number {
   if (rate <= 0 || conveyorItemsPerMinute <= 0) return 0;
@@ -527,7 +527,7 @@ export function buildFlowGraph(
       }
 
       const belts = beltCount(edge.rate, result.totals.conveyorItemsPerMinute);
-      const color = colorForRecipeOutput(edge.fromRecipeId, edge.toItemId);
+      const color = DISCARD_FLOW_COLOR;
 
       addOrMergeEdge(
         edges,
@@ -549,7 +549,7 @@ export function buildFlowGraph(
     }
 
     const belts = beltCount(edge.rate, result.totals.conveyorItemsPerMinute);
-    const color = toFinal ? FINAL_FLOW_COLOR : colorForRecipeOutput(edge.fromRecipeId, edge.toItemId);
+    const color = toDiscard ? DISCARD_FLOW_COLOR : toFinal ? FINAL_FLOW_COLOR : colorForRecipeOutput(edge.fromRecipeId, edge.toItemId);
 
     addOrMergeEdge(
       edges,
