@@ -58,12 +58,20 @@ export function buildFlowGraph(
     const isSurplus = surplusItemIds.has(itemId) && !isFinal;
     const lines: string[] = [];
 
-    if (isFinal) {
+    if (isSurplus) {
+      lines.push(`${lang === 'ja' ? '余剰' : 'Surplus'} ${formatNumber(s.surplus)}/min`);
+    } else if (isFinal) {
       if (s.targetActual > 0) lines.push(`${lang === 'ja' ? '最終' : 'Target'} ${formatNumber(s.targetActual)}/min`);
       if (s.produced > 0) lines.push(`${lang === 'ja' ? '生産' : 'Prod'} ${formatNumber(s.produced)}/min`);
     }
-    if (!isSurplus && s.purchased > 0) lines.push(`${lang === 'ja' ? '購入' : 'Buy'} ${formatNumber(s.purchased)}/min`);
-    if (!isSurplus && !lines.length && s.requested > 0) lines.push(`${lang === 'ja' ? '消費' : 'Use'} ${formatNumber(s.requested)}/min`);
+
+    if (!isSurplus && s.purchased > 0) {
+      lines.push(`${lang === 'ja' ? '購入' : 'Buy'} ${formatNumber(s.purchased)}/min`);
+    }
+
+    if (!isSurplus && !lines.length && s.requested > 0) {
+      lines.push(`${lang === 'ja' ? '消費' : 'Use'} ${formatNumber(s.requested)}/min`);
+    }
 
     const id = `item:${itemId}`;
     nodes.push({

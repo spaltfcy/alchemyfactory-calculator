@@ -2,7 +2,7 @@ import type { AppState } from './types';
 import { DEFAULT_ABILITIES } from './data/abilityTables';
 
 export const DEFAULT_STATE: AppState = {
-  version: 2,
+  version: 3,
   language: 'ja',
   activeTab: 'graph',
   targets: [

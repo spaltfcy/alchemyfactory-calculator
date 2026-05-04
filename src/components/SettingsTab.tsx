@@ -51,77 +51,91 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
   }
 
   return (
-    <div className="settings-tab">
-      <section className="panel settings-card settings-card-small settings-grid settings-card-language">
+    <div className="settings-tab settings-tab-custom">
+      <section className="panel settings-box settings-box-language">
         <h2>{t('language', lang)}</h2>
-        <label>
-          {t('language', lang)}
-          <select value={state.language} onChange={(e) => setState({ ...state, language: e.target.value as Lang })}>
-            <option value="ja">日本語</option>
-            <option value="en">English</option>
-          </select>
-        </label>
+        <div className="settings-box-body">
+          <div className="settings-field">
+            <div className="settings-field-label">{t('language', lang)}</div>
+            <select value={state.language} onChange={(e) => setState({ ...state, language: e.target.value as Lang })}>
+              <option value="ja">日本語</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
       </section>
 
-      <section className="panel settings-card settings-card-small settings-grid settings-card-calculation">
+      <section className="panel settings-box settings-box-calculation">
         <h2>{lang === 'ja' ? '計算' : 'Calculation'}</h2>
-        <label>
-          {t('machineRounding', lang)}
-          <select value={state.settings.machineRounding} onChange={(e) => patchSettings({ machineRounding: e.target.value as AppSettings['machineRounding'] })}>
-            <option value="none">{t('roundingNone', lang)}</option>
-            <option value="intermediate">{t('roundingIntermediate', lang)}</option>
-            <option value="all">{t('roundingAll', lang)}</option>
-          </select>
-        </label>
-        <label>
-          {t('defaultSurplusPolicy', lang)}
-          <select value={state.settings.defaultSurplusPolicy} onChange={(e) => patchSettings({ defaultSurplusPolicy: e.target.value as SurplusPolicy })}>
-            <option value="reuse">{t('reuse', lang)}</option>
-            <option value="discard">{t('discard', lang)}</option>
-          </select>
-        </label>
+        <div className="settings-box-body">
+          <div className="settings-field">
+            <div className="settings-field-label">{t('machineRounding', lang)}</div>
+            <select value={state.settings.machineRounding} onChange={(e) => patchSettings({ machineRounding: e.target.value as AppSettings['machineRounding'] })}>
+              <option value="none">{t('roundingNone', lang)}</option>
+              <option value="intermediate">{t('roundingIntermediate', lang)}</option>
+              <option value="all">{t('roundingAll', lang)}</option>
+            </select>
+          </div>
+
+          <div className="settings-field">
+            <div className="settings-field-label">{t('defaultSurplusPolicy', lang)}</div>
+            <select value={state.settings.defaultSurplusPolicy} onChange={(e) => patchSettings({ defaultSurplusPolicy: e.target.value as SurplusPolicy })}>
+              <option value="reuse">{t('reuse', lang)}</option>
+              <option value="discard">{t('discard', lang)}</option>
+            </select>
+          </div>
+        </div>
       </section>
 
-      <section className="panel settings-card settings-card-small settings-grid settings-card-display">
+      <section className="panel settings-box settings-box-display">
         <h2>{t('display', lang)}</h2>
-        <label>
-          {lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}
-          <select value={state.settings.graphDetailLevel} onChange={(e) => patchSettings({ graphDetailLevel: e.target.value as AppSettings['graphDetailLevel'] })}>
-            <option value="simple">{t('simple', lang)}</option>
-            <option value="normal">{t('normal', lang)}</option>
-            <option value="detailed">{t('detailed', lang)}</option>
-          </select>
-        </label>
-        <label className="checkbox-row">
-          <input type="checkbox" checked={state.settings.showSurplus} onChange={(e) => patchSettings({ showSurplus: e.target.checked })} />
-          {lang === 'ja' ? '余剰ノードを表示' : 'Show surplus nodes'}
-        </label>
+        <div className="settings-box-body">
+          <div className="settings-field">
+            <div className="settings-field-label">{lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}</div>
+            <select value={state.settings.graphDetailLevel} onChange={(e) => patchSettings({ graphDetailLevel: e.target.value as AppSettings['graphDetailLevel'] })}>
+              <option value="simple">{t('simple', lang)}</option>
+              <option value="normal">{t('normal', lang)}</option>
+              <option value="detailed">{t('detailed', lang)}</option>
+            </select>
+          </div>
+
+          <label className="checkbox-row">
+            <input type="checkbox" checked={state.settings.showSurplus} onChange={(e) => patchSettings({ showSurplus: e.target.checked })} />
+            {lang === 'ja' ? '余剰ノードを表示' : 'Show surplus nodes'}
+          </label>
+        </div>
       </section>
 
-      <section className="panel settings-card settings-card-small settings-grid settings-card-data">
+      <section className="panel settings-box settings-box-data">
         <h2>{t('data', lang)}</h2>
-        <button onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>{t('exportJson', lang)}</button>
-        <label className="file-label">
-          {t('importJson', lang)}
-          <input type="file" accept="application/json" onChange={(e) => void importJson(e.currentTarget.files?.[0])} />
-        </label>
-        <button
-          className="danger"
-          onClick={() => {
-            clearState();
-            location.reload();
-          }}
-        >
-          {t('reset', lang)}
-        </button>
+        <div className="settings-box-body">
+          <button onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
+            {t('exportJson', lang)}
+          </button>
+
+          <div className="settings-field">
+            <div className="settings-field-label">{t('importJson', lang)}</div>
+            <input type="file" accept="application/json" onChange={(e) => void importJson(e.currentTarget.files?.[0])} />
+          </div>
+
+          <button
+            className="danger"
+            onClick={() => {
+              clearState();
+              location.reload();
+            }}
+          >
+            {t('reset', lang)}
+          </button>
+        </div>
       </section>
 
-      <section className="panel settings-card settings-card-abilities">
+      <section className="panel settings-box settings-box-abilities">
         <h2>{t('abilities', lang)}</h2>
         <div className="ability-grid">
           {ABILITY_IDS.map((id) => (
-            <label key={id}>
-              {abilityLabels[id][lang]}
+            <div className="settings-field" key={id}>
+              <div className="settings-field-label">{abilityLabels[id][lang]}</div>
               <input
                 type="number"
                 min="0"
@@ -129,7 +143,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 value={state.abilities[id]}
                 onChange={(e) => setState({ ...state, abilities: { ...state.abilities, [id]: Number(e.target.value) } })}
               />
-            </label>
+            </div>
           ))}
         </div>
       </section>

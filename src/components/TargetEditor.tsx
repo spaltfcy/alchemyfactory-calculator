@@ -57,20 +57,22 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
         <h2>{t('targets', lang)}</h2>
         <button onClick={() => onChange([...targets, makeTarget(lang)])}>{t('addTarget', lang)}</button>
       </div>
+
       <div className="target-list">
         {targets.map((target) => (
-          <div className="target-row" key={target.id}>
-            <label>
-              {t('output', lang)}
+          <div className="target-row target-row-compact" key={target.id}>
+            <div className="target-field">
+              <div className="target-field-label">{lang === 'ja' ? 'アイテム' : 'Item'}</div>
               <select value={target.outputItemId} onChange={(e) => updateTarget(target.id, { outputItemId: e.target.value })}>
                 {selectableOutputItems.map((itemId) => (
                   <option key={itemId} value={itemId}>{text(itemById[itemId].name, lang)}</option>
                 ))}
               </select>
-            </label>
-            <div className="target-value-row">
-              <label>
-                {t('value', lang)}
+            </div>
+
+            <div className="target-field">
+              <div className="target-field-label">{lang === 'ja' ? '出力' : 'Output'}</div>
+              <div className="target-inline">
                 <input
                   type="number"
                   min="0"
@@ -78,16 +80,16 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
                   value={target.value}
                   onChange={(e) => updateTarget(target.id, { value: Number(e.target.value) })}
                 />
-              </label>
-              <label>
-                {t('mode', lang)}
                 <select value={target.mode} onChange={(e) => updateTarget(target.id, { mode: e.target.value as ProductionTarget['mode'] })}>
                   <option value="rate">{t('rateShort', lang)}</option>
                   <option value="machines">{t('machinesShort', lang)}</option>
                 </select>
-              </label>
+              </div>
             </div>
-            <button className="danger" onClick={() => onChange(targets.filter((x) => x.id !== target.id))}>{t('remove', lang)}</button>
+
+            <button className="danger" onClick={() => onChange(targets.filter((x) => x.id !== target.id))}>
+              {t('remove', lang)}
+            </button>
           </div>
         ))}
       </div>

@@ -12,7 +12,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.1.6';
+const APP_VERSION = 'v0.1.7';
 
 function mergeInitialState(): AppState {
   const saved = loadState();
@@ -31,7 +31,7 @@ function mergeInitialState(): AppState {
   };
 
   // v0.1.6: 余剰ノード表示はデフォルトONへ移行します。
-  if ((saved.version ?? 0) < 2) {
+  if ((saved.version ?? 0) < 3) {
     merged.settings.showSurplus = true;
   }
 
