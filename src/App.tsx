@@ -13,7 +13,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.2.5';
+const APP_VERSION = 'v0.2.6';
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   logisticsEfficiency: { ja: '物流効率', en: 'Logistics' },
@@ -151,7 +151,7 @@ export function App() {
         ))}
       </nav>
 
-      <main className="main-layout">
+      <main className={showSidebar ? "main-layout" : "main-layout main-layout-full"}>
         {showSidebar && (
           <aside className="side-pane">
             <TargetEditor lang={lang} targets={state.targets} onChange={(targets) => setState({ ...state, targets })} />

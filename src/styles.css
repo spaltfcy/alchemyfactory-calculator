@@ -750,3 +750,58 @@ th { color: var(--muted); font-weight: 600; background: rgba(255, 255, 255, 0.02
     max-width: none;
   }
 }
+
+
+/* v0.2.6 settings layout fix */
+.main-layout-full {
+  grid-template-columns: 1fr;
+}
+
+.main-layout-full .content-pane {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: none;
+}
+
+.settings-layout {
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.75fr);
+}
+
+.settings-layout > * {
+  min-width: 0;
+}
+
+.recipe-settings-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.recipe-settings-list {
+  min-width: 0;
+}
+
+.recipe-setting-row {
+  min-width: 0;
+  grid-template-columns: minmax(6.5rem, 10rem) minmax(0, 1fr);
+}
+
+.recipe-setting-row select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.settings-side {
+  min-width: 0;
+}
+
+.settings-side .panel {
+  min-width: 0;
+}
+
+@media (max-width: 1120px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+}
