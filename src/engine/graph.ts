@@ -19,8 +19,10 @@ function beltCount(rate: number, conveyorItemsPerMinute: number): number {
   return Math.ceil(rate / conveyorItemsPerMinute);
 }
 
-function flowLabel(rate: number, belts: number): string {
-  return formatNumber(rate) + '/min  ⛓ ' + belts;
+function flowLabel(rate: number, belts: number, lang: Lang): string {
+  const beltLabel = lang === 'ja' ? 'ベルト' : 'Belt';
+  const beltUnit = lang === 'ja' ? '本' : '';
+  return formatNumber(rate) + '/min ' + beltLabel + ':' + belts + beltUnit;
 }
 
 export function buildFlowGraph(
@@ -131,7 +133,7 @@ export function buildFlowGraph(
       id: 'in:' + edge.id,
       source: sourceId,
       target: targetId,
-      label: flowLabel(edge.rate, edge.belts),
+      label: flowLabel(edge.rate, edge.belts, lang),
       animated: false,
       markerEnd: defaultMarkerEnd,
     });
@@ -147,7 +149,7 @@ export function buildFlowGraph(
       id: 'out:' + edge.id,
       source: 'recipe:' + edge.fromRecipeId,
       target: 'item:' + edge.toItemId,
-      label: flowLabel(edge.rate, belts),
+      label: flowLabel(edge.rate, belts, lang),
       style: toSurplus ? { strokeDasharray: '6 4', stroke: '#ffd27d' } : edge.byproduct ? { strokeDasharray: '4 3' } : undefined,
       markerEnd: toSurplus ? surplusMarkerEnd : defaultMarkerEnd,
     });
