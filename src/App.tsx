@@ -13,7 +13,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.2.6';
+const APP_VERSION = 'v0.2.7';
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   logisticsEfficiency: { ja: '物流効率', en: 'Logistics' },

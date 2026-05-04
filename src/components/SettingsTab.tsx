@@ -29,22 +29,33 @@ function recipeItemOrder(itemId: string): number {
   return recipes.length ? recipeOrder(recipes[0]) : 999999;
 }
 
+function recipeItemName(itemId: string, lang: Lang): string {
+  const item = itemById[itemId];
+  return item ? text(item.name, lang) : itemId;
+}
+
+function joinRecipeItemNames(entries: Array<{ itemId: string }>, lang: Lang): string {
+  const separator = lang === 'ja' ? '・' : ', ';
+
+  return entries.map((entry) => recipeItemName(entry.itemId, lang)).join(separator);
+}
+
 function recipeOptionLabel(itemId: string, recipe: Recipe, lang: Lang): string {
-  const targetItem = itemById[itemId];
   const machine = machineById[recipe.machineId];
 
-  const targetName = targetItem ? text(targetItem.name, lang) : itemId;
-  const machineName = machine ? text(machine.name, lang) : recipe.machineId;
-  const separator = lang === 'ja' ? '、' : ', ';
-  const outputs = recipe.outputs
-    .map((output) => {
-      const item = itemById[output.itemId];
-      return item ? text(item.name, lang) : output.itemId;
-    })
-    .join(separator);
+  const inputNames = recipe.inputs.length
+    ? joinRecipeItemNames(recipe.inputs, lang)
+    : recipeItemName(itemId, lang);
 
-  return `${targetName} → ${machineName} → ${outputs}`;
+  const machineName = machine ? text(machine.name, lang) : recipe.machineId;
+
+  const outputNames = recipe.outputs.length
+    ? joinRecipeItemNames(recipe.outputs, lang)
+    : recipeItemName(itemId, lang);
+
+  return `${inputNames} → ${machineName} → ${outputNames}`;
 }
+
 
 function mergeState(current: AppState, imported: Partial<AppState>): AppState {
   return {
