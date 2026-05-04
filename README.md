@@ -91,16 +91,14 @@ logisticsEfficiency: {
 }
 ```
 
-## 初期収録レシピ
+## 収録データ
 
-v0.1 系では、動作確認用として Codex ベースの少数レシピのみを収録しています。
+Codex のレシピ一覧を元に、現在は以下のデータを収録しています。
 
-- Plank
-- Gloom Fungus and Plank
-- Coal
-- Charcoal
-- Charcoal Powder
-- Stone and Coal
+- レシピ: 142 件
+- アイテム: 148 件
+- 設備: 25 件
+
 
 ## 注意事項
 
