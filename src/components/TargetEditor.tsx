@@ -50,31 +50,60 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
   }
 
   return (
-    <section className="panel target-panel target-panel-v019">
+    <section className="panel" style={{ minWidth: '35.5rem' }}>
       <div className="panel-header">
         <h2>{t('targets', lang)}</h2>
         <button onClick={() => onChange([...targets, makeTarget(lang)])}>{t('addTarget', lang)}</button>
       </div>
 
-      <div className="target-list target-list-v019">
+      <div style={{ display: 'grid', gap: '0.75rem' }}>
         {targets.map((target) => (
-          <div className="target-card-v019" key={target.id}>
+          <div
+            key={target.id}
+            style={{
+              position: 'relative',
+              padding: '0.75rem 2rem 0.75rem 0.75rem',
+              border: '1px solid var(--line)',
+              borderRadius: '14px',
+              background: 'rgba(255, 255, 255, 0.02)',
+            }}
+          >
             <button
-              className="target-remove-v019"
               type="button"
               aria-label={t('remove', lang)}
               title={t('remove', lang)}
               onClick={() => onChange(targets.filter((x) => x.id !== target.id))}
+              style={{
+                position: 'absolute',
+                top: '0.28rem',
+                right: '0.42rem',
+                width: '1.45rem',
+                height: '1.45rem',
+                padding: 0,
+                border: 0,
+                background: 'transparent',
+                color: 'var(--text)',
+                fontSize: '1.45rem',
+                lineHeight: 1,
+              }}
             >
               ×
             </button>
 
-            <div className="target-row-v019">
-              <span className="target-label-v019">{lang === 'ja' ? 'アイテム' : 'Item'}</span>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'auto 13.8rem auto 6.6rem 6.8rem',
+                gap: '0.48rem',
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{lang === 'ja' ? 'アイテム' : 'Item'}</span>
+
               <select
-                className="target-item-select-v019"
                 value={target.outputItemId}
                 onChange={(e) => updateTarget(target.id, { outputItemId: e.target.value })}
+                style={{ width: '13.8rem', minWidth: '13.8rem' }}
               >
                 {selectableOutputItems.map((itemId) => (
                   <option key={itemId} value={itemId}>
@@ -83,20 +112,21 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
                 ))}
               </select>
 
-              <span className="target-label-v019">{lang === 'ja' ? '出力' : 'Output'}</span>
+              <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{lang === 'ja' ? '出力' : 'Output'}</span>
+
               <input
-                className="target-value-input-v019"
                 type="number"
                 min="0"
                 step="0.1"
                 value={target.value}
                 onChange={(e) => updateTarget(target.id, { value: Number(e.target.value) })}
+                style={{ width: '6.6rem', minWidth: '6.6rem' }}
               />
 
               <select
-                className="target-mode-select-v019"
                 value={target.mode}
                 onChange={(e) => updateTarget(target.id, { mode: e.target.value as ProductionTarget['mode'] })}
+                style={{ width: '6.8rem', minWidth: '6.8rem' }}
               >
                 <option value="rate">{t('rateShort', lang)}</option>
                 <option value="machines">{t('machinesShort', lang)}</option>
