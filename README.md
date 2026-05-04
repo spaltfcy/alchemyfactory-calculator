@@ -2,7 +2,7 @@
 
 Alchemy Factory 向けの生産計画ツールです。
 
-このプロジェクトは、GitHub Pages で公開してブラウザ上で使うことを想定した React + TypeScript 製の静的 Web アプリです。既存の無ライセンス公開リポジトリのコードは流用せず、新規実装しています。
+このプロジェクトは、ブラウザ上で使うことを想定した React + TypeScript 製の静的 Web アプリです。
 
 ## 機能
 
@@ -52,33 +52,6 @@ npm run build
 
 ```bash
 npm run preview
-```
-
-## GitHub Pages で公開する方法
-
-1. このプロジェクトを GitHub リポジトリへ push します。
-2. GitHub の Repository Settings → Pages を開きます。
-3. Build and deployment の Source を `GitHub Actions` にします。
-4. `main` ブランチへ push すると `.github/workflows/pages.yml` が実行されます。
-5. Actions が成功すると、以下の形式で公開されます。
-
-```text
-https://<user-name>.github.io/<repository-name>/
-```
-
-このプロジェクトでは、GitHub Actions 側で `VITE_GH_REPO` にリポジトリ名を渡し、Vite の `base` を自動設定しています。
-
-ローカルで GitHub Pages と同じ base path 条件で確認したい場合は、以下のように指定します。
-
-```bash
-VITE_GH_REPO=alchemyfactory-calculator npm run build
-```
-
-Windows PowerShell の場合:
-
-```powershell
-$env:VITE_GH_REPO="alchemyfactory-calculator"
-npm run build
 ```
 
 ## データ差し替え場所
