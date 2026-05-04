@@ -6,10 +6,12 @@ import { FUEL_HEAT_VALUE_BY_ITEM_ID, FUEL_ITEM_IDS } from '../data/heat';
 import { CODEX_RECIPE_ORDER, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
 import { t, text } from '../i18n';
 import { clearState, downloadJson } from '../utils/storage';
+import { DEFAULT_STATE } from '../defaultState';
 
 export type SettingsTabProps = {
   state: AppState;
   setState: (next: AppState) => void;
+  safeMode?: boolean;
 };
 
 const DEFAULT_FUEL_SETTINGS = {
@@ -100,7 +102,7 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
   };
 }
 
-export function SettingsTab({ state, setState }: SettingsTabProps) {
+export function SettingsTab({ state, setState, safeMode = false }: SettingsTabProps) {
   const lang = state.language;
   const fuel = getFuelSettings(state);
 
@@ -137,6 +139,11 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
         : 'Reset settings and saved data. Are you sure?';
 
     if (!window.confirm(message)) return;
+
+    if (safeMode) {
+      setState({ ...DEFAULT_STATE, language: state.language, activeTab: state.activeTab });
+      return;
+    }
 
     clearState();
     location.reload();

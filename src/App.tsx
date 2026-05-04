@@ -13,7 +13,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.4';
+const APP_VERSION = '0.3.5';
 const GAME_VERSION = '0.4.4.4323';
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
@@ -29,7 +29,22 @@ const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   relicKnowledge: { ja: '遺物知識', en: 'Relics' },
 };
 
-function mergeInitialState(): AppState {
+function parseRuntimeFlags() {
+  const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+  const params = hash.split('&').filter(Boolean);
+
+  return {
+    debug: params.includes('DEBUG=ON'),
+    safeMode: params.some((part) => {
+      const lower = part.toLowerCase();
+      return lower === 'safe' || lower === 'safemode';
+    }),
+  };
+}
+
+function mergeInitialState(safeMode: boolean): AppState {
+  if (safeMode) return DEFAULT_STATE;
+
   const saved = loadState();
 
   if (!saved) return DEFAULT_STATE;
@@ -60,14 +75,16 @@ function mergeInitialState(): AppState {
 }
 
 export function App() {
-  const [state, setState] = useState(() => mergeInitialState());
+  const runtimeFlags = useMemo(() => parseRuntimeFlags(), []);
+  const [state, setState] = useState(() => mergeInitialState(runtimeFlags.safeMode));
   const [abilityOpen, setAbilityOpen] = useState(false);
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
 
   useEffect(() => {
+    if (runtimeFlags.safeMode) return;
     saveState(state);
-  }, [state]);
+  }, [state, runtimeFlags.safeMode]);
 
   const result = useMemo(
     () =>
@@ -115,18 +132,25 @@ export function App() {
   const abilityButtonLabel = lang === 'ja' ? 'アビリティ' : 'Abilities';
   const siteVersionLabel = lang === 'ja' ? 'サイトバージョン' : 'Site version';
   const gameVersionLabel = lang === 'ja' ? 'ゲームバージョン' : 'Game version';
+  const safeModeNotice =
+    lang === 'ja' ? 'セーフモードのため自動保存されません' : 'Safe mode: changes are not auto-saved';
 
   return (
-    <div className="app-shell">
+    <div className={runtimeFlags.safeMode ? 'app-shell is-safe-mode' : 'app-shell'}>
       <header className="app-header">
         <div className="app-title-block">
-          <h1>{t('appTitle', lang)}</h1>
+          <h1>
+            {t('appTitle', lang)}
+            {runtimeFlags.debug && <span className="debug-badge">[DEBUG]</span>}
+            {runtimeFlags.safeMode && <span className="safe-mode-badge">Safe mode</span>}
+          </h1>
           <p>
             {initialCostLabel}: {formatCopper(initialCost)} + {runningCostLabel}: {formatCopper(runningCost)} /{' '}
             {t('revenue', lang)} {formatCopper(result.totals.revenueCopperPerMin)} / {t('profit', lang)}{' '}
             {formatCopper(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
             {formatNumber(result.totals.conveyorItemsPerMinute)}/min
           </p>
+          {runtimeFlags.safeMode && <p className="safe-mode-notice">{safeModeNotice}</p>}
         </div>
 
         <div className={abilityOpen ? 'header-ability-panel is-open' : 'header-ability-panel'} aria-label={t('abilities', lang)}>
@@ -185,7 +209,7 @@ export function App() {
           </aside>
         )}
 
-        <section className="content-pane">
+        <section className={`content-pane content-pane-${state.activeTab}`}>
           {state.activeTab === 'graph' && (
             <GraphTab
               lang={lang}
@@ -193,10 +217,11 @@ export function App() {
               settings={state.settings}
               completedGraphNodeIds={state.completedGraphNodeIds}
               onToggleCompleted={toggleCompleted}
+              debug={runtimeFlags.debug}
             />
           )}
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
-          {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} />}
+          {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
         </section>
       </main>

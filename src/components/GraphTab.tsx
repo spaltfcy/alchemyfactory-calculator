@@ -25,6 +25,7 @@ import { PlannerNode } from './PlannerNode';
 
 const nodeTypes = { plannerNode: PlannerNode };
 const edgeTypes = { flowEdge: FlowEdge };
+const UPDATE_OVERLAY_THRESHOLD = 150;
 
 export type GraphTabProps = {
   lang: Lang;
@@ -32,6 +33,7 @@ export type GraphTabProps = {
   settings: AppSettings;
   completedGraphNodeIds: Record<string, boolean>;
   onToggleCompleted: (nodeId: string) => void;
+  debug?: boolean;
 };
 
 type GraphControlsProps = {
@@ -246,13 +248,14 @@ export function GraphTab({
   settings,
   completedGraphNodeIds,
   onToggleCompleted,
+  debug = false,
 }: GraphTabProps) {
   const flowRef = useRef<any>(null);
   const latestLayoutId = useRef(0);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [isInteractive, setIsInteractive] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const raw = useMemo(
     () => buildFlowGraph(result, lang, settings, completedGraphNodeIds),
@@ -262,11 +265,19 @@ export function GraphTab({
   useEffect(() => {
     let disposed = false;
     const layoutId = latestLayoutId.current + 1;
+    const total = raw.nodes.length + raw.edges.length;
+    const showUpdating = total >= UPDATE_OVERLAY_THRESHOLD;
+    const startedAt = performance.now();
+
     latestLayoutId.current = layoutId;
 
-    setIsUpdating(true);
-    setNodes([]);
-    setEdges([]);
+    if (showUpdating) {
+      setIsUpdating(true);
+      setNodes([]);
+      setEdges([]);
+    } else {
+      setIsUpdating(false);
+    }
 
     layoutWithElk(raw.nodes, raw.edges)
       .then((layouted) => {
@@ -274,10 +285,21 @@ export function GraphTab({
 
         const layoutedRaw = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
         const positionById = new Map(layouted.map((node) => [node.id, node.position]));
+        const nextNodes = layoutedRaw.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position }));
+        const nextEdges = layoutedRaw.edges;
+        const layoutMs = Math.round(performance.now() - startedAt);
 
-        setNodes(layoutedRaw.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position })));
-        setEdges(layoutedRaw.edges);
+        setNodes(nextNodes);
+        setEdges(nextEdges);
         setIsUpdating(false);
+
+        if (debug) {
+          const discardNodes = nextNodes.filter((node) => node.data?.kind === 'discard').length;
+          const recipeNodes = nextNodes.filter((node) => node.data?.kind === 'recipe').length;
+          console.info(
+            `[graph] nodes=${nextNodes.length} edges=${nextEdges.length} total=${nextNodes.length + nextEdges.length} layout=${layoutMs}ms updating=${showUpdating} recipeNodes=${recipeNodes} discardNodes=${discardNodes}`,
+          );
+        }
 
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
@@ -285,12 +307,21 @@ export function GraphTab({
           });
         });
       })
-      .catch(() => {
+      .catch((error) => {
         if (disposed || latestLayoutId.current !== layoutId) return;
+
+        const layoutMs = Math.round(performance.now() - startedAt);
 
         setNodes(raw.nodes);
         setEdges(raw.edges);
         setIsUpdating(false);
+
+        if (debug) {
+          console.warn(
+            `[graph] layout failed nodes=${raw.nodes.length} edges=${raw.edges.length} total=${total} layout=${layoutMs}ms updating=${showUpdating}`,
+            error,
+          );
+        }
 
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
@@ -302,7 +333,7 @@ export function GraphTab({
     return () => {
       disposed = true;
     };
-  }, [raw, result, lang, settings, completedGraphNodeIds]);
+  }, [raw, result, lang, settings, completedGraphNodeIds, debug]);
 
   const onNodeDoubleClick: NodeMouseHandler = (_, node) => {
     if (!isInteractive) return;
