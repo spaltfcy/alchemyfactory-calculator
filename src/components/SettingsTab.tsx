@@ -38,22 +38,6 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
   };
 }
 
-const cardStyle = {
-  width: '22rem',
-  minHeight: '12rem',
-};
-
-const fieldStackStyle = {
-  display: 'grid',
-  gap: '1rem',
-  alignContent: 'start',
-};
-
-const labelStyle = {
-  color: 'var(--muted)',
-  fontSize: '0.92rem',
-};
-
 export function SettingsTab({ state, setState }: SettingsTabProps) {
   const lang = state.language;
 
@@ -71,46 +55,16 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
   const recipeItems = ITEMS.filter((item) => getRecipesProducing(item.id).length > 1);
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '24rem minmax(0, 1fr)',
-        gap: '1rem',
-        alignItems: 'start',
-        width: '100%',
-      }}
-    >
-      <section
-        className="panel"
-        style={{
-          minHeight: 'calc(100vh - 11rem)',
-          maxHeight: 'calc(100vh - 8rem)',
-          overflow: 'hidden',
-        }}
-      >
+    <div className="settings-page-v0111">
+      <section className="panel recipe-settings-v0111">
         <h2>{lang === 'ja' ? 'レシピ設定' : 'Recipe settings'}</h2>
 
-        <div
-          style={{
-            display: 'grid',
-            maxHeight: 'calc(100vh - 16rem)',
-            overflow: 'auto',
-            paddingRight: '0.25rem',
-          }}
-        >
+        <div className="recipe-settings-list-v0111">
           {recipeItems.map((item) => {
             const recipes = getRecipesProducing(item.id);
             return (
-              <div
-                key={item.id}
-                style={{
-                  display: 'grid',
-                  gap: '0.45rem',
-                  padding: '0.85rem 0',
-                  borderBottom: '1px solid var(--line)',
-                }}
-              >
-                <div style={labelStyle}>{text(item.name, lang)}</div>
+              <div className="recipe-setting-row-v0111" key={item.id}>
+                <div className="settings-label-v0111">{text(item.name, lang)}</div>
                 <select
                   value={state.recipePreferences[item.id] ?? ''}
                   onChange={(e) => {
@@ -133,21 +87,12 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
         </div>
       </section>
 
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '1rem',
-          alignItems: 'flex-start',
-          justifyContent: 'flex-start',
-          minWidth: 0,
-        }}
-      >
-        <section className="panel" style={cardStyle}>
+      <div className="settings-main-v0111">
+        <section className="panel settings-card-v0111">
           <h2>{t('language', lang)}</h2>
-          <div style={fieldStackStyle}>
-            <div style={{ display: 'grid', gap: '0.45rem' }}>
-              <div style={labelStyle}>{t('language', lang)}</div>
+          <div className="settings-fields-v0111">
+            <div className="settings-field-v0111">
+              <div className="settings-label-v0111">{t('language', lang)}</div>
               <select value={state.language} onChange={(e) => setState({ ...state, language: e.target.value as Lang })}>
                 <option value="ja">日本語</option>
                 <option value="en">English</option>
@@ -156,11 +101,11 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
           </div>
         </section>
 
-        <section className="panel" style={cardStyle}>
+        <section className="panel settings-card-v0111">
           <h2>{lang === 'ja' ? '計算' : 'Calculation'}</h2>
-          <div style={fieldStackStyle}>
-            <div style={{ display: 'grid', gap: '0.45rem' }}>
-              <div style={labelStyle}>{t('machineRounding', lang)}</div>
+          <div className="settings-fields-v0111">
+            <div className="settings-field-v0111">
+              <div className="settings-label-v0111">{t('machineRounding', lang)}</div>
               <select value={state.settings.machineRounding} onChange={(e) => patchSettings({ machineRounding: e.target.value as AppSettings['machineRounding'] })}>
                 <option value="none">{t('roundingNone', lang)}</option>
                 <option value="intermediate">{t('roundingIntermediate', lang)}</option>
@@ -168,8 +113,8 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
               </select>
             </div>
 
-            <div style={{ display: 'grid', gap: '0.45rem' }}>
-              <div style={labelStyle}>{t('defaultSurplusPolicy', lang)}</div>
+            <div className="settings-field-v0111">
+              <div className="settings-label-v0111">{t('defaultSurplusPolicy', lang)}</div>
               <select value={state.settings.defaultSurplusPolicy} onChange={(e) => patchSettings({ defaultSurplusPolicy: e.target.value as SurplusPolicy })}>
                 <option value="reuse">{t('reuse', lang)}</option>
                 <option value="discard">{t('discard', lang)}</option>
@@ -178,11 +123,11 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
           </div>
         </section>
 
-        <section className="panel" style={cardStyle}>
+        <section className="panel settings-card-v0111">
           <h2>{t('display', lang)}</h2>
-          <div style={fieldStackStyle}>
-            <div style={{ display: 'grid', gap: '0.45rem' }}>
-              <div style={labelStyle}>{lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}</div>
+          <div className="settings-fields-v0111">
+            <div className="settings-field-v0111">
+              <div className="settings-label-v0111">{lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}</div>
               <select value={state.settings.graphDetailLevel} onChange={(e) => patchSettings({ graphDetailLevel: e.target.value as AppSettings['graphDetailLevel'] })}>
                 <option value="simple">{t('simple', lang)}</option>
                 <option value="normal">{t('normal', lang)}</option>
@@ -197,15 +142,15 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
           </div>
         </section>
 
-        <section className="panel" style={cardStyle}>
+        <section className="panel settings-card-v0111">
           <h2>{t('data', lang)}</h2>
-          <div style={fieldStackStyle}>
+          <div className="settings-fields-v0111">
             <button onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
               {t('exportJson', lang)}
             </button>
 
-            <div style={{ display: 'grid', gap: '0.45rem' }}>
-              <div style={labelStyle}>{t('importJson', lang)}</div>
+            <div className="settings-field-v0111">
+              <div className="settings-label-v0111">{t('importJson', lang)}</div>
               <input type="file" accept="application/json" onChange={(e) => void importJson(e.currentTarget.files?.[0])} />
             </div>
 
@@ -221,18 +166,12 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
           </div>
         </section>
 
-        <section className="panel" style={{ width: '46rem' }}>
+        <section className="panel settings-abilities-v0111">
           <h2>{t('abilities', lang)}</h2>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-              gap: '0.9rem 1rem',
-            }}
-          >
+          <div className="ability-grid-v0111">
             {ABILITY_IDS.map((id) => (
-              <div style={{ display: 'grid', gap: '0.45rem' }} key={id}>
-                <div style={labelStyle}>{abilityLabels[id][lang]}</div>
+              <div className="settings-field-v0111" key={id}>
+                <div className="settings-label-v0111">{abilityLabels[id][lang]}</div>
                 <input
                   type="number"
                   min="0"
