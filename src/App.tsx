@@ -13,7 +13,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.3.0';
+const APP_VERSION = 'v0.3.1';
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   logisticsEfficiency: { ja: '物流効率', en: 'Logistics' },
@@ -125,7 +125,7 @@ export function App() {
               <input
                 type="number"
                 min={0}
-                max={99}
+                max={13}
                 step={1}
                 value={state.abilities[id] ?? 0}
                 onChange={(e) => setAbility(id, Number(e.target.value))}

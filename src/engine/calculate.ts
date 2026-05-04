@@ -13,6 +13,7 @@ import { economyByItemId } from '../data/economy';
 import {
   getConveyorItemsPerMinute,
   getFuelHeatValueMultiplier,
+  getHeatConsumptionMultiplier,
   getProductionSpeedMultiplier,
   getSellPriceMultiplier,
 } from '../data/abilityTables';
@@ -86,6 +87,7 @@ export type CalculationResult = {
     profitCopperPerMin: number;
     conveyorItemsPerMinute: number;
     productionSpeedMultiplier: number;
+    heatConsumptionMultiplier: number;
     sellPriceMultiplier: number;
     fuelHeatValueMultiplier: number;
     heatRequiredPerMin: number;
@@ -190,7 +192,7 @@ function heatPerMachinePerSecond(machineId: string, fuelSettings: FuelSettings):
 function calculateHeatRequiredPerMin(
   recipeStats: Record<string, RecipeStat>,
   fuelSettings: FuelSettings,
-  productionSpeedMultiplier: number,
+  heatConsumptionMultiplier: number,
 ): number {
   let total = 0;
 
@@ -198,7 +200,7 @@ function calculateHeatRequiredPerMin(
     const heatPerSec = heatPerMachinePerSecond(rs.machineId, fuelSettings);
     if (heatPerSec <= 0) continue;
 
-    total += rs.actualMachines * heatPerSec * 60 * productionSpeedMultiplier;
+    total += rs.actualMachines * heatPerSec * 60 * heatConsumptionMultiplier;
   }
 
   return total;
@@ -207,6 +209,7 @@ function calculateHeatRequiredPerMin(
 export function calculate(input: CalculateInput): CalculationResult {
   const fuelSettings = normalizeFuelSettings(input.settings);
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
+  const heatConsumptionMultiplier = getHeatConsumptionMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
   const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
   const fuelHeatValueMultiplier = getFuelHeatValueMultiplier(input.abilities);
@@ -491,7 +494,7 @@ export function calculate(input: CalculateInput): CalculationResult {
     }
 
     const heatRequiredPerMin = fuelSettings.enabled
-      ? calculateHeatRequiredPerMin(recipeStats, fuelSettings, productionSpeedMultiplier)
+      ? calculateHeatRequiredPerMin(recipeStats, fuelSettings, heatConsumptionMultiplier)
       : 0;
 
     const fuelHeatValue = FUEL_HEAT_VALUE_BY_ITEM_ID[fuelSettings.fuelItemId] ?? 0;
@@ -530,6 +533,7 @@ export function calculate(input: CalculateInput): CalculationResult {
         profitCopperPerMin: revenueCopperPerMin - runningCostCopperPerMin,
         conveyorItemsPerMinute,
         productionSpeedMultiplier,
+        heatConsumptionMultiplier,
         sellPriceMultiplier,
         fuelHeatValueMultiplier,
         heatRequiredPerMin,
