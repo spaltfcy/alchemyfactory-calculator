@@ -1,4 +1,4 @@
-import type { Edge, Node } from '@xyflow/react';
+import { MarkerType, type Edge, type Node } from '@xyflow/react';
 import type { CalculationResult } from './calculate';
 import type { AppSettings, Lang } from '../types';
 import { itemById } from '../data/items';
@@ -22,6 +22,7 @@ export function buildFlowGraph(
 ): { nodes: Node<PlannerNodeData>[]; edges: Edge[] } {
   const nodes: Node<PlannerNodeData>[] = [];
   const edges: Edge[] = [];
+  const defaultMarkerEnd = { type: MarkerType.ArrowClosed, color: '#7dc4ff' };
 
   for (const s of Object.values(result.itemStats)) {
     const item = itemById[s.itemId];
@@ -91,6 +92,7 @@ export function buildFlowGraph(
       target: `recipe:${edge.toRecipeId}`,
       label: `${formatNumber(edge.rate)}/min · ${edge.belts}${lang === 'ja' ? '本' : ' belts'}`,
       animated: false,
+      markerEnd: defaultMarkerEnd,
     });
   }
 
@@ -102,7 +104,8 @@ export function buildFlowGraph(
         source: `recipe:${edge.fromRecipeId}`,
         target: 'discard',
         label: `${text(itemById[edge.toItemId]?.name ?? { ja: edge.toItemId, en: edge.toItemId }, lang)} ${formatNumber(edge.rate)}/min`,
-        style: { strokeDasharray: '6 4' },
+        style: { strokeDasharray: '6 4', stroke: '#ff7777' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#ff7777' },
       });
       continue;
     }
@@ -112,6 +115,7 @@ export function buildFlowGraph(
       target: `item:${edge.toItemId}`,
       label: `${formatNumber(edge.rate)}/min`,
       style: edge.byproduct ? { strokeDasharray: '4 3' } : undefined,
+      markerEnd: defaultMarkerEnd,
     });
   }
 
