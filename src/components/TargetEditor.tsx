@@ -43,26 +43,24 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
       targets.map((target) => {
         if (target.id !== id) return target;
         const next = { ...target, ...patch };
-        if (patch.outputItemId) {
-          next.recipeId = getDefaultRecipeId(patch.outputItemId);
-        }
+        if (patch.outputItemId) next.recipeId = getDefaultRecipeId(patch.outputItemId);
         return next;
       }),
     );
   }
 
   return (
-    <section className="panel target-panel">
+    <section className="panel target-panel target-panel-v019">
       <div className="panel-header">
         <h2>{t('targets', lang)}</h2>
         <button onClick={() => onChange([...targets, makeTarget(lang)])}>{t('addTarget', lang)}</button>
       </div>
 
-      <div className="target-list target-list-inline">
+      <div className="target-list target-list-v019">
         {targets.map((target) => (
-          <div className="target-inline-card" key={target.id}>
+          <div className="target-card-v019" key={target.id}>
             <button
-              className="target-inline-remove"
+              className="target-remove-v019"
               type="button"
               aria-label={t('remove', lang)}
               title={t('remove', lang)}
@@ -71,11 +69,10 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
               ×
             </button>
 
-            <div className="target-inline-grid">
-              <div className="target-inline-label">{lang === 'ja' ? 'アイテム' : 'Item'}</div>
-
+            <div className="target-row-v019">
+              <span className="target-label-v019">{lang === 'ja' ? 'アイテム' : 'Item'}</span>
               <select
-                className="target-inline-item-select"
+                className="target-item-select-v019"
                 value={target.outputItemId}
                 onChange={(e) => updateTarget(target.id, { outputItemId: e.target.value })}
               >
@@ -86,10 +83,9 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
                 ))}
               </select>
 
-              <div className="target-inline-label">{lang === 'ja' ? '出力' : 'Output'}</div>
-
+              <span className="target-label-v019">{lang === 'ja' ? '出力' : 'Output'}</span>
               <input
-                className="target-inline-value-input"
+                className="target-value-input-v019"
                 type="number"
                 min="0"
                 step="0.1"
@@ -98,7 +94,7 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
               />
 
               <select
-                className="target-inline-mode-select"
+                className="target-mode-select-v019"
                 value={target.mode}
                 onChange={(e) => updateTarget(target.id, { mode: e.target.value as ProductionTarget['mode'] })}
               >
