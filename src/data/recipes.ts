@@ -7,7 +7,7 @@ import type { Recipe } from '../types';
 export const RECIPES: Recipe[] = [
   {
     id: "adamant",
-    name: { ja: "Adamant", en: "Adamant" },
+    name: { ja: "金剛石", en: "Adamant" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "polished_crystal", amount: 2 }],
@@ -17,7 +17,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "advanced_fertilizer",
-    name: { ja: "Advanced Fertilizer", en: "Advanced Fertilizer" },
+    name: { ja: "上級肥料", en: "Advanced Fertilizer" },
     machineId: "assembler",
     timeSec: 4,
     inputs: [{ itemId: "basic_fertilizer", amount: 1 }, { itemId: "gloom_fungus", amount: 1 }],
@@ -27,7 +27,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "aqua_vitae",
-    name: { ja: "Aqua Vitae", en: "Aqua Vitae" },
+    name: { ja: "生命の水", en: "Aqua Vitae" },
     machineId: "advanced_alembic",
     timeSec: 8,
     inputs: [{ itemId: "gentian_nectar", amount: 1 }, { itemId: "world_tree_leaf", amount: 1 }, { itemId: "brandy", amount: 200 }],
@@ -37,7 +37,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "bandage",
-    name: { ja: "Bandage", en: "Bandage" },
+    name: { ja: "包帯", en: "Bandage" },
     machineId: "assembler",
     timeSec: 10,
     inputs: [{ itemId: "linen", amount: 1 }, { itemId: "healing_potion", amount: 2 }],
@@ -47,7 +47,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "basic_fertilizer",
-    name: { ja: "Basic Fertilizer", en: "Basic Fertilizer" },
+    name: { ja: "初級肥料", en: "Basic Fertilizer" },
     machineId: "assembler",
     timeSec: 4,
     inputs: [{ itemId: "plant_ash", amount: 1 }, { itemId: "quicklime_powder", amount: 1 }],
@@ -57,7 +57,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "black_powder",
-    name: { ja: "Black Powder", en: "Black Powder" },
+    name: { ja: "火薬", en: "Black Powder" },
     machineId: "advanced_blender",
     timeSec: 12,
     inputs: [{ itemId: "sulfur_powder", amount: 1 }, { itemId: "charcoal_powder", amount: 12 }, { itemId: "limewater", amount: 150 }],
@@ -67,7 +67,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "blast_potion",
-    name: { ja: "Blast Potion", en: "Blast Potion" },
+    name: { ja: "爆発ポーション", en: "Blast Potion" },
     machineId: "advanced_blender",
     timeSec: 6,
     inputs: [{ itemId: "oblivion_essence", amount: 1 }, { itemId: "black_powder", amount: 2 }, { itemId: "brandy", amount: 40 }],
@@ -77,7 +77,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "brandy",
-    name: { ja: "Brandy", en: "Brandy" },
+    name: { ja: "ブランデー", en: "Brandy" },
     machineId: "alembic",
     timeSec: 5,
     inputs: [{ itemId: "coke_powder", amount: 5 }, { itemId: "fruit_wine", amount: 100 }],
@@ -87,7 +87,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "brick",
-    name: { ja: "Brick", en: "Brick" },
+    name: { ja: "レンガ", en: "Brick" },
     machineId: "kiln",
     timeSec: 6,
     inputs: [{ itemId: "clay", amount: 1 }],
@@ -97,7 +97,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "brine",
-    name: { ja: "Brine", en: "Brine" },
+    name: { ja: "塩水", en: "Brine" },
     machineId: "extractor",
     timeSec: 4,
     inputs: [{ itemId: "salt", amount: 1 }],
@@ -107,7 +107,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "broken_shard",
-    name: { ja: "Broken Shard", en: "Broken Shard" },
+    name: { ja: "破損チップ", en: "Broken Shard" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "crude_shard", amount: 2 }],
@@ -117,7 +117,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "bronze_ingot",
-    name: { ja: "Bronze Ingot", en: "Bronze Ingot" },
+    name: { ja: "青銅インゴット", en: "Bronze Ingot" },
     machineId: "crucible",
     timeSec: 12,
     inputs: [{ itemId: "impure_copper_powder", amount: 1 }],
@@ -127,7 +127,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "bronze_rivet",
-    name: { ja: "Bronze Rivet", en: "Bronze Rivet" },
+    name: { ja: "青銅リベット", en: "Bronze Rivet" },
     machineId: "processor",
     timeSec: 12,
     inputs: [{ itemId: "bronze_ingot", amount: 1 }],
@@ -137,7 +137,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "chamomile",
-    name: { ja: "Chamomile", en: "Chamomile" },
+    name: { ja: "カモミール", en: "Chamomile" },
     machineId: "nursery",
     timeSec: 1120,
     inputs: [{ itemId: "chamomile_seeds", amount: 1 }],
@@ -147,7 +147,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "chamomile_powder",
-    name: { ja: "Chamomile Powder", en: "Chamomile Powder" },
+    name: { ja: "カモミールの粉末", en: "Chamomile Powder" },
     machineId: "grinder",
     timeSec: 3,
     inputs: [{ itemId: "chamomile", amount: 1 }],
@@ -157,7 +157,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "charcoal_from_plank",
-    name: { ja: "Charcoal", en: "Charcoal" },
+    name: { ja: "木炭", en: "Charcoal" },
     machineId: "crucible",
     timeSec: 4,
     inputs: [{ itemId: "plank", amount: 1 }],
@@ -167,7 +167,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "charcoal_powder_from_charcoal",
-    name: { ja: "Charcoal Powder", en: "Charcoal Powder" },
+    name: { ja: "木炭の粉末", en: "Charcoal Powder" },
     machineId: "grinder",
     timeSec: 4,
     inputs: [{ itemId: "charcoal", amount: 1 }],
@@ -177,7 +177,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "clay",
-    name: { ja: "Clay", en: "Clay" },
+    name: { ja: "粘土", en: "Clay" },
     machineId: "assembler",
     timeSec: 4,
     inputs: [{ itemId: "charcoal_powder", amount: 2 }, { itemId: "sand", amount: 4 }],
@@ -187,7 +187,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "clay_powder",
-    name: { ja: "Clay Powder", en: "Clay Powder" },
+    name: { ja: "粘土粉末", en: "Clay Powder" },
     machineId: "grinder",
     timeSec: 4,
     inputs: [{ itemId: "clay", amount: 1 }],
@@ -197,7 +197,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "coal_from_coal_ore",
-    name: { ja: "Coal", en: "Coal" },
+    name: { ja: "石炭", en: "Coal" },
     machineId: "stone_crusher",
     timeSec: 360,
     inputs: [{ itemId: "coal_ore", amount: 1 }],
@@ -207,7 +207,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "coke",
-    name: { ja: "Coke", en: "Coke" },
+    name: { ja: "コークス", en: "Coke" },
     machineId: "crucible",
     timeSec: 6,
     inputs: [{ itemId: "coal", amount: 1 }],
@@ -217,7 +217,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "coke_and_charcoal",
-    name: { ja: "Coke and Charcoal", en: "Coke and Charcoal" },
+    name: { ja: "コークスと木炭", en: "Coke and Charcoal" },
     machineId: "athanor",
     timeSec: 3,
     inputs: [{ itemId: "charcoal_powder", amount: 6 }],
@@ -227,7 +227,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "coke_powder",
-    name: { ja: "Coke Powder", en: "Coke Powder" },
+    name: { ja: "コークス粉", en: "Coke Powder" },
     machineId: "grinder",
     timeSec: 12,
     inputs: [{ itemId: "coke", amount: 1 }],
@@ -237,7 +237,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "copper_bearing",
-    name: { ja: "Copper Bearing", en: "Copper Bearing" },
+    name: { ja: "銅ベアリング", en: "Copper Bearing" },
     machineId: "processor",
     timeSec: 12,
     inputs: [{ itemId: "copper_ingot", amount: 1 }],
@@ -247,7 +247,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "copper_coin",
-    name: { ja: "Copper Coin", en: "Copper Coin" },
+    name: { ja: "銅貨", en: "Copper Coin" },
     machineId: "processor",
     timeSec: 12,
     inputs: [{ itemId: "copper_ingot", amount: 1 }],
@@ -257,7 +257,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "copper_ingot",
-    name: { ja: "Copper Ingot", en: "Copper Ingot" },
+    name: { ja: "銅インゴット", en: "Copper Ingot" },
     machineId: "crucible",
     timeSec: 12,
     inputs: [{ itemId: "copper_powder", amount: 1 }],
@@ -267,7 +267,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "copper_ingot_2",
-    name: { ja: "Copper Ingot 2", en: "Copper Ingot 2" },
+    name: { ja: "銅インゴット", en: "Copper Ingot 2" },
     machineId: "kiln",
     timeSec: 12,
     inputs: [{ itemId: "copper_coin", amount: 400 }],
@@ -277,7 +277,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "copper_powder",
-    name: { ja: "Copper Powder", en: "Copper Powder" },
+    name: { ja: "銅粉", en: "Copper Powder" },
     machineId: "refiner",
     timeSec: 6,
     inputs: [{ itemId: "impure_copper_powder", amount: 2 }],
@@ -287,7 +287,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "copper_powder_2",
-    name: { ja: "Copper Powder 2", en: "Copper Powder 2" },
+    name: { ja: "銅粉", en: "Copper Powder 2" },
     machineId: "grinder",
     timeSec: 12,
     inputs: [{ itemId: "copper_ingot", amount: 1 }],
@@ -297,7 +297,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "copper_powder_and_impure_copper_powder",
-    name: { ja: "Copper Powder and Impure Copper Powder", en: "Copper Powder and Impure Copper Powder" },
+    name: { ja: "銅粉と不純銅粉", en: "Copper Powder and Impure Copper Powder" },
     machineId: "athanor",
     timeSec: 6,
     inputs: [{ itemId: "iron_sand", amount: 6 }, { itemId: "soap_powder", amount: 6 }],
@@ -307,7 +307,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "crown",
-    name: { ja: "Crown", en: "Crown" },
+    name: { ja: "王冠", en: "Crown" },
     machineId: "advanced_assembler",
     timeSec: 15,
     inputs: [{ itemId: "gold_ingot", amount: 3 }, { itemId: "ruby", amount: 1 }, { itemId: "sapphire", amount: 1 }],
@@ -317,7 +317,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "crude_crystal",
-    name: { ja: "Crude Crystal", en: "Crude Crystal" },
+    name: { ja: "荒い晶石", en: "Crude Crystal" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "shattered_crystal", amount: 2 }],
@@ -327,7 +327,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "crude_shard",
-    name: { ja: "Crude Shard", en: "Crude Shard" },
+    name: { ja: "粗悪なチップ", en: "Crude Shard" },
     machineId: "stone_crusher",
     timeSec: 480,
     inputs: [{ itemId: "quartz_ore", amount: 1 }],
@@ -337,7 +337,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "crude_shard_2",
-    name: { ja: "Crude Shard 2", en: "Crude Shard 2" },
+    name: { ja: "粗悪なチップ", en: "Crude Shard 2" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "fully_refined_sand", amount: 2 }],
@@ -347,7 +347,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "diamond",
-    name: { ja: "Diamond", en: "Diamond" },
+    name: { ja: "ダイヤモンド", en: "Diamond" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "adamant", amount: 2 }],
@@ -357,7 +357,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "dull_shard",
-    name: { ja: "Dull Shard", en: "Dull Shard" },
+    name: { ja: "くすんだチップ", en: "Dull Shard" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "broken_shard", amount: 2 }],
@@ -367,7 +367,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "emerald",
-    name: { ja: "Emerald", en: "Emerald" },
+    name: { ja: "エメラルド", en: "Emerald" },
     machineId: "cauldron",
     timeSec: 45.5,
     inputs: [{ itemId: "moonlit_soap", amount: 1 }, { itemId: "lapis_lazuli", amount: 1 }, { itemId: "fertile_catalyst", amount: 1 }],
@@ -377,7 +377,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "eternal_catalyst",
-    name: { ja: "Eternal Catalyst", en: "Eternal Catalyst" },
+    name: { ja: "永遠の触媒", en: "Eternal Catalyst" },
     machineId: "arcane_processor",
     timeSec: 60,
     inputs: [{ itemId: "resonant_catalyst", amount: 15 }, { itemId: "philosophers_stone", amount: 1 }],
@@ -387,7 +387,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "fairy_dust",
-    name: { ja: "Fairy Dust", en: "Fairy Dust" },
+    name: { ja: "精霊の粉末", en: "Fairy Dust" },
     machineId: "arcane_processor",
     timeSec: 4,
     inputs: [{ itemId: "chamomile_powder", amount: 1 }, { itemId: "gentian_powder", amount: 1 }, { itemId: "world_tree_leaf", amount: 1 }],
@@ -397,7 +397,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "fairy_tear",
-    name: { ja: "Fairy Tear", en: "Fairy Tear" },
+    name: { ja: "精霊の涙", en: "Fairy Tear" },
     machineId: "extractor",
     timeSec: 4,
     inputs: [{ itemId: "fairy_dust", amount: 1 }],
@@ -407,7 +407,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "fertile_catalyst",
-    name: { ja: "Fertile Catalyst", en: "Fertile Catalyst" },
+    name: { ja: "豊穣の触媒", en: "Fertile Catalyst" },
     machineId: "advanced_blender",
     timeSec: 8,
     inputs: [{ itemId: "unstable_catalyst", amount: 1 }, { itemId: "vitality_essence", amount: 1 }, { itemId: "lavender_essential_oil", amount: 18 }],
@@ -417,7 +417,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "flax",
-    name: { ja: "Flax", en: "Flax" },
+    name: { ja: "亜麻", en: "Flax" },
     machineId: "nursery",
     timeSec: 400,
     inputs: [{ itemId: "flax_seeds", amount: 1 }],
@@ -427,7 +427,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "flax_fiber",
-    name: { ja: "Flax Fiber", en: "Flax Fiber" },
+    name: { ja: "亜麻繊維", en: "Flax Fiber" },
     machineId: "grinder",
     timeSec: 3,
     inputs: [{ itemId: "flax", amount: 1 }],
@@ -437,7 +437,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "fruit_wine",
-    name: { ja: "Fruit Wine", en: "Fruit Wine" },
+    name: { ja: "ベリー酒", en: "Fruit Wine" },
     machineId: "extractor",
     timeSec: 6,
     inputs: [{ itemId: "redcurrant", amount: 1 }],
@@ -447,7 +447,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "fully_refined_sand",
-    name: { ja: "Fully Refined Sand", en: "Fully Refined Sand" },
+    name: { ja: "完璧な精錬砂", en: "Fully Refined Sand" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "refined_sand_5", amount: 2 }],
@@ -457,7 +457,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gentian_and_gentian_nectar",
-    name: { ja: "Gentian and Gentian Nectar", en: "Gentian and Gentian Nectar" },
+    name: { ja: "リンドウとリンドウの蜜", en: "Gentian and Gentian Nectar" },
     machineId: "nursery",
     timeSec: 2160,
     inputs: [{ itemId: "gentian_seeds", amount: 1 }],
@@ -467,7 +467,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gentian_powder",
-    name: { ja: "Gentian Powder", en: "Gentian Powder" },
+    name: { ja: "リンドウの粉末", en: "Gentian Powder" },
     machineId: "grinder",
     timeSec: 3,
     inputs: [{ itemId: "gentian", amount: 1 }],
@@ -477,7 +477,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "glass",
-    name: { ja: "Glass", en: "Glass" },
+    name: { ja: "ガラス", en: "Glass" },
     machineId: "kiln",
     timeSec: 6,
     inputs: [{ itemId: "sand", amount: 6 }],
@@ -487,7 +487,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gloom_fungus_and_plank_from_rotten_log",
-    name: { ja: "Gloom Fungus and Plank", en: "Gloom Fungus and Plank" },
+    name: { ja: "幽暗キノコと木材", en: "Gloom Fungus and Plank" },
     machineId: "table_saw",
     timeSec: 400,
     inputs: [{ itemId: "rotten_log", amount: 1 }],
@@ -497,7 +497,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gloom_spores",
-    name: { ja: "Gloom Spores", en: "Gloom Spores" },
+    name: { ja: "幽暗胞子", en: "Gloom Spores" },
     machineId: "assembler",
     timeSec: 4,
     inputs: [{ itemId: "gloom_fungus", amount: 2 }, { itemId: "yeast_powder", amount: 1 }],
@@ -507,7 +507,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gold_coin",
-    name: { ja: "Gold Coin", en: "Gold Coin" },
+    name: { ja: "金貨", en: "Gold Coin" },
     machineId: "processor",
     timeSec: 40,
     inputs: [{ itemId: "gold_ingot", amount: 1 }],
@@ -517,7 +517,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gold_dust",
-    name: { ja: "Gold Dust", en: "Gold Dust" },
+    name: { ja: "砂金", en: "Gold Dust" },
     machineId: "refiner",
     timeSec: 10,
     inputs: [{ itemId: "impure_gold_dust", amount: 2 }],
@@ -527,7 +527,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gold_dust_and_impure_gold_dust",
-    name: { ja: "Gold Dust and Impure Gold Dust", en: "Gold Dust and Impure Gold Dust" },
+    name: { ja: "砂金と不純砂金と粗悪な砂金", en: "Gold Dust and Impure Gold Dust" },
     machineId: "advanced_athanor",
     timeSec: 8,
     inputs: [{ itemId: "silver_powder", amount: 1 }, { itemId: "volcanic_ash", amount: 1 }, { itemId: "fertile_catalyst", amount: 1 }, { itemId: "quicksilver", amount: 12 }],
@@ -537,7 +537,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gold_ingot",
-    name: { ja: "Gold Ingot", en: "Gold Ingot" },
+    name: { ja: "金インゴット", en: "Gold Ingot" },
     machineId: "crucible",
     timeSec: 40,
     inputs: [{ itemId: "pure_gold_dust", amount: 1 }],
@@ -547,7 +547,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "gold_ingot_2",
-    name: { ja: "Gold Ingot 2", en: "Gold Ingot 2" },
+    name: { ja: "金インゴット", en: "Gold Ingot 2" },
     machineId: "kiln",
     timeSec: 40,
     inputs: [{ itemId: "gold_coin", amount: 3 }],
@@ -557,7 +557,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "growth_potion",
-    name: { ja: "Growth Potion", en: "Growth Potion" },
+    name: { ja: "成長ポーション", en: "Growth Potion" },
     machineId: "advanced_blender",
     timeSec: 6,
     inputs: [{ itemId: "chamomile_powder", amount: 2 }, { itemId: "clay_powder", amount: 6 }, { itemId: "brine", amount: 80 }],
@@ -567,7 +567,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "healing_potion",
-    name: { ja: "Healing Potion", en: "Healing Potion" },
+    name: { ja: "回復ポーション", en: "Healing Potion" },
     machineId: "assembler",
     timeSec: 6,
     inputs: [{ itemId: "sage_powder", amount: 6 }, { itemId: "flax_fiber", amount: 6 }],
@@ -577,7 +577,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "impure_gold_dust",
-    name: { ja: "Impure Gold Dust", en: "Impure Gold Dust" },
+    name: { ja: "不純砂金", en: "Impure Gold Dust" },
     machineId: "refiner",
     timeSec: 10,
     inputs: [{ itemId: "crude_gold_dust", amount: 2 }],
@@ -587,7 +587,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "impure_silver_powder",
-    name: { ja: "Impure Silver Powder", en: "Impure Silver Powder" },
+    name: { ja: "不純銀粉", en: "Impure Silver Powder" },
     machineId: "refiner",
     timeSec: 8,
     inputs: [{ itemId: "crude_silver_powder", amount: 2 }],
@@ -597,7 +597,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "iron_ingot",
-    name: { ja: "Iron Ingot", en: "Iron Ingot" },
+    name: { ja: "鉄インゴット", en: "Iron Ingot" },
     machineId: "iron_smelter",
     timeSec: 600,
     inputs: [{ itemId: "iron_ore", amount: 1 }],
@@ -607,7 +607,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "iron_ingot_2",
-    name: { ja: "Iron Ingot 2", en: "Iron Ingot 2" },
+    name: { ja: "鉄インゴット", en: "Iron Ingot 2" },
     machineId: "crucible",
     timeSec: 6,
     inputs: [{ itemId: "iron_sand", amount: 1 }],
@@ -617,7 +617,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "iron_nails",
-    name: { ja: "Iron Nails", en: "Iron Nails" },
+    name: { ja: "鉄釘", en: "Iron Nails" },
     machineId: "processor",
     timeSec: 12,
     inputs: [{ itemId: "iron_ingot", amount: 1 }],
@@ -627,7 +627,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "iron_sand",
-    name: { ja: "Iron Sand", en: "Iron Sand" },
+    name: { ja: "砂鉄", en: "Iron Sand" },
     machineId: "grinder",
     timeSec: 30,
     inputs: [{ itemId: "iron_ingot", amount: 1 }],
@@ -637,7 +637,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "jupiter",
-    name: { ja: "Jupiter", en: "Jupiter" },
+    name: { ja: "木星", en: "Jupiter" },
     machineId: "shaper",
     timeSec: 600,
     inputs: [{ itemId: "plank", amount: 1200 }, { itemId: "small_wooden_gear", amount: 1800 }, { itemId: "wooden_pulley", amount: 600 }],
@@ -647,7 +647,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "lapis_lazuli_and_shattered_crystal",
-    name: { ja: "Lapis Lazuli and Shattered Crystal", en: "Lapis Lazuli and Shattered Crystal" },
+    name: { ja: "ラピスラズリと砕けた晶石と粗悪なチップ", en: "Lapis Lazuli and Shattered Crystal" },
     machineId: "advanced_athanor",
     timeSec: 12,
     inputs: [{ itemId: "impure_silver_powder", amount: 1 }, { itemId: "crude_shard", amount: 4 }, { itemId: "gentian_powder", amount: 4 }],
@@ -657,7 +657,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "large_wooden_gear",
-    name: { ja: "Large Wooden Gear", en: "Large Wooden Gear" },
+    name: { ja: "木製の大歯車", en: "Large Wooden Gear" },
     machineId: "grinder",
     timeSec: 6,
     inputs: [{ itemId: "plank", amount: 1 }],
@@ -667,7 +667,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "lavender",
-    name: { ja: "Lavender", en: "Lavender" },
+    name: { ja: "ラベンダー", en: "Lavender" },
     machineId: "nursery",
     timeSec: 1440,
     inputs: [{ itemId: "lavender_seeds", amount: 1 }],
@@ -677,7 +677,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "lavender_essential_oil",
-    name: { ja: "Lavender Essential Oil", en: "Lavender Essential Oil" },
+    name: { ja: "ラベンダー精油", en: "Lavender Essential Oil" },
     machineId: "alembic",
     timeSec: 3,
     inputs: [{ itemId: "lavender", amount: 3 }, { itemId: "linseed_oil", amount: 300 }],
@@ -687,7 +687,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "limewater",
-    name: { ja: "Limewater", en: "Limewater" },
+    name: { ja: "石灰水", en: "Limewater" },
     machineId: "extractor",
     timeSec: 3,
     inputs: [{ itemId: "quicklime_powder", amount: 1 }],
@@ -697,7 +697,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "linen",
-    name: { ja: "Linen", en: "Linen" },
+    name: { ja: "麻布", en: "Linen" },
     machineId: "assembler",
     timeSec: 5,
     inputs: [{ itemId: "linen_thread", amount: 10 }],
@@ -707,7 +707,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "linen_rope",
-    name: { ja: "Linen Rope", en: "Linen Rope" },
+    name: { ja: "麻縄", en: "Linen Rope" },
     machineId: "processor",
     timeSec: 6,
     inputs: [{ itemId: "linen_thread", amount: 2 }],
@@ -717,7 +717,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "linen_thread",
-    name: { ja: "Linen Thread", en: "Linen Thread" },
+    name: { ja: "麻糸", en: "Linen Thread" },
     machineId: "processor",
     timeSec: 3,
     inputs: [{ itemId: "flax_fiber", amount: 3 }],
@@ -727,7 +727,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "linseed_oil",
-    name: { ja: "Linseed Oil", en: "Linseed Oil" },
+    name: { ja: "亜麻仁油", en: "Linseed Oil" },
     machineId: "extractor",
     timeSec: 2,
     inputs: [{ itemId: "flax", amount: 1 }],
@@ -737,7 +737,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "luna",
-    name: { ja: "Luna", en: "Luna" },
+    name: { ja: "ルナ", en: "Luna" },
     machineId: "advanced_shaper",
     timeSec: 600,
     inputs: [{ itemId: "steel_ingot", amount: 75 }, { itemId: "bronze_ingot", amount: 75 }, { itemId: "copper_ingot", amount: 75 }, { itemId: "silver_ingot", amount: 75 }, { itemId: "gold_ingot", amount: 75 }, { itemId: "moon_tear", amount: 75 }],
@@ -747,7 +747,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "malachite_and_crude_shard",
-    name: { ja: "Malachite and Crude Shard", en: "Malachite and Crude Shard" },
+    name: { ja: "マラカイトと粗悪なチップ", en: "Malachite and Crude Shard" },
     machineId: "athanor",
     timeSec: 12,
     inputs: [{ itemId: "impure_copper_powder", amount: 2 }, { itemId: "clay_powder", amount: 6 }],
@@ -757,7 +757,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "mars",
-    name: { ja: "Mars", en: "Mars" },
+    name: { ja: "火星", en: "Mars" },
     machineId: "shaper",
     timeSec: 300,
     inputs: [{ itemId: "iron_nails", amount: 600 }, { itemId: "steel_gear", amount: 300 }, { itemId: "bronze_rivet", amount: 600 }, { itemId: "copper_bearing", amount: 300 }],
@@ -767,7 +767,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "mercury",
-    name: { ja: "Mercury", en: "Mercury" },
+    name: { ja: "水星", en: "Mercury" },
     machineId: "advanced_shaper",
     timeSec: 600,
     inputs: [{ itemId: "turquoise", amount: 100 }, { itemId: "malachite", amount: 100 }, { itemId: "topaz", amount: 100 }, { itemId: "obsidian", amount: 100 }, { itemId: "lapis_lazuli", amount: 100 }, { itemId: "quicksilver", amount: 1000 }],
@@ -777,7 +777,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "moon_tear",
-    name: { ja: "Moon Tear", en: "Moon Tear" },
+    name: { ja: "月の涙", en: "Moon Tear" },
     machineId: "advanced_alembic",
     timeSec: 8,
     inputs: [{ itemId: "star_dust", amount: 16 }, { itemId: "fairy_tear", amount: 10 }],
@@ -787,7 +787,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "moonlit_soap",
-    name: { ja: "Moonlit Soap", en: "Moonlit Soap" },
+    name: { ja: "月光石鹸", en: "Moonlit Soap" },
     machineId: "blender",
     timeSec: 10,
     inputs: [{ itemId: "perfumed_soap_powder", amount: 2 }, { itemId: "moon_tear", amount: 5 }],
@@ -797,7 +797,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "mortar",
-    name: { ja: "Mortar", en: "Mortar" },
+    name: { ja: "乳鉢", en: "Mortar" },
     machineId: "processor",
     timeSec: 20,
     inputs: [{ itemId: "stone", amount: 5 }],
@@ -807,7 +807,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "oblivion_essence",
-    name: { ja: "Oblivion Essence", en: "Oblivion Essence" },
+    name: { ja: "消滅エッセンス", en: "Oblivion Essence" },
     machineId: "paradox_crucible",
     timeSec: 8.7,
     inputs: [{ itemId: "sage_seeds", amount: 1 }],
@@ -817,7 +817,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "obsidian_and_volcanic_ash",
-    name: { ja: "Obsidian and Volcanic Ash", en: "Obsidian and Volcanic Ash" },
+    name: { ja: "黒曜石と火山灰", en: "Obsidian and Volcanic Ash" },
     machineId: "advanced_athanor",
     timeSec: 6,
     inputs: [{ itemId: "oblivion_essence", amount: 1 }, { itemId: "shattered_crystal", amount: 1 }, { itemId: "unstable_catalyst", amount: 1 }],
@@ -827,7 +827,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "panacea_potion",
-    name: { ja: "Panacea Potion", en: "Panacea Potion" },
+    name: { ja: "万能薬", en: "Panacea Potion" },
     machineId: "advanced_blender",
     timeSec: 6,
     inputs: [{ itemId: "fertile_catalyst", amount: 3 }, { itemId: "blast_potion", amount: 3 }, { itemId: "aqua_vitae", amount: 12 }],
@@ -837,7 +837,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "perfect_diamond",
-    name: { ja: "Perfect Diamond", en: "Perfect Diamond" },
+    name: { ja: "完璧なダイヤモンド", en: "Perfect Diamond" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "diamond", amount: 2 }],
@@ -847,7 +847,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "perfumed_soap",
-    name: { ja: "Perfumed Soap", en: "Perfumed Soap" },
+    name: { ja: "香り石鹸", en: "Perfumed Soap" },
     machineId: "blender",
     timeSec: 8,
     inputs: [{ itemId: "soap_powder", amount: 4 }, { itemId: "lavender_essential_oil", amount: 30 }],
@@ -857,7 +857,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "perfumed_soap_powder",
-    name: { ja: "Perfumed Soap Powder", en: "Perfumed Soap Powder" },
+    name: { ja: "粉末香り石鹸", en: "Perfumed Soap Powder" },
     machineId: "grinder",
     timeSec: 8,
     inputs: [{ itemId: "perfumed_soap", amount: 1 }],
@@ -867,7 +867,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "philosophers_stone",
-    name: { ja: "Philosophers Stone", en: "Philosophers Stone" },
+    name: { ja: "賢者の石", en: "Philosophers Stone" },
     machineId: "cauldron",
     timeSec: 60,
     inputs: [{ itemId: "ruby", amount: 1 }, { itemId: "sapphire", amount: 1 }, { itemId: "emerald", amount: 1 }],
@@ -877,7 +877,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "plank_from_logs",
-    name: { ja: "Plank", en: "Plank" },
+    name: { ja: "木材", en: "Plank" },
     machineId: "table_saw",
     timeSec: 400,
     inputs: [{ itemId: "logs", amount: 1 }],
@@ -887,7 +887,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "plant_ash",
-    name: { ja: "Plant Ash", en: "Plant Ash" },
+    name: { ja: "草木灰", en: "Plant Ash" },
     machineId: "crucible",
     timeSec: 3,
     inputs: [{ itemId: "sage", amount: 1 }],
@@ -897,7 +897,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "pocket_watch",
-    name: { ja: "Pocket Watch", en: "Pocket Watch" },
+    name: { ja: "懐中時計", en: "Pocket Watch" },
     machineId: "advanced_assembler",
     timeSec: 12,
     inputs: [{ itemId: "steel_gear", amount: 2 }, { itemId: "copper_bearing", amount: 2 }, { itemId: "glass", amount: 6 }],
@@ -907,7 +907,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "polished_crystal",
-    name: { ja: "Polished Crystal", en: "Polished Crystal" },
+    name: { ja: "研磨晶石", en: "Polished Crystal" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "crude_crystal", amount: 2 }],
@@ -917,7 +917,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "pure_gold_dust",
-    name: { ja: "Pure Gold Dust", en: "Pure Gold Dust" },
+    name: { ja: "純粋砂金", en: "Pure Gold Dust" },
     machineId: "refiner",
     timeSec: 10,
     inputs: [{ itemId: "gold_dust", amount: 2 }],
@@ -927,7 +927,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "pure_gold_dust_2",
-    name: { ja: "Pure Gold Dust 2", en: "Pure Gold Dust 2" },
+    name: { ja: "純粋砂金", en: "Pure Gold Dust 2" },
     machineId: "grinder",
     timeSec: 40,
     inputs: [{ itemId: "gold_ingot", amount: 1 }],
@@ -937,7 +937,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "quicklime",
-    name: { ja: "Quicklime", en: "Quicklime" },
+    name: { ja: "生石灰", en: "Quicklime" },
     machineId: "crucible",
     timeSec: 9,
     inputs: [{ itemId: "stone", amount: 1 }],
@@ -947,7 +947,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "quicklime_powder",
-    name: { ja: "Quicklime Powder", en: "Quicklime Powder" },
+    name: { ja: "石灰粉", en: "Quicklime Powder" },
     machineId: "grinder",
     timeSec: 9,
     inputs: [{ itemId: "quicklime", amount: 1 }],
@@ -957,7 +957,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "quicksilver",
-    name: { ja: "Quicksilver", en: "Quicksilver" },
+    name: { ja: "水銀", en: "Quicksilver" },
     machineId: "advanced_alembic",
     timeSec: 8,
     inputs: [{ itemId: "crude_silver_powder", amount: 1 }, { itemId: "vitality_essence", amount: 1 }, { itemId: "sulfuric_acid", amount: 80 }],
@@ -967,7 +967,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "redcurrant",
-    name: { ja: "Redcurrant", en: "Redcurrant" },
+    name: { ja: "レッドカラント", en: "Redcurrant" },
     machineId: "nursery",
     timeSec: 900,
     inputs: [{ itemId: "redcurrant_seeds", amount: 1 }],
@@ -977,7 +977,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "refined_sand_1",
-    name: { ja: "Refined Sand 1", en: "Refined Sand 1" },
+    name: { ja: "精錬砂1", en: "Refined Sand 1" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "sand", amount: 2 }],
@@ -987,7 +987,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "refined_sand_2",
-    name: { ja: "Refined Sand 2", en: "Refined Sand 2" },
+    name: { ja: "精錬砂2", en: "Refined Sand 2" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "refined_sand_1", amount: 2 }],
@@ -997,7 +997,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "refined_sand_3",
-    name: { ja: "Refined Sand 3", en: "Refined Sand 3" },
+    name: { ja: "精錬砂3", en: "Refined Sand 3" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "refined_sand_2", amount: 2 }],
@@ -1007,7 +1007,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "refined_sand_4",
-    name: { ja: "Refined Sand 4", en: "Refined Sand 4" },
+    name: { ja: "精錬砂4", en: "Refined Sand 4" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "refined_sand_3", amount: 2 }],
@@ -1017,7 +1017,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "refined_sand_5",
-    name: { ja: "Refined Sand 5", en: "Refined Sand 5" },
+    name: { ja: "精錬砂5", en: "Refined Sand 5" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "refined_sand_4", amount: 2 }],
@@ -1027,7 +1027,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "resonant_catalyst",
-    name: { ja: "Resonant Catalyst", en: "Resonant Catalyst" },
+    name: { ja: "共振触媒", en: "Resonant Catalyst" },
     machineId: "advanced_blender",
     timeSec: 8,
     inputs: [{ itemId: "fertile_catalyst", amount: 1 }, { itemId: "volcanic_ash", amount: 1 }, { itemId: "aqua_vitae", amount: 12 }],
@@ -1037,7 +1037,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "ruby",
-    name: { ja: "Ruby", en: "Ruby" },
+    name: { ja: "ルビー", en: "Ruby" },
     machineId: "cauldron",
     timeSec: 30.9,
     inputs: [{ itemId: "diamond", amount: 1 }, { itemId: "pure_gold_dust", amount: 1 }, { itemId: "resonant_catalyst", amount: 1 }],
@@ -1047,7 +1047,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "sage",
-    name: { ja: "Sage", en: "Sage" },
+    name: { ja: "セージ", en: "Sage" },
     machineId: "nursery",
     timeSec: 540,
     inputs: [{ itemId: "sage_seeds", amount: 1 }],
@@ -1057,7 +1057,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "sage_powder",
-    name: { ja: "Sage Powder", en: "Sage Powder" },
+    name: { ja: "セージの粉末", en: "Sage Powder" },
     machineId: "grinder",
     timeSec: 3,
     inputs: [{ itemId: "sage", amount: 1 }],
@@ -1067,7 +1067,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "salt_and_sand",
-    name: { ja: "Salt and Sand", en: "Salt and Sand" },
+    name: { ja: "塩と砂", en: "Salt and Sand" },
     machineId: "stone_crusher",
     timeSec: 600,
     inputs: [{ itemId: "rock_salt", amount: 1 }],
@@ -1077,7 +1077,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "salt_and_sand_2",
-    name: { ja: "Salt and Sand 2", en: "Salt and Sand 2" },
+    name: { ja: "塩と砂", en: "Salt and Sand 2" },
     machineId: "athanor",
     timeSec: 6,
     inputs: [{ itemId: "charcoal_powder", amount: 2 }, { itemId: "quicklime_powder", amount: 4 }],
@@ -1087,7 +1087,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "sand",
-    name: { ja: "Sand", en: "Sand" },
+    name: { ja: "砂", en: "Sand" },
     machineId: "grinder",
     timeSec: 12,
     inputs: [{ itemId: "stone", amount: 1 }],
@@ -1097,7 +1097,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "sapphire",
-    name: { ja: "Sapphire", en: "Sapphire" },
+    name: { ja: "サファイア", en: "Sapphire" },
     machineId: "cauldron",
     timeSec: 38.2,
     inputs: [{ itemId: "perfect_diamond", amount: 1 }, { itemId: "world_tree_core", amount: 1 }, { itemId: "unstable_catalyst", amount: 1 }],
@@ -1107,7 +1107,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "saturn",
-    name: { ja: "Saturn", en: "Saturn" },
+    name: { ja: "土星", en: "Saturn" },
     machineId: "shaper",
     timeSec: 300,
     inputs: [{ itemId: "salt", amount: 600 }, { itemId: "brick", amount: 600 }, { itemId: "glass", amount: 600 }],
@@ -1117,7 +1117,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "shattered_crystal",
-    name: { ja: "Shattered Crystal", en: "Shattered Crystal" },
+    name: { ja: "砕けた晶石", en: "Shattered Crystal" },
     machineId: "refiner",
     timeSec: 3,
     inputs: [{ itemId: "dull_shard", amount: 2 }],
@@ -1127,7 +1127,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "silver_amulet",
-    name: { ja: "Silver Amulet", en: "Silver Amulet" },
+    name: { ja: "銀の護符", en: "Silver Amulet" },
     machineId: "assembler",
     timeSec: 10,
     inputs: [{ itemId: "silver_ingot", amount: 2 }, { itemId: "lapis_lazuli", amount: 1 }],
@@ -1137,7 +1137,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "silver_coin",
-    name: { ja: "Silver Coin", en: "Silver Coin" },
+    name: { ja: "銀貨", en: "Silver Coin" },
     machineId: "processor",
     timeSec: 16,
     inputs: [{ itemId: "silver_ingot", amount: 1 }],
@@ -1147,7 +1147,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "silver_ingot",
-    name: { ja: "Silver Ingot", en: "Silver Ingot" },
+    name: { ja: "銀インゴット", en: "Silver Ingot" },
     machineId: "crucible",
     timeSec: 16,
     inputs: [{ itemId: "silver_powder", amount: 1 }],
@@ -1157,7 +1157,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "silver_ingot_2",
-    name: { ja: "Silver Ingot 2", en: "Silver Ingot 2" },
+    name: { ja: "銀インゴット", en: "Silver Ingot 2" },
     machineId: "kiln",
     timeSec: 16,
     inputs: [{ itemId: "silver_coin", amount: 6 }],
@@ -1167,7 +1167,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "silver_powder",
-    name: { ja: "Silver Powder", en: "Silver Powder" },
+    name: { ja: "銀粉", en: "Silver Powder" },
     machineId: "refiner",
     timeSec: 8,
     inputs: [{ itemId: "impure_silver_powder", amount: 2 }],
@@ -1177,7 +1177,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "silver_powder_2",
-    name: { ja: "Silver Powder 2", en: "Silver Powder 2" },
+    name: { ja: "銀粉", en: "Silver Powder 2" },
     machineId: "grinder",
     timeSec: 16,
     inputs: [{ itemId: "silver_ingot", amount: 1 }],
@@ -1187,7 +1187,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "silver_powder_and_crude_silver_powder",
-    name: { ja: "Silver Powder and Crude Silver Powder", en: "Silver Powder and Crude Silver Powder" },
+    name: { ja: "銀粉と粗悪な銀粉", en: "Silver Powder and Crude Silver Powder" },
     machineId: "advanced_athanor",
     timeSec: 6.4,
     inputs: [{ itemId: "copper_powder", amount: 2 }, { itemId: "unstable_catalyst", amount: 2 }, { itemId: "black_powder", amount: 2 }],
@@ -1197,7 +1197,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "small_wooden_gear",
-    name: { ja: "Small Wooden Gear", en: "Small Wooden Gear" },
+    name: { ja: "木製の小歯車", en: "Small Wooden Gear" },
     machineId: "processor",
     timeSec: 12,
     inputs: [{ itemId: "large_wooden_gear", amount: 1 }],
@@ -1207,7 +1207,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "soap",
-    name: { ja: "Soap", en: "Soap" },
+    name: { ja: "石鹸", en: "Soap" },
     machineId: "blender",
     timeSec: 3,
     inputs: [{ itemId: "plant_ash", amount: 3 }, { itemId: "linseed_oil", amount: 200 }],
@@ -1217,7 +1217,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "soap_powder",
-    name: { ja: "Soap Powder", en: "Soap Powder" },
+    name: { ja: "粉末石鹸", en: "Soap Powder" },
     machineId: "grinder",
     timeSec: 6,
     inputs: [{ itemId: "soap", amount: 1 }],
@@ -1227,7 +1227,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "sol",
-    name: { ja: "Sol", en: "Sol" },
+    name: { ja: "ソル", en: "Sol" },
     machineId: "arcane_shaper",
     timeSec: 300,
     inputs: [{ itemId: "jupiter", amount: 1 }, { itemId: "saturn", amount: 1 }, { itemId: "mars", amount: 1 }, { itemId: "venus", amount: 1 }, { itemId: "mercury", amount: 1 }, { itemId: "luna", amount: 1 }, { itemId: "perfect_diamond", amount: 25 }, { itemId: "eternal_catalyst", amount: 5 }, { itemId: "world_tree_core", amount: 5 }],
@@ -1237,7 +1237,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "star_dust",
-    name: { ja: "Star Dust", en: "Star Dust" },
+    name: { ja: "星の砂", en: "Star Dust" },
     machineId: "arcane_processor",
     timeSec: 300,
     inputs: [{ itemId: "jupiter", amount: 1 }, { itemId: "saturn", amount: 1 }, { itemId: "mars", amount: 1 }],
@@ -1247,7 +1247,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "steel_gear",
-    name: { ja: "Steel Gear", en: "Steel Gear" },
+    name: { ja: "鋼の歯車", en: "Steel Gear" },
     machineId: "processor",
     timeSec: 16,
     inputs: [{ itemId: "steel_ingot", amount: 1 }],
@@ -1257,7 +1257,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "steel_ingot_and_iron_ingot",
-    name: { ja: "Steel Ingot and Iron Ingot", en: "Steel Ingot and Iron Ingot" },
+    name: { ja: "鋼インゴットと鉄インゴット", en: "Steel Ingot and Iron Ingot" },
     machineId: "athanor",
     timeSec: 4,
     inputs: [{ itemId: "iron_ingot", amount: 1 }, { itemId: "coke_powder", amount: 1 }],
@@ -1267,7 +1267,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "stone",
-    name: { ja: "Stone", en: "Stone" },
+    name: { ja: "砕石", en: "Stone" },
     machineId: "stone_crusher",
     timeSec: 450,
     inputs: [{ itemId: "limestone", amount: 1 }],
@@ -1277,7 +1277,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "stone_and_coal",
-    name: { ja: "Stone and Coal", en: "Stone and Coal" },
+    name: { ja: "砕石と石炭と砂鉄など", en: "Stone and Coal" },
     machineId: "stone_crusher",
     timeSec: 3000,
     inputs: [{ itemId: "meteorite", amount: 1 }],
@@ -1287,7 +1287,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "sulfur_and_iron_ingot",
-    name: { ja: "Sulfur and Iron Ingot", en: "Sulfur and Iron Ingot" },
+    name: { ja: "硫黄と鉄インゴット", en: "Sulfur and Iron Ingot" },
     machineId: "iron_smelter",
     timeSec: 960,
     inputs: [{ itemId: "pyrite_ore", amount: 1 }],
@@ -1297,7 +1297,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "sulfur_powder",
-    name: { ja: "Sulfur Powder", en: "Sulfur Powder" },
+    name: { ja: "硫黄粉", en: "Sulfur Powder" },
     machineId: "grinder",
     timeSec: 6,
     inputs: [{ itemId: "sulfur", amount: 1 }],
@@ -1307,7 +1307,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "sulfuric_acid",
-    name: { ja: "Sulfuric Acid", en: "Sulfuric Acid" },
+    name: { ja: "硫酸", en: "Sulfuric Acid" },
     machineId: "alembic",
     timeSec: 4,
     inputs: [{ itemId: "sulfur_powder", amount: 1 }, { itemId: "brine", amount: 60 }],
@@ -1317,7 +1317,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "topaz",
-    name: { ja: "Topaz", en: "Topaz" },
+    name: { ja: "トパーズ", en: "Topaz" },
     machineId: "blender",
     timeSec: 12,
     inputs: [{ itemId: "crude_shard", amount: 1 }, { itemId: "sulfuric_acid", amount: 30 }],
@@ -1327,7 +1327,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "transformation_potion",
-    name: { ja: "Transformation Potion", en: "Transformation Potion" },
+    name: { ja: "変化ポーション", en: "Transformation Potion" },
     machineId: "assembler",
     timeSec: 6,
     inputs: [{ itemId: "coke_powder", amount: 2 }, { itemId: "gloom_spores", amount: 1 }],
@@ -1337,7 +1337,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "turquoise",
-    name: { ja: "Turquoise", en: "Turquoise" },
+    name: { ja: "ターコイズ", en: "Turquoise" },
     machineId: "assembler",
     timeSec: 12,
     inputs: [{ itemId: "healing_potion", amount: 2 }, { itemId: "sand", amount: 12 }],
@@ -1347,7 +1347,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "unstable_catalyst",
-    name: { ja: "Unstable Catalyst", en: "Unstable Catalyst" },
+    name: { ja: "不安定な触媒", en: "Unstable Catalyst" },
     machineId: "advanced_assembler",
     timeSec: 4,
     inputs: [{ itemId: "chamomile_powder", amount: 1 }, { itemId: "gloom_spores", amount: 1 }, { itemId: "sulfur_powder", amount: 1 }],
@@ -1357,7 +1357,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "venus",
-    name: { ja: "Venus", en: "Venus" },
+    name: { ja: "金星", en: "Venus" },
     machineId: "advanced_shaper",
     timeSec: 1200,
     inputs: [{ itemId: "healing_potion", amount: 200 }, { itemId: "vitality_potion", amount: 200 }, { itemId: "transformation_potion", amount: 200 }, { itemId: "growth_potion", amount: 200 }, { itemId: "blast_potion", amount: 200 }, { itemId: "sulfuric_acid", amount: 4000 }],
@@ -1367,7 +1367,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "vitality_essence",
-    name: { ja: "Vitality Essence", en: "Vitality Essence" },
+    name: { ja: "生命のエッセンス", en: "Vitality Essence" },
     machineId: "paradox_crucible",
     timeSec: 5.1,
     inputs: [{ itemId: "oblivion_essence", amount: 1 }],
@@ -1377,7 +1377,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "vitality_potion",
-    name: { ja: "Vitality Potion", en: "Vitality Potion" },
+    name: { ja: "活力ポーション", en: "Vitality Potion" },
     machineId: "blender",
     timeSec: 8,
     inputs: [{ itemId: "quicklime_powder", amount: 4 }, { itemId: "fruit_wine", amount: 80 }],
@@ -1387,7 +1387,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "volcanic_ash",
-    name: { ja: "Volcanic Ash", en: "Volcanic Ash" },
+    name: { ja: "火山灰", en: "Volcanic Ash" },
     machineId: "grinder",
     timeSec: 24,
     inputs: [{ itemId: "obsidian", amount: 1 }],
@@ -1397,7 +1397,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "wooden_pulley",
-    name: { ja: "Wooden Pulley", en: "Wooden Pulley" },
+    name: { ja: "木製滑車", en: "Wooden Pulley" },
     machineId: "assembler",
     timeSec: 4,
     inputs: [{ itemId: "plank", amount: 2 }, { itemId: "linen_rope", amount: 1 }],
@@ -1407,7 +1407,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "world_tree_leaf_and_world_tree_core",
-    name: { ja: "World Tree Leaf and World Tree Core", en: "World Tree Leaf and World Tree Core" },
+    name: { ja: "世界樹の葉と世界樹の核", en: "World Tree Leaf and World Tree Core" },
     machineId: "world_tree_nursery",
     timeSec: 300,
     inputs: [],
@@ -1417,7 +1417,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: "yeast_powder",
-    name: { ja: "Yeast Powder", en: "Yeast Powder" },
+    name: { ja: "酵母粉末", en: "Yeast Powder" },
     machineId: "blender",
     timeSec: 4,
     inputs: [{ itemId: "soap_powder", amount: 2 }, { itemId: "fruit_wine", amount: 40 }],
