@@ -195,209 +195,280 @@ th { color: var(--muted); font-weight: 600; background: rgba(255, 255, 255, 0.02
 }
 
 
-
-/* v0.1.11 layout reset */
-.main-layout:not(.main-layout-full) {
-  grid-template-columns: 36rem minmax(0, 1fr) !important;
-}
-
-.side-pane {
-  overflow-x: hidden !important;
-}
-
-.target-panel-v0111 {
-  min-width: 0;
-}
-
-.target-list-v0111 {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.target-card-v0111 {
-  position: relative;
-  padding: 0.75rem 1.85rem 0.75rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.target-row-v0111 {
-  display: grid;
-  grid-template-columns: auto 10.5rem auto 5.8rem 6.4rem;
-  gap: 0.45rem;
-  align-items: center;
-}
-
-.target-label-v0111 {
-  color: var(--muted);
-  font-size: 0.92rem;
-  white-space: nowrap;
-}
-
-.target-item-select-v0111 {
-  width: 10.5rem;
-  min-width: 10.5rem;
-}
-
-.target-value-input-v0111 {
-  width: 5.8rem;
-  min-width: 5.8rem;
-}
-
-.target-mode-select-v0111 {
-  width: 6.4rem;
-  min-width: 6.4rem;
-}
-
-.target-remove-v0111 {
-  position: absolute;
-  top: 0.28rem;
-  right: 0.38rem;
-  width: 1.35rem;
-  height: 1.35rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 1.35rem;
-  line-height: 1;
-}
-
-.target-remove-v0111:hover {
-  color: var(--danger);
-  border: 0;
-  background: rgba(255, 119, 119, 0.08);
-}
-
-.settings-page-v0111 {
-  display: grid !important;
-  grid-template-columns: 24rem minmax(0, 1fr) !important;
-  gap: 1rem !important;
-  align-items: start !important;
-  width: 100% !important;
-  min-width: 0 !important;
-}
-
-.recipe-settings-v0111 {
-  min-height: calc(100vh - 11rem);
-  max-height: calc(100vh - 8rem);
-  overflow: hidden;
-}
-
-.recipe-settings-list-v0111 {
-  display: grid;
-  gap: 0;
-  max-height: calc(100vh - 16rem);
-  overflow: auto;
-  padding-right: 0.25rem;
-}
-
-.recipe-setting-row-v0111 {
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.85rem 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.recipe-setting-row-v0111:first-child {
-  padding-top: 0;
-}
-
-.settings-main-v0111 {
-  display: grid !important;
-  grid-template-columns: repeat(auto-fill, minmax(20rem, 22rem)) !important;
-  gap: 1rem !important;
-  align-items: start !important;
-  justify-content: start !important;
-  min-width: 0 !important;
-  width: 100% !important;
-}
-
-.settings-card-v0111 {
-  width: 100% !important;
-  min-height: 12.5rem;
-}
-
-.settings-abilities-v0111 {
-  grid-column: span 2;
-  width: 100% !important;
-  min-height: 18rem;
-}
-
-.settings-card-v0111 h2,
-.settings-abilities-v0111 h2,
-.recipe-settings-v0111 h2 {
-  margin: 0 0 1rem;
-}
-
-.settings-fields-v0111 {
-  display: grid;
-  gap: 1rem;
-  align-content: start;
-}
-
-.settings-field-v0111 {
-  display: grid;
-  gap: 0.45rem;
-  align-content: start;
-}
-
-.settings-label-v0111 {
-  color: var(--muted);
-  font-size: 0.92rem;
-}
-
-.ability-grid-v0111 {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem 1rem;
-}
-
-@media (max-width: 1200px) {
+  
+  /* v0.1.12 layout reset */
   .main-layout:not(.main-layout-full) {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: 34rem minmax(0, 1fr) !important;
   }
-
+  
   .side-pane {
-    overflow-x: auto !important;
+    overflow-x: hidden !important;
   }
-
-  .settings-page-v0111 {
-    grid-template-columns: 1fr !important;
-  }
-
-  .recipe-settings-v0111 {
-    min-height: auto;
-    max-height: none;
-  }
-
-  .recipe-settings-list-v0111 {
-    max-height: 26rem;
-  }
-}
-
-@media (max-width: 800px) {
-  .target-row-v0111 {
-    grid-template-columns: 1fr;
-  }
-
-  .target-item-select-v0111,
-  .target-value-input-v0111,
-  .target-mode-select-v0111 {
-    width: 100%;
+  
+  .target-panel-v0112 {
     min-width: 0;
   }
-
-  .settings-main-v0111 {
-    grid-template-columns: 1fr !important;
+  
+  .target-panel-header-v0112 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
   }
-
-  .settings-abilities-v0111 {
-    grid-column: auto;
+  
+  .target-panel-header-v0112 h2 {
+    margin: 0;
+    line-height: 2.35rem;
   }
-
-  .ability-grid-v0111 {
-    grid-template-columns: 1fr;
+  
+  .target-add-v0112 {
+    min-height: 2.35rem;
+    padding: 0 0.9rem;
   }
-}
+  
+  .target-list-v0112 {
+    display: grid;
+    gap: 0.75rem;
+  }
+  
+  .target-card-v0112 {
+    position: relative;
+    padding: 0.75rem 1.7rem 0.75rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+  
+  .target-row-v0112 {
+    display: grid;
+    grid-template-columns: auto 10rem auto 5.4rem 6.1rem;
+    gap: 0.42rem;
+    align-items: center;
+  }
+  
+  .target-label-v0112 {
+    color: var(--muted);
+    font-size: 0.92rem;
+    white-space: nowrap;
+  }
+  
+  .target-item-select-v0112 {
+    width: 10rem;
+    min-width: 10rem;
+  }
+  
+  .target-value-input-v0112 {
+    width: 5.4rem;
+    min-width: 5.4rem;
+  }
+  
+  .target-mode-select-v0112 {
+    width: 6.1rem;
+    min-width: 6.1rem;
+  }
+  
+  .target-remove-v0112 {
+    position: absolute;
+    top: 0.28rem;
+    right: 0.35rem;
+    width: 1.28rem;
+    height: 1.28rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 1.3rem;
+    line-height: 1;
+  }
+  
+  .target-remove-v0112:hover {
+    color: var(--danger);
+    border: 0;
+    background: rgba(255, 119, 119, 0.08);
+  }
+  
+  .planner-node-surplus {
+    border-color: rgba(255, 210, 125, 0.9) !important;
+    background: linear-gradient(180deg, rgba(68, 52, 22, 0.98), rgba(32, 26, 16, 0.98)) !important;
+    box-shadow: 0 0 0 1px rgba(255, 210, 125, 0.22), 0 10px 20px rgba(0,0,0,0.24) !important;
+  }
+  
+  .planner-node-surplus .planner-node-title::after {
+    content: ' surplus';
+    margin-left: 0.45rem;
+    color: var(--warning);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  
+  .settings-page-v0112 {
+    display: grid !important;
+    grid-template-columns: 24rem minmax(0, 1fr) !important;
+    gap: 1rem !important;
+    align-items: start !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  
+  .recipe-settings-v0112 {
+    min-height: calc(100vh - 11rem);
+    max-height: calc(100vh - 8rem);
+    overflow: hidden;
+  }
+  
+  .recipe-settings-list-v0112 {
+    display: grid;
+    gap: 0;
+    max-height: calc(100vh - 16rem);
+    overflow: auto;
+    padding-right: 0.25rem;
+  }
+  
+  .recipe-setting-row-v0112 {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  
+  .recipe-setting-row-v0112:first-child {
+    padding-top: 0;
+  }
+  
+  .settings-main-v0112 {
+    display: grid !important;
+    grid-template-columns: minmax(28rem, 38rem) minmax(18rem, 24rem);
+    gap: 1rem !important;
+    align-items: start !important;
+    justify-content: start !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  
+  .settings-calc-display-v0112 {
+    min-height: 13rem;
+  }
+  
+  .settings-calc-display-grid-v0112 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(12rem, 1fr));
+    gap: 1rem;
+    align-items: end;
+  }
+  
+  .settings-data-v0112 {
+    min-height: 13rem;
+  }
+  
+  .settings-abilities-v0112 {
+    grid-column: 1 / -1;
+    width: min(100%, 47rem);
+    min-height: 13rem;
+  }
+  
+  .settings-calc-display-v0112 h2,
+  .settings-data-v0112 h2,
+  .settings-abilities-v0112 h2,
+  .recipe-settings-v0112 h2 {
+    margin: 0 0 1rem;
+  }
+  
+  .settings-fields-v0112 {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+  }
+  
+  .settings-field-v0112 {
+    display: grid;
+    gap: 0.45rem;
+    align-content: start;
+  }
+  
+  .settings-label-v0112 {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+  
+  .settings-checkbox-v0112 {
+    align-self: center;
+    margin-top: 1.15rem;
+  }
+  
+  .ability-grid-v0112 {
+    display: grid;
+    grid-template-columns: repeat(2, 13.5rem);
+    gap: 0.65rem 1rem;
+  }
+  
+  .ability-row-v0112 {
+    display: grid;
+    grid-template-columns: minmax(6rem, 1fr) 4.2rem;
+    gap: 0.55rem;
+    align-items: center;
+  }
+  
+  .ability-row-v0112 input {
+    width: 4.2rem;
+    min-width: 4.2rem;
+    text-align: right;
+  }
+  
+  @media (max-width: 1350px) {
+    .settings-main-v0112 {
+      grid-template-columns: 1fr;
+    }
+  
+    .settings-abilities-v0112 {
+      grid-column: auto;
+    }
+  }
+  
+  @media (max-width: 1200px) {
+    .main-layout:not(.main-layout-full) {
+      grid-template-columns: 1fr !important;
+    }
+  
+    .side-pane {
+      overflow-x: auto !important;
+    }
+  
+    .settings-page-v0112 {
+      grid-template-columns: 1fr !important;
+    }
+  
+    .recipe-settings-v0112 {
+      min-height: auto;
+      max-height: none;
+    }
+  
+    .recipe-settings-list-v0112 {
+      max-height: 26rem;
+    }
+  }
+  
+  @media (max-width: 800px) {
+    .target-row-v0112 {
+      grid-template-columns: 1fr;
+    }
+  
+    .target-item-select-v0112,
+    .target-value-input-v0112,
+    .target-mode-select-v0112 {
+      width: 100%;
+      min-width: 0;
+    }
+  
+    .settings-calc-display-grid-v0112,
+    .ability-grid-v0112 {
+      grid-template-columns: 1fr;
+    }
+  
+    .ability-row-v0112 {
+      grid-template-columns: 1fr;
+    }
+  }
+  

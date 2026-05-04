@@ -12,7 +12,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.1.11';
+const APP_VERSION = 'v0.1.12';
 
 function mergeInitialState(): AppState {
   const saved = loadState();
@@ -30,8 +30,7 @@ function mergeInitialState(): AppState {
     nodeNotes: { ...DEFAULT_STATE.nodeNotes, ...saved.nodeNotes },
   };
 
-  // v0.1.6: 余剰ノード表示はデフォルトONへ移行します。
-  if ((saved.version ?? 0) < 3) {
+  if ((saved.version ?? 0) < 4) {
     merged.settings.showSurplus = true;
   }
 
