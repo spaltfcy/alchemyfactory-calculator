@@ -9,7 +9,11 @@ import type {
 } from '../types';
 import { RECIPES, recipeById, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
 import { economyByItemId } from '../data/economy';
-import { getConveyorItemsPerMinute, getProductionSpeedMultiplier, getSellPriceMultiplier } from '../data/abilityTables';
+import {
+  getConveyorItemsPerMinute,
+  getProductionSpeedMultiplier,
+  getSellPriceMultiplier,
+} from '../data/abilityTables';
 import { safeCeil } from '../utils/format';
 
 export type ItemStat = {
@@ -18,12 +22,14 @@ export type ItemStat = {
   consumed: number;
   produced: number;
   purchased: number;
+  initialPurchased: number;
   reused: number;
   surplus: number;
   discarded: number;
   targetRequested: number;
   targetActual: number;
   purchaseCostCopperPerMin: number;
+  initialCostCopper: number;
   revenueCopperPerMin: number;
 };
 
@@ -57,10 +63,7 @@ export type OutputEdgeStat = {
   discarded: boolean;
 };
 
-export type PlanWarning = {
-  messageJa: string;
-  messageEn: string;
-};
+export type PlanWarning = { messageJa: string; messageEn: string };
 
 export type CalculationResult = {
   itemStats: Record<string, ItemStat>;
@@ -69,6 +72,8 @@ export type CalculationResult = {
   outputEdges: OutputEdgeStat[];
   warnings: PlanWarning[];
   totals: {
+    initialCostCopper: number;
+    runningCostCopperPerMin: number;
     purchaseCostCopperPerMin: number;
     revenueCopperPerMin: number;
     profitCopperPerMin: number;
@@ -94,12 +99,14 @@ function createItemStat(itemId: string): ItemStat {
     consumed: 0,
     produced: 0,
     purchased: 0,
+    initialPurchased: 0,
     reused: 0,
     surplus: 0,
     discarded: 0,
     targetRequested: 0,
     targetActual: 0,
     purchaseCostCopperPerMin: 0,
+    initialCostCopper: 0,
     revenueCopperPerMin: 0,
   };
 }
@@ -111,20 +118,17 @@ function addToRecord(record: Record<string, number>, key: string, value: number)
 function getOutputRatePerMachine(recipe: Recipe, itemId: string, productionSpeedMultiplier: number): number {
   const output = recipe.outputs.find((x) => x.itemId === itemId);
   if (!output) return 0;
-  return output.amount * (output.probability ?? 1) * (60 / recipe.timeSec) * productionSpeedMultiplier;
-}
 
-function getOutputRate(recipe: Recipe, itemId: string, runsPerMinute: number): number {
-  const output = recipe.outputs.find((x) => x.itemId === itemId);
-  if (!output) return 0;
-  return output.amount * (output.probability ?? 1) * runsPerMinute;
+  return output.amount * (output.probability ?? 1) * (60 / recipe.timeSec) * productionSpeedMultiplier;
 }
 
 function chooseRecipeForItem(itemId: string, recipePreferences: Record<string, string>): Recipe | undefined {
   const preferred = recipePreferences[itemId];
   if (preferred && recipeById[preferred]) return recipeById[preferred];
+
   const defaultRecipeId = DEFAULT_RECIPE_BY_ITEM_ID[itemId];
   if (defaultRecipeId && recipeById[defaultRecipeId]) return recipeById[defaultRecipeId];
+
   return getRecipesProducing(itemId)[0];
 }
 
@@ -134,6 +138,9 @@ function shouldRound(mode: MachineRoundingMode, isFinal: boolean): boolean {
   return false;
 }
 
+function isNurserySeedInput(recipe: Recipe, itemId: string): boolean {
+  return recipe.machineId === 'nursery' && itemId.endsWith('_seeds');
+}
 
 export function calculate(input: CalculateInput): CalculationResult {
   const itemStats: Record<string, ItemStat> = {};
@@ -142,6 +149,7 @@ export function calculate(input: CalculateInput): CalculationResult {
   const outputEdgesByKey: Record<string, OutputEdgeStat> = {};
   const warnings: PlanWarning[] = [];
   const availableSurplus: Record<string, number> = {};
+
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
   const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
@@ -154,13 +162,16 @@ export function calculate(input: CalculateInput): CalculationResult {
 
   function addConveyorEdge(itemId: string, recipeId: string, rate: number): void {
     if (rate <= 0) return;
+
     const id = `${itemId}->${recipeId}`;
     const current = conveyorEdgesByKey[id];
+
     if (current) {
       current.rate += rate;
       current.belts = safeCeil(current.rate / conveyorItemsPerMinute);
       return;
     }
+
     conveyorEdgesByKey[id] = {
       id,
       fromItemId: itemId,
@@ -170,23 +181,25 @@ export function calculate(input: CalculateInput): CalculationResult {
     };
   }
 
-  function addOutputEdge(recipeId: string, itemId: string, rate: number, byproduct: boolean, discarded: boolean): void {
+  function addOutputEdge(
+    recipeId: string,
+    itemId: string,
+    rate: number,
+    byproduct: boolean,
+    discarded: boolean,
+  ): void {
     if (rate <= 0) return;
+
     const suffix = discarded ? ':discard' : '';
     const id = `${recipeId}->${itemId}${suffix}`;
     const current = outputEdgesByKey[id];
+
     if (current) {
       current.rate += rate;
       return;
     }
-    outputEdgesByKey[id] = {
-      id,
-      fromRecipeId: recipeId,
-      toItemId: itemId,
-      rate,
-      byproduct,
-      discarded,
-    };
+
+    outputEdgesByKey[id] = { id, fromRecipeId: recipeId, toItemId: itemId, rate, byproduct, discarded };
   }
 
   function recipeStat(recipe: Recipe): RecipeStat {
@@ -202,24 +215,56 @@ export function calculate(input: CalculateInput): CalculationResult {
       discardedOutputRates: {},
       targetIds: [],
     };
+
     return recipeStats[recipe.id];
   }
 
   function purchaseItem(itemId: string, rate: number): void {
     const s = stat(itemId);
     s.purchased += rate;
+
     const buyPrice = economyByItemId[itemId]?.buyPriceCopper;
-    if (buyPrice !== undefined) s.purchaseCostCopperPerMin += rate * buyPrice;
-    else {
-      warnings.push({
-        messageJa: `${itemId} は購入扱いですが購入価格が未定義です。`,
-        messageEn: `${itemId} is purchased, but buy price is not defined.`,
-      });
+    if (buyPrice !== undefined) {
+      s.purchaseCostCopperPerMin += rate * buyPrice;
+      return;
     }
+
+    warnings.push({
+      messageJa: `${itemId} は購入扱いですが購入価格が未定義です。`,
+      messageEn: `${itemId} is purchased, but buy price is not defined.`,
+    });
   }
 
-  function requestItem(itemId: string, rate: number, isFinal: boolean, forcedRecipeId?: string, targetId?: string): void {
+  function addInitialPurchase(itemId: string, count: number): void {
+    if (count <= 0) return;
+
+    const sourceMode = input.itemSourceModes[itemId] ?? 'auto';
+    if (sourceMode === 'stock') return;
+
+    const s = stat(itemId);
+    s.initialPurchased += count;
+
+    const buyPrice = economyByItemId[itemId]?.buyPriceCopper;
+    if (buyPrice !== undefined) {
+      s.initialCostCopper += count * buyPrice;
+      return;
+    }
+
+    warnings.push({
+      messageJa: `${itemId} は初期投入扱いですが購入価格が未定義です。`,
+      messageEn: `${itemId} is a setup input, but buy price is not defined.`,
+    });
+  }
+
+  function requestItem(
+    itemId: string,
+    rate: number,
+    isFinal: boolean,
+    forcedRecipeId?: string,
+    targetId?: string,
+  ): void {
     if (rate <= 0) return;
+
     const s = stat(itemId);
     s.requested += rate;
 
@@ -229,6 +274,7 @@ export function calculate(input: CalculateInput): CalculationResult {
       s.reused += reusable;
       rate -= reusable;
     }
+
     if (rate <= 1e-9) return;
 
     const sourceMode = input.itemSourceModes[itemId] ?? 'auto';
@@ -265,16 +311,26 @@ export function calculate(input: CalculateInput): CalculationResult {
     visiting.add(itemId);
 
     const theoreticalMachines = rate / outputRatePerMachine;
-    const actualMachines = shouldRound(input.settings.machineRounding, isFinal) ? safeCeil(theoreticalMachines) : theoreticalMachines;
+    const actualMachines = shouldRound(input.settings.machineRounding, isFinal)
+      ? safeCeil(theoreticalMachines)
+      : theoreticalMachines;
     const runsPerMinute = actualMachines * (60 / recipe.timeSec) * productionSpeedMultiplier;
+
     const rs = recipeStat(recipe);
     rs.theoreticalMachines += theoreticalMachines;
     rs.actualMachines += actualMachines;
     rs.runsPerMinute += runsPerMinute;
+
     if (targetId && !rs.targetIds.includes(targetId)) rs.targetIds.push(targetId);
 
     for (const recipeInput of recipe.inputs) {
+      if (isNurserySeedInput(recipe, recipeInput.itemId)) {
+        addInitialPurchase(recipeInput.itemId, recipeInput.amount * actualMachines);
+        continue;
+      }
+
       const inputRate = recipeInput.amount * runsPerMinute;
+
       addToRecord(rs.inputRates, recipeInput.itemId, inputRate);
       stat(recipeInput.itemId).consumed += inputRate;
       addConveyorEdge(recipeInput.itemId, recipe.id, inputRate);
@@ -284,20 +340,27 @@ export function calculate(input: CalculateInput): CalculationResult {
     for (const output of recipe.outputs) {
       const outputRate = output.amount * (output.probability ?? 1) * runsPerMinute;
       const byproduct = output.itemId !== itemId;
+
       addToRecord(rs.outputRates, output.itemId, outputRate);
       addOutputEdge(recipe.id, output.itemId, outputRate, byproduct, false);
+
       const os = stat(output.itemId);
       os.produced += outputRate;
 
       if (output.itemId === itemId) {
         const surplus = Math.max(0, outputRate - rate);
+
         if (surplus > 1e-9) {
           os.surplus += surplus;
           addToRecord(rs.surplusOutputRates, output.itemId, surplus);
-          if (!isFinal) availableSurplus[output.itemId] = (availableSurplus[output.itemId] ?? 0) + surplus;
+
+          if (!isFinal) {
+            availableSurplus[output.itemId] = (availableSurplus[output.itemId] ?? 0) + surplus;
+          }
         }
       } else {
         const policy = input.settings.defaultSurplusPolicy;
+
         if (policy === 'reuse') {
           os.surplus += outputRate;
           availableSurplus[output.itemId] = (availableSurplus[output.itemId] ?? 0) + outputRate;
@@ -316,46 +379,53 @@ export function calculate(input: CalculateInput): CalculationResult {
   for (const target of input.targets) {
     const outputItemId = target.outputItemId;
     if (!outputItemId) continue;
+
     const recipe = chooseRecipeForItem(outputItemId, input.recipePreferences);
     if (!recipe) {
       stat(outputItemId).targetRequested += Math.max(0, target.value);
       requestItem(outputItemId, Math.max(0, target.value), true, undefined, target.id);
       continue;
     }
+
     const outputRatePerMachine = getOutputRatePerMachine(recipe, outputItemId, productionSpeedMultiplier);
     if (outputRatePerMachine <= 0) continue;
 
     if (target.mode === 'machines') {
       const actualMachines = Math.max(0, target.value);
       const targetRate = actualMachines * outputRatePerMachine;
+
       stat(outputItemId).targetRequested += targetRate;
       stat(outputItemId).targetActual += targetRate;
       requestItem(outputItemId, targetRate, true, recipe.id, target.id);
     } else {
       const requestedRate = Math.max(0, target.value);
+
       stat(outputItemId).targetRequested += requestedRate;
       requestItem(outputItemId, requestedRate, true, recipe.id, target.id);
+
       const actual = stat(outputItemId).produced;
-      // 同じアイテムの複数ターゲットがある場合は「今回分」の算出が難しいため、後段で総量から再設定します。
       void actual;
     }
   }
 
-  // 最終出力は itemId ごとに実生産量で合算します。
   const finalItemIds = new Set(input.targets.map((target) => target.outputItemId).filter(Boolean));
   for (const itemId of finalItemIds) {
     const s = stat(itemId as string);
     s.targetActual = Math.max(s.targetActual, s.produced);
+
     const sellPrice = economyByItemId[itemId as string]?.sellPriceCopper;
     if (sellPrice !== undefined) {
       s.revenueCopperPerMin = s.targetActual * sellPrice * sellPriceMultiplier;
     }
   }
 
-  let purchaseCostCopperPerMin = 0;
+  let initialCostCopper = 0;
+  let runningCostCopperPerMin = 0;
   let revenueCopperPerMin = 0;
+
   for (const s of Object.values(itemStats)) {
-    purchaseCostCopperPerMin += s.purchaseCostCopperPerMin;
+    initialCostCopper += s.initialCostCopper;
+    runningCostCopperPerMin += s.purchaseCostCopperPerMin;
     revenueCopperPerMin += s.revenueCopperPerMin;
   }
 
@@ -366,9 +436,11 @@ export function calculate(input: CalculateInput): CalculationResult {
     outputEdges: Object.values(outputEdgesByKey),
     warnings,
     totals: {
-      purchaseCostCopperPerMin,
+      initialCostCopper,
+      runningCostCopperPerMin,
+      purchaseCostCopperPerMin: runningCostCopperPerMin,
       revenueCopperPerMin,
-      profitCopperPerMin: revenueCopperPerMin - purchaseCostCopperPerMin,
+      profitCopperPerMin: revenueCopperPerMin - runningCostCopperPerMin,
       conveyorItemsPerMinute,
       productionSpeedMultiplier,
       sellPriceMultiplier,

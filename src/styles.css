@@ -473,18 +473,82 @@ th { color: var(--muted); font-weight: 600; background: rgba(255, 255, 255, 0.02
   }
   
 
-/* v0.2.2 graph controls */
-.react-flow__edge-textbg {
-  fill: rgba(16, 19, 26, 0.94);
-  stroke: rgba(125, 196, 255, 0.25);
-  stroke-width: 0.5px;
+
+
+/* v0.2.4 graph controls and visibility */
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
 }
 
-.react-flow__edge-text {
-  fill: var(--text);
-  font-size: 12px;
-  font-weight: 650;
+.version-pill {
+  color: var(--muted);
+  font-size: 0.84rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.content-only-layout {
+  display: grid;
+  min-height: 0;
+}
+
+.planner-node-final {
+  border-color: rgba(159, 232, 112, 0.86);
+  background: linear-gradient(180deg, rgba(39, 68, 34, 0.98), rgba(21, 38, 22, 0.98));
+  box-shadow:
+    0 10px 20px rgba(0, 0, 0, 0.24),
+    0 0 0 1px rgba(159, 232, 112, 0.24);
+}
+
+.planner-node-final .planner-node-title {
+  color: #d9ffc5;
+}
+
+.planner-node-discard {
+  border-color: rgba(255, 210, 125, 0.72);
+  background: linear-gradient(180deg, rgba(67, 48, 18, 0.98), rgba(35, 26, 14, 0.98));
+  box-shadow:
+    0 10px 20px rgba(0, 0, 0, 0.24),
+    0 0 0 1px rgba(255, 210, 125, 0.18);
+}
+
+.planner-node-discard .planner-node-title {
+  color: #ffe4a8;
+}
+
+.flow-edge-label {
+  position: absolute;
+  z-index: 8;
+  display: grid;
+  gap: 0.08rem;
+  min-width: max-content;
+  padding: 0.22rem 0.42rem 0.26rem;
+  border: 1px solid rgba(125, 196, 255, 0.28);
+  border-radius: 7px;
+  background: rgba(7, 10, 17, 0.92);
+  color: #f5f8ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.12;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.28);
+}
+
+.flow-edge-label-item {
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.flow-edge-label-rate {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #dbe8ff;
+}
+
+.react-flow__edge-path {
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.42));
 }
 
 .flow-custom-controls {
@@ -539,43 +603,4 @@ th { color: var(--muted); font-weight: 600; background: rgba(255, 255, 255, 0.02
   color: #ffd27d;
   border-color: rgba(255, 210, 125, 0.82);
   background: linear-gradient(180deg, rgba(76, 56, 24, 0.98), rgba(33, 26, 16, 0.98));
-}
-
-
-/* v0.2.3 graph flow visibility */
-.planner-node-final {
-  border-color: rgba(159, 232, 112, 0.86);
-  background: linear-gradient(180deg, rgba(39, 68, 34, 0.98), rgba(21, 38, 22, 0.98));
-  box-shadow:
-    0 10px 20px rgba(0, 0, 0, 0.24),
-    0 0 0 1px rgba(159, 232, 112, 0.24);
-}
-
-.planner-node-final .planner-node-title {
-  color: #d9ffc5;
-}
-
-.planner-node-discard {
-  border-color: rgba(255, 210, 125, 0.72);
-  background: linear-gradient(180deg, rgba(67, 48, 18, 0.98), rgba(35, 26, 14, 0.98));
-  box-shadow:
-    0 10px 20px rgba(0, 0, 0, 0.24),
-    0 0 0 1px rgba(255, 210, 125, 0.18);
-}
-
-.planner-node-discard .planner-node-title {
-  color: #ffe4a8;
-}
-
-.react-flow__edge-textbg {
-  fill: rgba(8, 11, 18, 0.94);
-  stroke: rgba(125, 196, 255, 0.18);
-  stroke-width: 0.5px;
-}
-
-.react-flow__edge-text {
-  fill: #f5f8ff;
-  font-size: 11.5px;
-  font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }

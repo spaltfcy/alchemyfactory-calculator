@@ -2,11 +2,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Background,
+  BaseEdge,
+  EdgeLabelRenderer,
   MiniMap,
   Panel,
   ReactFlow,
   applyEdgeChanges,
   applyNodeChanges,
+  getBezierPath,
   useReactFlow,
   type Edge,
   type EdgeChange,
@@ -21,6 +24,7 @@ import { layoutWithElk } from '../engine/layout';
 import { PlannerNode } from './PlannerNode';
 
 const nodeTypes = { plannerNode: PlannerNode };
+const edgeTypes = { flowEdge: FlowEdge };
 
 export type GraphTabProps = {
   lang: Lang;
@@ -36,6 +40,87 @@ type GraphControlsProps = {
   onToggleInteractive: () => void;
 };
 
+function getCyclePath(sourceX: number, sourceY: number, targetX: number, targetY: number, side: number) {
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
+  const length = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+  const nx = -dy / length;
+  const ny = dx / length;
+  const offset = 92 * side;
+  const controlX = (sourceX + targetX) / 2 + nx * offset;
+  const controlY = (sourceY + targetY) / 2 + ny * offset;
+  const labelX = sourceX * 0.25 + controlX * 0.5 + targetX * 0.25;
+  const labelY = sourceY * 0.25 + controlY * 0.5 + targetY * 0.25;
+
+  return {
+    path: `M ${sourceX},${sourceY} Q ${controlX},${controlY} ${targetX},${targetY}`,
+    labelX,
+    labelY,
+  };
+}
+
+function FlowEdge(props) {
+  const {
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    style = {},
+    markerEnd,
+    data,
+  } = props;
+
+  const cycleSide = Number(data?.cycleSide ?? 0);
+  let edgePath;
+  let labelX;
+  let labelY;
+
+  if (cycleSide !== 0) {
+    const cycle = getCyclePath(sourceX, sourceY, targetX, targetY, cycleSide);
+    edgePath = cycle.path;
+    labelX = cycle.labelX;
+    labelY = cycle.labelY;
+  } else {
+    const result = getBezierPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+    });
+
+    edgePath = result[0];
+    labelX = result[1];
+    labelY = result[2];
+  }
+
+  const labelShiftY = Number(data?.labelShiftY ?? 0);
+
+  return (
+    <>
+      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
+      <EdgeLabelRenderer>
+        <div
+          className="flow-edge-label"
+          style={{
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + labelShiftY}px)`,
+            borderColor: data?.color ? `${data.color}77` : undefined,
+          }}
+        >
+          <div className="flow-edge-label-item">{data?.itemName}</div>
+          <div className="flow-edge-label-rate">{data?.rateLabel}</div>
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+// Inline SVG icons are hand-authored for this project.
+// No external icon library SVG paths are copied here.
 function ZoomInIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -208,6 +293,7 @@ export function GraphTab({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeDoubleClick={onNodeDoubleClick}
@@ -230,7 +316,11 @@ export function GraphTab({
             nodeStrokeWidth={2}
             pannable
             zoomable
-            nodeColor={(node) => (node.data?.kind === 'recipe' ? '#5d4ba2' : '#28618f')}
+            nodeColor={(node) => {
+              if (node.data?.kind === 'final') return '#9fe870';
+              if (node.data?.kind === 'discard') return '#ffd27d';
+              return node.data?.kind === 'recipe' ? '#5d4ba2' : '#28618f';
+            }}
             maskColor="rgba(5, 7, 12, 0.68)"
             style={{
               background: '#111722',

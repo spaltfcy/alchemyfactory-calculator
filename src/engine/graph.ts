@@ -27,19 +27,21 @@ const FLOW_COLORS = [
 
 const DEFAULT_FLOW_COLOR = '#7dc4ff';
 const FINAL_FLOW_COLOR = '#9fe870';
-const DISCARD_FLOW_COLOR = '#ffd27d';
 
 function beltCount(rate: number, conveyorItemsPerMinute: number): number {
   if (rate <= 0 || conveyorItemsPerMinute <= 0) return 0;
   return Math.ceil(rate / conveyorItemsPerMinute);
 }
 
-function flowLabel(itemId: string, rate: number, belts: number, lang: Lang): string {
+function itemName(itemId: string, lang: Lang): string {
   const item = itemById[itemId];
-  const itemName = item ? text(item.name, lang) : itemId;
+  return item ? text(item.name, lang) : itemId;
+}
+
+function rateLabel(rate: number, belts: number, lang: Lang): string {
   const beltLabel = lang === 'ja' ? 'ベルト' : 'Belt';
   const beltUnit = lang === 'ja' ? '本' : '';
-  return itemName + '\n' + formatNumber(rate) + '/min ' + beltLabel + ':' + belts + beltUnit;
+  return formatNumber(rate) + '/min ' + beltLabel + ':' + belts + beltUnit;
 }
 
 function outputSortKey(recipeId: string, itemId: string): number {
@@ -67,20 +69,99 @@ function edgeStyle(color: string, dashed = false) {
   };
 }
 
+function makeEdge(args: {
+  id: string;
+  source: string;
+  target: string;
+  itemId: string;
+  rate: number;
+  belts: number;
+  color: string;
+  lang: Lang;
+  dashed?: boolean;
+}): Edge {
+  return {
+    id: args.id,
+    type: 'flowEdge',
+    source: args.source,
+    target: args.target,
+    animated: false,
+    style: edgeStyle(args.color, args.dashed ?? false),
+    markerEnd: marker(args.color),
+    data: {
+      itemName: itemName(args.itemId, args.lang),
+      rateLabel: rateLabel(args.rate, args.belts, args.lang),
+      color: args.color,
+      cycleSide: 0,
+      labelShiftY: 0,
+    },
+  };
+}
+
 function addOrMergeEdge(edges: Edge[], next: Edge) {
-  const existing = edges.find(
-    (edge) =>
+  const nextData = next.data as Record<string, unknown> | undefined;
+  const existing = edges.find((edge) => {
+    const data = edge.data as Record<string, unknown> | undefined;
+
+    return (
       edge.source === next.source &&
       edge.target === next.target &&
-      edge.label === next.label &&
-      JSON.stringify(edge.style ?? {}) === JSON.stringify(next.style ?? {}),
-  );
+      data?.itemName === nextData?.itemName &&
+      data?.rateLabel === nextData?.rateLabel &&
+      JSON.stringify(edge.style ?? {}) === JSON.stringify(next.style ?? {})
+    );
+  });
 
-  if (existing) {
-    return;
-  }
+  if (existing) return;
 
   edges.push(next);
+}
+
+function decorateEdges(edges: Edge[]) {
+  const directedGroups = new Map<string, Edge[]>();
+  const undirectedRecipeGroups = new Map<string, Edge[]>();
+
+  for (const edge of edges) {
+    const directedKey = edge.source + '->' + edge.target;
+    const directed = directedGroups.get(directedKey) ?? [];
+    directed.push(edge);
+    directedGroups.set(directedKey, directed);
+
+    if (edge.source.startsWith('recipe:') && edge.target.startsWith('recipe:')) {
+      const nodes = [edge.source, edge.target].sort();
+      const key = nodes[0] + '<->' + nodes[1];
+      const group = undirectedRecipeGroups.get(key) ?? [];
+      group.push(edge);
+      undirectedRecipeGroups.set(key, group);
+    }
+  }
+
+  for (const group of directedGroups.values()) {
+    if (group.length <= 1) continue;
+
+    group.forEach((edge, index) => {
+      edge.data = {
+        ...(edge.data ?? {}),
+        labelShiftY: (index - (group.length - 1) / 2) * 42,
+      };
+    });
+  }
+
+  for (const group of undirectedRecipeGroups.values()) {
+    const directions = new Set(group.map((edge) => edge.source + '->' + edge.target));
+    if (directions.size < 2) continue;
+
+    group.forEach((edge) => {
+      const side = edge.source < edge.target ? 1 : -1;
+      const currentShift = Number((edge.data as Record<string, unknown> | undefined)?.labelShiftY ?? 0);
+
+      edge.data = {
+        ...(edge.data ?? {}),
+        cycleSide: side,
+        labelShiftY: currentShift + side * 24,
+      };
+    });
+  }
 }
 
 export function buildFlowGraph(
@@ -222,15 +303,19 @@ export function buildFlowGraph(
 
     const color = producerRecipeId ? colorForRecipeOutput(producerRecipeId, edge.fromItemId) : DEFAULT_FLOW_COLOR;
 
-    addOrMergeEdge(edges, {
-      id: 'in:' + edge.id,
-      source: sourceId,
-      target: targetId,
-      label: flowLabel(edge.fromItemId, edge.rate, edge.belts, lang),
-      animated: false,
-      style: edgeStyle(color),
-      markerEnd: marker(color),
-    });
+    addOrMergeEdge(
+      edges,
+      makeEdge({
+        id: 'in:' + edge.id,
+        source: sourceId,
+        target: targetId,
+        itemId: edge.fromItemId,
+        rate: edge.rate,
+        belts: edge.belts,
+        color,
+        lang,
+      }),
+    );
   }
 
   const sortedOutputEdges = [...result.outputEdges].sort((a, b) => {
@@ -251,20 +336,25 @@ export function buildFlowGraph(
 
     const targetId = toDiscard ? 'discard:' + edge.fromRecipeId + ':' + edge.toItemId : 'item:' + edge.toItemId;
     const belts = beltCount(edge.rate, result.totals.conveyorItemsPerMinute);
-
     const color = toFinal ? FINAL_FLOW_COLOR : colorForRecipeOutput(edge.fromRecipeId, edge.toItemId);
-    const dashed = toDiscard;
 
-    addOrMergeEdge(edges, {
-      id: (toDiscard ? 'discard:' : 'out:') + edge.id,
-      source: 'recipe:' + edge.fromRecipeId,
-      target: targetId,
-      label: flowLabel(edge.toItemId, edge.rate, belts, lang),
-      animated: false,
-      style: edgeStyle(color, dashed),
-      markerEnd: marker(color),
-    });
+    addOrMergeEdge(
+      edges,
+      makeEdge({
+        id: (toDiscard ? 'discard:' : 'out:') + edge.id,
+        source: 'recipe:' + edge.fromRecipeId,
+        target: targetId,
+        itemId: edge.toItemId,
+        rate: edge.rate,
+        belts,
+        color,
+        lang,
+        dashed: toDiscard,
+      }),
+    );
   }
+
+  decorateEdges(edges);
 
   return { nodes, edges };
 }

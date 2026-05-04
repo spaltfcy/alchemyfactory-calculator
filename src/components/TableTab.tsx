@@ -16,12 +16,20 @@ export function TableTab({ lang, result }: TableTabProps) {
   const recipeRows = Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId));
   const itemRows = Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId));
 
+  const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
+  const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
+  const initialPurchasedLabel = lang === 'ja' ? '初期購入' : 'Initial purchase';
+
   return (
-    <div className="table-tab stack">
-      <section className="panel metric-grid">
+    <div className="stack">
+      <section className="metric-grid">
         <div>
-          <span>{t('purchaseCost', lang)}</span>
-          <strong>{formatCopper(result.totals.purchaseCostCopperPerMin)}</strong>
+          <span>{initialCostLabel}</span>
+          <strong>{formatCopper(result.totals.initialCostCopper)}</strong>
+        </div>
+        <div>
+          <span>{runningCostLabel}</span>
+          <strong>{formatCopper(result.totals.runningCostCopperPerMin)}</strong>
         </div>
         <div>
           <span>{t('revenue', lang)}</span>
@@ -40,7 +48,7 @@ export function TableTab({ lang, result }: TableTabProps) {
       {result.warnings.length > 0 && (
         <section className="panel warnings">
           {result.warnings.map((warning, index) => (
-            <div key={index}>⚠ {lang === 'ja' ? warning.messageJa : warning.messageEn}</div>
+            <p key={index}>! {lang === 'ja' ? warning.messageJa : warning.messageEn}</p>
           ))}
         </section>
       )}
@@ -66,6 +74,7 @@ export function TableTab({ lang, result }: TableTabProps) {
                   .filter(([, value]) => value > 0)
                   .map(([itemId, value]) => `${text(itemById[itemId]?.name ?? { ja: itemId, en: itemId }, lang)} +${formatNumber(value)}/min`)
                   .join(', ');
+
                 return (
                   <tr key={row.recipeId}>
                     <td>{recipe ? text(recipe.name, lang) : row.recipeId}</td>
@@ -93,14 +102,17 @@ export function TableTab({ lang, result }: TableTabProps) {
                 <th>{t('consumed', lang)}</th>
                 <th>{t('produced', lang)}</th>
                 <th>{t('surplus', lang)}</th>
-                <th>{t('purchased', lang)}</th>
-                <th>{t('purchaseCost', lang)}</th>
+                <th>{t('purchased', lang)}/min</th>
+                <th>{initialPurchasedLabel}</th>
+                <th>{runningCostLabel}</th>
+                <th>{initialCostLabel}</th>
                 <th>{t('revenue', lang)}</th>
               </tr>
             </thead>
             <tbody>
               {itemRows.map((row) => {
                 const item = itemById[row.itemId];
+
                 return (
                   <tr key={row.itemId}>
                     <td>{item ? text(item.name, lang) : row.itemId}</td>
@@ -110,7 +122,9 @@ export function TableTab({ lang, result }: TableTabProps) {
                     <td>{formatNumber(row.produced)}</td>
                     <td>{formatNumber(row.surplus)}</td>
                     <td>{formatNumber(row.purchased)}</td>
+                    <td>{formatNumber(row.initialPurchased)}</td>
                     <td>{formatCopper(row.purchaseCostCopperPerMin)}</td>
+                    <td>{formatCopper(row.initialCostCopper)}</td>
                     <td>{formatCopper(row.revenueCopperPerMin)}</td>
                   </tr>
                 );
@@ -135,9 +149,12 @@ export function TableTab({ lang, result }: TableTabProps) {
               {result.conveyorEdges.map((edge) => {
                 const item = itemById[edge.fromItemId];
                 const recipe = recipeById[edge.toRecipeId];
+
                 return (
                   <tr key={edge.id}>
-                    <td>{item ? text(item.name, lang) : edge.fromItemId} → {recipe ? text(recipe.name, lang) : edge.toRecipeId}</td>
+                    <td>
+                      {item ? text(item.name, lang) : edge.fromItemId} → {recipe ? text(recipe.name, lang) : edge.toRecipeId}
+                    </td>
                     <td>{formatNumber(edge.rate)}/min</td>
                     <td>{edge.belts}</td>
                   </tr>
