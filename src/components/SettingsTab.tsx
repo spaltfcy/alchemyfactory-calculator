@@ -45,20 +45,41 @@ function recipeItemOrder(itemId: string): number {
 
 function recipeItemName(itemId: string, lang: Lang): string {
   const item = itemById[itemId];
+
   return item ? text(item.name, lang) : itemId;
 }
 
 function joinRecipeItemNames(entries: Array<{ itemId: string }>, lang: Lang): string {
   const separator = lang === 'ja' ? '・' : ', ';
+
   return entries.map((entry) => recipeItemName(entry.itemId, lang)).join(separator);
+}
+
+function isMeteorCrusherRecipe(recipe: Recipe): boolean {
+  const idText = recipe.id.toLowerCase();
+  const urlText = (recipe.sourceUrl ?? '').toLowerCase();
+  const hasMeteorInput = recipe.inputs.some((input) => input.itemId.includes('meteor'));
+  const hasManyStoneCrusherOutputs = recipe.machineId === 'stone_crusher' && recipe.outputs.length >= 3;
+
+  return hasMeteorInput || idText.includes('meteor') || urlText.includes('meteor') || hasManyStoneCrusherOutputs;
+}
+
+function recipeOutputNames(recipe: Recipe, lang: Lang): string {
+  if (isMeteorCrusherRecipe(recipe) && recipe.outputs.length >= 1) {
+    return recipeItemName(recipe.outputs[0].itemId, lang) + ' etc.';
+  }
+
+  return recipe.outputs.length ? joinRecipeItemNames(recipe.outputs, lang) : text(recipe.name, lang);
 }
 
 function recipeOptionLabel(itemId: string, recipe: Recipe, lang: Lang): string {
   const machine = machineById[recipe.machineId];
+
   const inputNames = recipe.inputs.length ? joinRecipeItemNames(recipe.inputs, lang) : recipeItemName(itemId, lang);
   const machineName = machine ? text(machine.name, lang) : recipe.machineId;
-  const outputNames = recipe.outputs.length ? joinRecipeItemNames(recipe.outputs, lang) : recipeItemName(itemId, lang);
-  return inputNames + ' → ' + machineName + ' → ' + outputNames;
+  const outputNames = recipeOutputNames(recipe, lang);
+
+  return `${inputNames} → ${machineName} → ${outputNames}`;
 }
 
 function mergeState(current: AppState, imported: Partial<AppState>): AppState {
@@ -102,9 +123,23 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
 
   async function importJson(file: File | undefined) {
     if (!file) return;
+
     const raw = await file.text();
     const parsed = JSON.parse(raw) as Partial<AppState>;
+
     setState(mergeState(state, parsed));
+  }
+
+  function resetAll() {
+    const message =
+      lang === 'ja'
+        ? '設定と保存データを初期化します。よろしいですか？'
+        : 'Reset settings and saved data. Are you sure?';
+
+    if (!window.confirm(message)) return;
+
+    clearState();
+    location.reload();
   }
 
   const recipeItems = ITEMS.filter((item) => getRecipesProducing(item.id).length > 1).sort(
@@ -119,6 +154,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
           {recipeItems.map((item) => {
             const recipes = getSortedRecipesProducing(item.id);
             const value = state.recipePreferences[item.id] ?? getDefaultRecipeId(item.id);
+
             return (
               <label key={item.id} className="recipe-setting-row">
                 <span className="recipe-setting-item-name">{text(item.name, lang)}</span>
@@ -143,7 +179,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
       </section>
 
       <div className="settings-side">
-        <section className="panel">
+        <section className="panel calculation-settings-panel">
           <h2>{lang === 'ja' ? '計算・表示' : 'Calculation / Display'}</h2>
           <div className="settings-grid">
             <label>
@@ -157,6 +193,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 <option value="all">{t('roundingAll', lang)}</option>
               </select>
             </label>
+
             <label>
               {t('defaultSurplusPolicy', lang)}
               <select
@@ -167,6 +204,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 <option value="discard">{t('discard', lang)}</option>
               </select>
             </label>
+
             <label>
               {lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}
               <select
@@ -178,6 +216,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 <option value="detailed">{t('detailed', lang)}</option>
               </select>
             </label>
+
             <label className="checkbox-row">
               <input
                 type="checkbox"
@@ -187,15 +226,26 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
               {lang === 'ja' ? '余剰ノードを表示' : 'Show surplus nodes'}
             </label>
           </div>
+
+          <div className="settings-reset-row">
+            <button type="button" className="danger" onClick={resetAll}>
+              {t('reset', lang)}
+            </button>
+          </div>
         </section>
 
         <section className="panel fuel-settings-panel">
           <h2>{lang === 'ja' ? '燃料' : 'Fuel'}</h2>
           <div className="fuel-settings-grid">
             <label className="checkbox-row fuel-checkbox-row">
-              <input type="checkbox" checked={fuel.enabled} onChange={(e) => patchFuelSettings({ enabled: e.target.checked })} />
+              <input
+                type="checkbox"
+                checked={fuel.enabled}
+                onChange={(e) => patchFuelSettings({ enabled: e.target.checked })}
+              />
               {lang === 'ja' ? '燃料計算を有効' : 'Enable fuel calculation'}
             </label>
+
             <label>
               {lang === 'ja' ? '使用燃料' : 'Fuel'}
               <select value={fuel.fuelItemId} onChange={(e) => patchFuelSettings({ fuelItemId: e.target.value })}>
@@ -206,6 +256,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 ))}
               </select>
             </label>
+
             <label>
               {lang === 'ja' ? '燃料の扱い' : 'Fuel source'}
               <select
@@ -216,6 +267,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 <option value="buy">{lang === 'ja' ? '購入扱い' : 'Buy'}</option>
               </select>
             </label>
+
             <label>
               {lang === 'ja' ? '坩堝設備' : 'Crucible device'}
               <select
@@ -226,6 +278,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 <option value="stackable_crucible">{lang === 'ja' ? '積層坩堝' : 'Stackable Crucible'}</option>
               </select>
             </label>
+
             <label>
               {lang === 'ja' ? '坩堝の炉近似' : 'Crucible furnace overhead'}
               <input
@@ -236,6 +289,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 onChange={(e) => patchFuelSettings({ crucibleOverheadHeatPerSec: Number(e.target.value) })}
               />
             </label>
+
             <label>
               {lang === 'ja' ? 'その他の炉近似' : 'Other furnace overhead'}
               <input
@@ -249,26 +303,18 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
           </div>
         </section>
 
-        <section className="panel">
-          <h2>{t('data', lang)}</h2>
-          <div className="settings-actions">
-            <button type="button" onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
-              {t('exportJson', lang)}
+        <section className="panel data-io-panel">
+          <h2>{lang === 'ja' ? 'データ入出力 (JSON)' : 'Data I/O (JSON)'}</h2>
+          <div className="data-io-grid">
+            <div className="data-io-label">{lang === 'ja' ? '出力' : 'Output'}</div>
+            <button type="button" className="data-io-button" onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
+              {lang === 'ja' ? '保存' : 'Save'}
             </button>
-            <label className="file-label">
-              {t('importJson', lang)}
+
+            <div className="data-io-label">{lang === 'ja' ? '入力' : 'Input'}</div>
+            <label className="file-label data-io-file">
               <input type="file" accept="application/json" onChange={(e) => void importJson(e.currentTarget.files?.[0])} />
             </label>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => {
-                clearState();
-                location.reload();
-              }}
-            >
-              {t('reset', lang)}
-            </button>
           </div>
         </section>
       </div>

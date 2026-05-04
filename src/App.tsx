@@ -13,7 +13,8 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.3.3';
+const APP_VERSION = '0.3.4';
+const GAME_VERSION = '0.4.4.4323';
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   logisticsEfficiency: { ja: '物流効率', en: 'Logistics' },
@@ -36,7 +37,11 @@ function mergeInitialState(): AppState {
   const merged: AppState = {
     ...DEFAULT_STATE,
     ...saved,
-    settings: { ...DEFAULT_STATE.settings, ...saved.settings, fuel: { ...DEFAULT_STATE.settings.fuel, ...(saved.settings?.fuel ?? {}) } },
+    settings: {
+      ...DEFAULT_STATE.settings,
+      ...saved.settings,
+      fuel: { ...DEFAULT_STATE.settings.fuel, ...(saved.settings?.fuel ?? {}) },
+    },
     abilities: { ...DEFAULT_STATE.abilities, ...saved.abilities },
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
     surplusPolicies: { ...DEFAULT_STATE.surplusPolicies, ...saved.surplusPolicies },
@@ -56,6 +61,7 @@ function mergeInitialState(): AppState {
 
 export function App() {
   const [state, setState] = useState(() => mergeInitialState());
+  const [abilityOpen, setAbilityOpen] = useState(false);
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
 
@@ -91,11 +97,13 @@ export function App() {
   }
 
   function setAbility(id: AbilityId, value: number) {
+    const nextValue = Math.max(0, Math.min(13, Math.floor(Number.isFinite(value) ? value : 0)));
+
     setState({
       ...state,
       abilities: {
         ...state.abilities,
-        [id]: Number.isFinite(value) ? value : 0,
+        [id]: nextValue,
       },
     });
   }
@@ -104,6 +112,9 @@ export function App() {
   const runningCost = result.totals.runningCostCopperPerMin ?? result.totals.purchaseCostCopperPerMin ?? 0;
   const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
   const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
+  const abilityButtonLabel = lang === 'ja' ? 'アビリティ' : 'Abilities';
+  const siteVersionLabel = lang === 'ja' ? 'サイトバージョン' : 'Site version';
+  const gameVersionLabel = lang === 'ja' ? 'ゲームバージョン' : 'Game version';
 
   return (
     <div className="app-shell">
@@ -118,7 +129,7 @@ export function App() {
           </p>
         </div>
 
-        <div className="header-ability-panel" aria-label={t('abilities', lang)}>
+        <div className={abilityOpen ? 'header-ability-panel is-open' : 'header-ability-panel'} aria-label={t('abilities', lang)}>
           {ABILITY_IDS.map((id) => (
             <label key={id} className="header-ability-field">
               <span>{abilityLabels[id][lang]}</span>
@@ -135,7 +146,23 @@ export function App() {
         </div>
 
         <div className="header-actions">
-          <span className="app-version">{APP_VERSION}</span>
+          <button
+            type="button"
+            className={abilityOpen ? 'header-ability-toggle is-open' : 'header-ability-toggle'}
+            onClick={() => setAbilityOpen((current) => !current)}
+          >
+            {abilityButtonLabel}
+          </button>
+
+          <div className="version-stack">
+            <span>
+              {siteVersionLabel}: {APP_VERSION}
+            </span>
+            <span>
+              {gameVersionLabel}: {GAME_VERSION}
+            </span>
+          </div>
+
           <select value={lang} onChange={(e) => setState({ ...state, language: e.target.value as AppState['language'] })}>
             <option value="ja">日本語</option>
             <option value="en">English</option>
@@ -151,7 +178,7 @@ export function App() {
         ))}
       </nav>
 
-      <main className={showSidebar ? "main-layout" : "main-layout main-layout-full"}>
+      <main className={showSidebar ? 'main-layout' : 'main-layout main-layout-full'}>
         {showSidebar && (
           <aside className="side-pane">
             <TargetEditor lang={lang} targets={state.targets} onChange={(targets) => setState({ ...state, targets })} />

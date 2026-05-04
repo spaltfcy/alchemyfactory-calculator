@@ -12,12 +12,8 @@ function handleStyle(topPct: number, color: string) {
 export function PlannerNode({ data }: NodeProps) {
   const nodeData = data as PlannerNodeData;
   const kind = nodeData.kind ?? 'item';
-  const targetHandles = nodeData.targetHandles?.length
-    ? nodeData.targetHandles
-    : [{ id: 'target-default', topPct: 50, color: '#7dc4ff' }];
-  const sourceHandles = nodeData.sourceHandles?.length
-    ? nodeData.sourceHandles
-    : [{ id: 'source-default', topPct: 50, color: '#7dc4ff' }];
+  const targetHandles = nodeData.targetHandles ?? [];
+  const sourceHandles = nodeData.sourceHandles ?? [];
 
   return (
     <div

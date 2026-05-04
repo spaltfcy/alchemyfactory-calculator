@@ -862,3 +862,206 @@ th { color: var(--muted); font-weight: 600; background: rgba(255, 255, 255, 0.02
 .planner-node-discard .planner-node-title {
   color: #ffe4a8;
 }
+
+
+/* v0.3.4 layout and graph stability */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+.app-shell {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.app-header {
+  grid-template-columns: minmax(24rem, 1fr) minmax(24rem, auto) auto;
+  align-items: start;
+}
+
+.header-actions {
+  align-items: center;
+}
+
+.version-stack {
+  display: grid;
+  gap: 0.16rem;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.18;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.header-ability-toggle {
+  display: none;
+  min-height: 2.55rem;
+  padding-inline: 0.9rem;
+  border-radius: 12px;
+}
+
+.tabs {
+  padding-left: 1rem;
+}
+
+.main-layout {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main-layout-full {
+  grid-template-columns: 1fr;
+}
+
+.content-pane,
+.side-pane {
+  min-height: 0;
+}
+
+.content-pane {
+  overflow: hidden;
+}
+
+.graph-tab,
+.flow-wrap {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.graph-updating {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: rgba(5, 8, 14, 0.42);
+  color: var(--text);
+  font-weight: 750;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+.graph-spinner {
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 3px solid rgba(125, 196, 255, 0.22);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: graph-spin 0.85s linear infinite;
+}
+
+@keyframes graph-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.settings-layout {
+  grid-template-columns: minmax(0, 1.45fr) minmax(20rem, 0.55fr);
+}
+
+.recipe-setting-row {
+  grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr);
+}
+
+.recipe-setting-row select {
+  width: 100%;
+  min-width: 0;
+}
+
+.calculation-settings-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.settings-reset-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.data-io-panel {
+  min-width: 0;
+}
+
+.data-io-grid {
+  display: grid;
+  grid-template-columns: 4.4rem minmax(0, 1fr);
+  gap: 0.55rem 0.75rem;
+  align-items: center;
+}
+
+.data-io-label {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.data-io-button,
+.data-io-file {
+  min-height: 2.65rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.data-io-file {
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.data-io-file input {
+  width: 100%;
+}
+
+@media (max-width: 1320px), (max-height: 760px) {
+  .app-header {
+    grid-template-columns: minmax(18rem, 1fr) auto;
+  }
+
+  .header-ability-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .header-ability-panel {
+    display: none;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    max-width: none;
+    grid-template-columns: repeat(5, minmax(4.8rem, 1fr));
+  }
+
+  .header-ability-panel.is-open {
+    display: grid;
+  }
+}
+
+@media (max-width: 980px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .header-ability-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .data-io-grid {
+    grid-template-columns: 1fr;
+  }
+}

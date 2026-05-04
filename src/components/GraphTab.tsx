@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   BaseEdge,
@@ -221,7 +221,7 @@ function GraphControls({ lang, isInteractive, onToggleInteractive }: GraphContro
         className="flow-custom-control"
         title={labels.fit}
         aria-label={labels.fit}
-        onClick={() => fitView({ padding: 0.16, duration: 220 })}
+        onClick={() => fitView({ padding: 0.18, duration: 220 })}
       >
         <FitIcon />
       </button>
@@ -247,31 +247,56 @@ export function GraphTab({
   completedGraphNodeIds,
   onToggleCompleted,
 }: GraphTabProps) {
+  const flowRef = useRef<any>(null);
+  const latestLayoutId = useRef(0);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [isInteractive, setIsInteractive] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(true);
+
   const raw = useMemo(
     () => buildFlowGraph(result, lang, settings, completedGraphNodeIds),
     [result, lang, settings, completedGraphNodeIds],
   );
 
-  const [nodes, setNodes] = useState<Node[]>(raw.nodes);
-  const [edges, setEdges] = useState<Edge[]>(raw.edges);
-  const [isInteractive, setIsInteractive] = useState(true);
-
   useEffect(() => {
     let disposed = false;
+    const layoutId = latestLayoutId.current + 1;
+    latestLayoutId.current = layoutId;
+
+    setIsUpdating(true);
+    setNodes([]);
+    setEdges([]);
 
     layoutWithElk(raw.nodes, raw.edges)
       .then((layouted) => {
-        if (disposed) return;
+        if (disposed || latestLayoutId.current !== layoutId) return;
+
         const layoutedRaw = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
         const positionById = new Map(layouted.map((node) => [node.id, node.position]));
+
         setNodes(layoutedRaw.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position })));
         setEdges(layoutedRaw.edges);
+        setIsUpdating(false);
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            flowRef.current?.fitView?.({ padding: 0.18, duration: 220, maxZoom: 1 });
+          });
+        });
       })
       .catch(() => {
-        if (!disposed) {
-          setNodes(raw.nodes);
-          setEdges(raw.edges);
-        }
+        if (disposed || latestLayoutId.current !== layoutId) return;
+
+        setNodes(raw.nodes);
+        setEdges(raw.edges);
+        setIsUpdating(false);
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            flowRef.current?.fitView?.({ padding: 0.18, duration: 220, maxZoom: 1 });
+          });
+        });
       });
 
     return () => {
@@ -292,6 +317,8 @@ export function GraphTab({
     setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
   };
 
+  const updatingText = lang === 'ja' ? '更新中' : 'Updating';
+
   return (
     <div className="graph-tab">
       <div className="flow-wrap">
@@ -300,6 +327,10 @@ export function GraphTab({
           edges={edges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
+          onInit={(instance) => {
+            flowRef.current = instance;
+            requestAnimationFrame(() => instance.fitView({ padding: 0.18, duration: 0, maxZoom: 1 }));
+          }}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeDoubleClick={onNodeDoubleClick}
@@ -310,7 +341,9 @@ export function GraphTab({
           zoomOnScroll={isInteractive}
           zoomOnPinch={isInteractive}
           zoomOnDoubleClick={isInteractive}
-          fitView
+          minZoom={0.03}
+          maxZoom={2.5}
+          fitView={false}
         >
           <Background color="#243047" gap={18} />
           <GraphControls
@@ -335,6 +368,13 @@ export function GraphTab({
             }}
           />
         </ReactFlow>
+
+        {isUpdating && (
+          <div className="graph-updating" role="status" aria-live="polite">
+            <span className="graph-spinner" aria-hidden="true" />
+            <span>{updatingText}...</span>
+          </div>
+        )}
       </div>
     </div>
   );
