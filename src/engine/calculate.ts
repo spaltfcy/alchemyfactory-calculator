@@ -134,9 +134,6 @@ function shouldRound(mode: MachineRoundingMode, isFinal: boolean): boolean {
   return false;
 }
 
-function surplusPolicyKey(recipeId: string, itemId: string): string {
-  return `${recipeId}:${itemId}`;
-}
 
 export function calculate(input: CalculateInput): CalculationResult {
   const itemStats: Record<string, ItemStat> = {};
@@ -300,8 +297,7 @@ export function calculate(input: CalculateInput): CalculationResult {
           if (!isFinal) availableSurplus[output.itemId] = (availableSurplus[output.itemId] ?? 0) + surplus;
         }
       } else {
-        const key = surplusPolicyKey(recipe.id, output.itemId);
-        const policy = input.surplusPolicies[key] ?? input.settings.defaultSurplusPolicy;
+        const policy = input.settings.defaultSurplusPolicy;
         if (policy === 'reuse') {
           os.surplus += outputRate;
           availableSurplus[output.itemId] = (availableSurplus[output.itemId] ?? 0) + outputRate;

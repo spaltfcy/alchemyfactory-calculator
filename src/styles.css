@@ -193,3 +193,48 @@ th { color: var(--muted); font-weight: 600; background: rgba(255, 255, 255, 0.02
   }
   .tabs button { min-width: auto; }
 }
+
+/* v0.1.5 overrides */
+.planner-node-surplus {
+  border-color: rgba(255, 210, 125, 0.85);
+  background: linear-gradient(180deg, rgba(64, 50, 22, 0.98), rgba(31, 26, 18, 0.98));
+  box-shadow: 0 0 0 1px rgba(255, 210, 125, 0.18), 0 10px 20px rgba(0,0,0,0.24);
+}
+.planner-node-surplus .planner-node-title::after {
+  content: ' surplus';
+  margin-left: 0.45rem;
+  color: var(--warning);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.settings-tab {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.settings-card {
+  flex: 0 1 auto;
+  height: auto;
+}
+.settings-card-small { width: min(100%, 24rem); }
+.settings-card-wide { width: min(100%, 36rem); }
+.settings-card-abilities { width: min(100%, 32rem); }
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: end;
+}
+.ability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+.compact-table-scroll { max-height: 24rem; }
+.target-row {
+  gap: 0.65rem;
+  padding: 0.75rem;
+}

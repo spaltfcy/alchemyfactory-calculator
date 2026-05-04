@@ -1,9 +1,8 @@
 // @ts-nocheck
 import type { AppSettings, AppState, Lang, SurplusPolicy } from '../types';
 import { ABILITY_IDS } from '../data/abilityTables';
-import { ITEMS, itemById } from '../data/items';
-import { RECIPES, getRecipesProducing, recipeById } from '../data/recipes';
-import { getByproductKeys } from '../engine/calculate';
+import { ITEMS } from '../data/items';
+import { getRecipesProducing } from '../data/recipes';
 import { t, text } from '../i18n';
 import { clearState, downloadJson } from '../utils/storage';
 
@@ -13,16 +12,16 @@ export type SettingsTabProps = {
 };
 
 const abilityLabels: Record<string, { ja: string; en: string }> = {
-  logisticsEfficiency: { ja: 'Logistics Efficiency', en: 'Logistics Efficiency' },
-  throwingEfficiency: { ja: 'Throwing Efficiency', en: 'Throwing Efficiency' },
-  factoryEfficiency: { ja: 'Factory Efficiency', en: 'Factory Efficiency' },
-  alchemySkill: { ja: 'Alchemy Skill', en: 'Alchemy Skill' },
-  fuelEfficiency: { ja: 'Fuel Efficiency', en: 'Fuel Efficiency' },
-  fertilizerEfficiency: { ja: 'Fertilizer Efficiency', en: 'Fertilizer Efficiency' },
-  salesAbility: { ja: 'Sales Ability', en: 'Sales Ability' },
-  negotiationSkill: { ja: 'Negotiation Skill', en: 'Negotiation Skill' },
-  customerManagement: { ja: 'Customer Management', en: 'Customer Management' },
-  relicKnowledge: { ja: 'Relic Knowledge', en: 'Relic Knowledge' },
+  logisticsEfficiency: { ja: '物流助珸', en: 'Logistics Efficiency' },
+  throwingEfficiency: { ja: '投げ詿み効率', en: 'Throwing Efficiency' },
+  factoryEfficiency: { ja: '工場効率', en: 'Factory Efficiency' },
+  alchemySkill: { ja: '錌金術スキルル', en: 'Alchemy Skill' },
+  fuelEfficiency: { ja: '燀料効率', en: 'Fuel Efficiency' },
+  fertilizerEfficiency: { ja: '肥料効徇', en: 'Fertilizer Efficiency' },
+  salesAbility: { ja: '販売能力', en: 'Sales Ability' },
+  negotiationSkill: { ja: '交温ป', en: 'Negotiation Skill' },
+  customerManagement: { ja: '願宗管理', en: 'Customer Management' },
+  relicKnowledge: { ja: 'レリッギ知騭�', en: 'Relic Knowledge' },
 };
 
 function mergeState(current: AppState, imported: Partial<AppState>): AppState {
@@ -54,8 +53,8 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
   }
 
   return (
-    <div className="settings-tab stack">
-      <section className="panel settings-grid">
+    <div className="settings-tab">
+      <section className="panel settings-card settings-card-small settings-grid">
         <h2>{t('language', lang)}</h2>
         <label>
           {t('language', lang)}
@@ -75,8 +74,8 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
         </label>
       </section>
 
-      <section className="panel settings-grid">
-        <h2>{lang === 'ja' ? '計算' : 'Calculation'}</h2>
+      <section className="panel settings-card settings-card-small settings-grid">
+        <h2>{lang === 'ja' ? '负筓' : 'Calculation'}</h2>
         <label>
           {t('machineRounding', lang)}
           <select value={state.settings.machineRounding} onChange={(e) => patchSettings({ machineRounding: e.target.value as AppSettings['machineRounding'] })}>
@@ -94,10 +93,10 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
         </label>
       </section>
 
-      <section className="panel settings-grid">
+      <section className="panel settings-card settings-card-small settings-grid">
         <h2>{t('display', lang)}</h2>
         <label>
-          {lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}
+          {lang === 'ja' ? 'ஸラフ詳細带' : 'Graph detail'}
           <select value={state.settings.graphDetailLevel} onChange={(e) => patchSettings({ graphDetailLevel: e.target.value as AppSettings['graphDetailLevel'] })}>
             <option value="simple">{t('simple', lang)}</option>
             <option value="normal">{t('normal', lang)}</option>
@@ -106,15 +105,11 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
         </label>
         <label className="checkbox-row">
           <input type="checkbox" checked={state.settings.showSurplus} onChange={(e) => patchSettings({ showSurplus: e.target.checked })} />
-          {lang === 'ja' ? '余剰を表示' : 'Show surplus'}
-        </label>
-        <label className="checkbox-row">
-          <input type="checkbox" checked={state.settings.showDiscardedByproducts} onChange={(e) => patchSettings({ showDiscardedByproducts: e.target.checked })} />
-          {lang === 'ja' ? '破棄副産物を表示' : 'Show discarded byproducts'}
+          {lang === 'ja' ? '余剖ノードを表示' : 'Show surplus nodes'}
         </label>
       </section>
 
-      <section className="panel">
+      <section className="panel settings-card settings-card-abilities">
         <h2>{t('abilities', lang)}</h2>
         <div className="ability-grid">
           {ABILITY_IDS.map((id) => (
@@ -130,16 +125,11 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
             </label>
           ))}
         </div>
-        <p className="muted">
-          {lang === 'ja'
-            ? '各レベルの変動値は src/data/abilityTables.ts の配列で調整できます。'
-            : 'Per-level values can be edited in src/data/abilityTables.ts.'}
-        </p>
       </section>
 
-      <section className="panel">
+      <section className="panel settings-card settings-card-wide">
         <h2>{t('recipePreferences', lang)}</h2>
-        <div className="table-scroll">
+        <div className="table-scroll compact-table-scroll">
           <table>
             <thead>
               <tr>
@@ -177,45 +167,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
         </div>
       </section>
 
-      <section className="panel">
-        <h2>{t('byproductPolicies', lang)}</h2>
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('recipe', lang)}</th>
-                <th>{lang === 'ja' ? '副産物' : 'Byproduct'}</th>
-                <th>{lang === 'ja' ? '扱い' : 'Policy'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {getByproductKeys().map(({ key, recipeId, itemId }) => (
-                <tr key={key}>
-                  <td>{text(recipeById[recipeId].name, lang)}</td>
-                  <td>{text(itemById[itemId].name, lang)}</td>
-                  <td>
-                    <select
-                      value={state.surplusPolicies[key] ?? ''}
-                      onChange={(e) => {
-                        const next = { ...state.surplusPolicies };
-                        if (e.target.value) next[key] = e.target.value as SurplusPolicy;
-                        else delete next[key];
-                        setState({ ...state, surplusPolicies: next });
-                      }}
-                    >
-                      <option value="">{lang === 'ja' ? 'デフォルト' : 'Default'}</option>
-                      <option value="reuse">{t('reuse', lang)}</option>
-                      <option value="discard">{t('discard', lang)}</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="panel settings-grid">
+      <section className="panel settings-card settings-card-small settings-grid">
         <h2>{t('data', lang)}</h2>
         <button onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>{t('exportJson', lang)}</button>
         <label className="file-label">

@@ -75,7 +75,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
           onEdgesChange={onEdgesChange}
           onNodeDoubleClick={onNodeDoubleClick}
           fitView
-          fitViewOptions={{ padding: 0.95, maxZoom: 0.38, minZoom: 0.18 }}
+          fitViewOptions={{ padding: 0.55, maxZoom: 0.58, minZoom: 0.22 }}
           minZoom={0.12}
           maxZoom={2}
           nodesDraggable
