@@ -1,9 +1,7 @@
 // @ts-nocheck
 import type { AppSettings, AppState, Lang, SurplusPolicy } from '../types';
 import { ABILITY_IDS } from '../data/abilityTables';
-import { ITEMS } from '../data/items';
-import { getRecipesProducing } from '../data/recipes';
-import { t, text } from '../i18n';
+import { t } from '../i18n';
 import { clearState, downloadJson } from '../utils/storage';
 
 export type SettingsTabProps = {
@@ -12,23 +10,23 @@ export type SettingsTabProps = {
 };
 
 const abilityLabels: Record<string, { ja: string; en: string }> = {
-  logisticsEfficiency: { ja: '物流助珸', en: 'Logistics Efficiency' },
-  throwingEfficiency: { ja: '投げ詿み効率', en: 'Throwing Efficiency' },
+  logisticsEfficiency: { ja: '物流効率', en: 'Logistics Efficiency' },
+  throwingEfficiency: { ja: '投擲効率', en: 'Throwing Efficiency' },
   factoryEfficiency: { ja: '工場効率', en: 'Factory Efficiency' },
-  alchemySkill: { ja: '錌金術スキルル', en: 'Alchemy Skill' },
-  fuelEfficiency: { ja: '燀料効率', en: 'Fuel Efficiency' },
-  fertilizerEfficiency: { ja: '肥料効徇', en: 'Fertilizer Efficiency' },
+  alchemySkill: { ja: '錬金スキル', en: 'Alchemy Skill' },
+  fuelEfficiency: { ja: '燃料効率', en: 'Fuel Efficiency' },
+  fertilizerEfficiency: { ja: '肥料効率', en: 'Fertilizer Efficiency' },
   salesAbility: { ja: '販売能力', en: 'Sales Ability' },
-  negotiationSkill: { ja: '交温ป', en: 'Negotiation Skill' },
-  customerManagement: { ja: '願宗管理', en: 'Customer Management' },
-  relicKnowledge: { ja: 'レリッギ知騭�', en: 'Relic Knowledge' },
+  negotiationSkill: { ja: '交渉スキル', en: 'Negotiation Skill' },
+  customerManagement: { ja: '顧客管理', en: 'Customer Management' },
+  relicKnowledge: { ja: '遺物知識', en: 'Relic Knowledge' },
 };
 
 function mergeState(current: AppState, imported: Partial<AppState>): AppState {
   return {
     ...current,
     ...imported,
-    settings: { ...current.settings, ...imported.settings },
+    settings: { ...current.settings, ...imported.settings, showSurplus: imported.settings?.showSurplus ?? current.settings.showSurplus },
     abilities: { ...current.abilities, ...imported.abilities },
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
     surplusPolicies: { ...current.surplusPolicies, ...imported.surplusPolicies },
@@ -54,7 +52,7 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
 
   return (
     <div className="settings-tab">
-      <section className="panel settings-card settings-card-small settings-grid">
+      <section className="panel settings-card settings-card-small settings-grid settings-card-language">
         <h2>{t('language', lang)}</h2>
         <label>
           {t('language', lang)}
@@ -63,19 +61,10 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
             <option value="en">English</option>
           </select>
         </label>
-        <label>
-          {t('sellMode', lang)}
-          <select value={state.settings.sellMode} onChange={(e) => patchSettings({ sellMode: e.target.value as AppSettings['sellMode'] })}>
-            <option value="shop">{t('shop', lang)}</option>
-            <option value="questRandom">{t('questRandom', lang)}</option>
-            <option value="questBulk">{t('questBulk', lang)}</option>
-            <option value="questUrgent">{t('questUrgent', lang)}</option>
-          </select>
-        </label>
       </section>
 
-      <section className="panel settings-card settings-card-small settings-grid">
-        <h2>{lang === 'ja' ? '负筓' : 'Calculation'}</h2>
+      <section className="panel settings-card settings-card-small settings-grid settings-card-calculation">
+        <h2>{lang === 'ja' ? '計算' : 'Calculation'}</h2>
         <label>
           {t('machineRounding', lang)}
           <select value={state.settings.machineRounding} onChange={(e) => patchSettings({ machineRounding: e.target.value as AppSettings['machineRounding'] })}>
@@ -93,10 +82,10 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
         </label>
       </section>
 
-      <section className="panel settings-card settings-card-small settings-grid">
+      <section className="panel settings-card settings-card-small settings-grid settings-card-display">
         <h2>{t('display', lang)}</h2>
         <label>
-          {lang === 'ja' ? 'ஸラフ詳細带' : 'Graph detail'}
+          {lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}
           <select value={state.settings.graphDetailLevel} onChange={(e) => patchSettings({ graphDetailLevel: e.target.value as AppSettings['graphDetailLevel'] })}>
             <option value="simple">{t('simple', lang)}</option>
             <option value="normal">{t('normal', lang)}</option>
@@ -105,8 +94,26 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
         </label>
         <label className="checkbox-row">
           <input type="checkbox" checked={state.settings.showSurplus} onChange={(e) => patchSettings({ showSurplus: e.target.checked })} />
-          {lang === 'ja' ? '余剖ノードを表示' : 'Show surplus nodes'}
+          {lang === 'ja' ? '余剰ノードを表示' : 'Show surplus nodes'}
         </label>
+      </section>
+
+      <section className="panel settings-card settings-card-small settings-grid settings-card-data">
+        <h2>{t('data', lang)}</h2>
+        <button onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>{t('exportJson', lang)}</button>
+        <label className="file-label">
+          {t('importJson', lang)}
+          <input type="file" accept="application/json" onChange={(e) => void importJson(e.currentTarget.files?.[0])} />
+        </label>
+        <button
+          className="danger"
+          onClick={() => {
+            clearState();
+            location.reload();
+          }}
+        >
+          {t('reset', lang)}
+        </button>
       </section>
 
       <section className="panel settings-card settings-card-abilities">
@@ -125,64 +132,6 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
             </label>
           ))}
         </div>
-      </section>
-
-      <section className="panel settings-card settings-card-wide">
-        <h2>{t('recipePreferences', lang)}</h2>
-        <div className="table-scroll compact-table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>{lang === 'ja' ? '生成物' : 'Output item'}</th>
-                <th>{t('recipe', lang)}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ITEMS.filter((item) => getRecipesProducing(item.id).length > 1).map((item) => {
-                const recipes = getRecipesProducing(item.id);
-                return (
-                  <tr key={item.id}>
-                    <td>{text(item.name, lang)}</td>
-                    <td>
-                      <select
-                        value={state.recipePreferences[item.id] ?? ''}
-                        onChange={(e) => {
-                          const next = { ...state.recipePreferences };
-                          if (e.target.value) next[item.id] = e.target.value;
-                          else delete next[item.id];
-                          setState({ ...state, recipePreferences: next });
-                        }}
-                      >
-                        <option value="">{lang === 'ja' ? 'デフォルト' : 'Default'}</option>
-                        {recipes.map((recipe) => (
-                          <option key={recipe.id} value={recipe.id}>{text(recipe.name, lang)}</option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="panel settings-card settings-card-small settings-grid">
-        <h2>{t('data', lang)}</h2>
-        <button onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>{t('exportJson', lang)}</button>
-        <label className="file-label">
-          {t('importJson', lang)}
-          <input type="file" accept="application/json" onChange={(e) => void importJson(e.currentTarget.files?.[0])} />
-        </label>
-        <button
-          className="danger"
-          onClick={() => {
-            clearState();
-            location.reload();
-          }}
-        >
-          {t('reset', lang)}
-        </button>
       </section>
     </div>
   );

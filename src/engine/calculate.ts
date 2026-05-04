@@ -144,7 +144,7 @@ export function calculate(input: CalculateInput): CalculationResult {
   const availableSurplus: Record<string, number> = {};
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
-  const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, input.settings.sellMode);
+  const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
   const visiting = new Set<string>();
 
   function stat(itemId: string): ItemStat {

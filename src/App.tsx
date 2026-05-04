@@ -12,12 +12,13 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.1.5';
+const APP_VERSION = 'v0.1.6';
 
 function mergeInitialState(): AppState {
   const saved = loadState();
   if (!saved) return DEFAULT_STATE;
-  return {
+
+  const merged: AppState = {
     ...DEFAULT_STATE,
     ...saved,
     settings: { ...DEFAULT_STATE.settings, ...saved.settings },
@@ -28,6 +29,14 @@ function mergeInitialState(): AppState {
     completedGraphNodeIds: { ...DEFAULT_STATE.completedGraphNodeIds, ...saved.completedGraphNodeIds },
     nodeNotes: { ...DEFAULT_STATE.nodeNotes, ...saved.nodeNotes },
   };
+
+  // v0.1.6: 余剰ノード表示はデフォルトONへ移行します。
+  if ((saved.version ?? 0) < 2) {
+    merged.settings.showSurplus = true;
+  }
+
+  merged.version = Math.max(DEFAULT_STATE.version, saved.version ?? 0);
+  return merged;
 }
 
 export function App() {

@@ -2,7 +2,7 @@ import type { AppState } from './types';
 import { DEFAULT_ABILITIES } from './data/abilityTables';
 
 export const DEFAULT_STATE: AppState = {
-  version: 1,
+  version: 2,
   language: 'ja',
   activeTab: 'graph',
   targets: [
@@ -21,7 +21,6 @@ export const DEFAULT_STATE: AppState = {
     showSurplus: true,
     showDiscardedByproducts: true,
     showCompleted: true,
-    sellMode: 'shop',
   },
   abilities: DEFAULT_ABILITIES,
   recipePreferences: {},

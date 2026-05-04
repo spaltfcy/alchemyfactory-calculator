@@ -4,4 +4,4 @@ dist
 .DS_Store
 *.local
 package-lock.json
-apply_v015.cjs
+apply_v*.cjs

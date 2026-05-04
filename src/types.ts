@@ -79,7 +79,6 @@ export type AppSettings = {
   showSurplus: boolean;
   showDiscardedByproducts: boolean;
   showCompleted: boolean;
-  sellMode: 'shop' | 'questRandom' | 'questBulk' | 'questUrgent';
 };
 
 export type AppState = {
