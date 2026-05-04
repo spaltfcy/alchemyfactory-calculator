@@ -2,7 +2,7 @@ import type { AppState } from './types';
 import { DEFAULT_ABILITIES } from './data/abilityTables';
 
 export const DEFAULT_STATE: AppState = {
-  version: 5,
+  version: 6,
   language: 'ja',
   activeTab: 'graph',
   targets: [
@@ -21,6 +21,15 @@ export const DEFAULT_STATE: AppState = {
     showSurplus: true,
     showDiscardedByproducts: true,
     showCompleted: true,
+    fuel: {
+      enabled: true,
+      fuelItemId: 'charcoal_powder',
+      fuelSourceMode: 'craft',
+      crucibleVariant: 'crucible',
+      crucibleOverheadHeatPerSec: 0.4,
+      otherOverheadHeatPerSec: 1,
+      maxIterations: 8,
+    },
   },
   abilities: DEFAULT_ABILITIES,
   recipePreferences: {},

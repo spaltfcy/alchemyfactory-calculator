@@ -13,7 +13,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = 'v0.2.7';
+const APP_VERSION = 'v0.3.0';
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   logisticsEfficiency: { ja: '物流効率', en: 'Logistics' },
@@ -36,7 +36,7 @@ function mergeInitialState(): AppState {
   const merged: AppState = {
     ...DEFAULT_STATE,
     ...saved,
-    settings: { ...DEFAULT_STATE.settings, ...saved.settings },
+    settings: { ...DEFAULT_STATE.settings, ...saved.settings, fuel: { ...DEFAULT_STATE.settings.fuel, ...(saved.settings?.fuel ?? {}) } },
     abilities: { ...DEFAULT_STATE.abilities, ...saved.abilities },
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
     surplusPolicies: { ...DEFAULT_STATE.surplusPolicies, ...saved.surplusPolicies },

@@ -805,3 +805,35 @@ th { color: var(--muted); font-weight: 600; background: rgba(255, 255, 255, 0.02
     grid-template-columns: 1fr;
   }
 }
+
+
+/* v0.3.0 fuel settings */
+.fuel-settings-panel {
+  min-width: 0;
+}
+
+.fuel-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.fuel-settings-grid label {
+  min-width: 0;
+}
+
+.fuel-settings-grid select,
+.fuel-settings-grid input[type="number"] {
+  min-width: 0;
+}
+
+.fuel-checkbox-row {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 820px) {
+  .fuel-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}

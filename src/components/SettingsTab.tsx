@@ -1,8 +1,8 @@
 // @ts-nocheck
 import type { AppSettings, AppState, Lang, Recipe, SurplusPolicy } from '../types';
-import { ITEMS } from '../data/items';
-import { itemById } from '../data/items';
+import { ITEMS, itemById } from '../data/items';
 import { machineById } from '../data/machines';
+import { FUEL_HEAT_VALUE_BY_ITEM_ID, FUEL_ITEM_IDS } from '../data/heat';
 import { CODEX_RECIPE_ORDER, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
 import { t, text } from '../i18n';
 import { clearState, downloadJson } from '../utils/storage';
@@ -11,6 +11,20 @@ export type SettingsTabProps = {
   state: AppState;
   setState: (next: AppState) => void;
 };
+
+const DEFAULT_FUEL_SETTINGS = {
+  enabled: true,
+  fuelItemId: 'charcoal_powder',
+  fuelSourceMode: 'craft',
+  crucibleVariant: 'crucible',
+  crucibleOverheadHeatPerSec: 0.4,
+  otherOverheadHeatPerSec: 1,
+  maxIterations: 8,
+};
+
+function getFuelSettings(state: AppState) {
+  return { ...DEFAULT_FUEL_SETTINGS, ...(state.settings.fuel ?? {}) };
+}
 
 function getDefaultRecipeId(itemId: string): string {
   return DEFAULT_RECIPE_BY_ITEM_ID[itemId] ?? getSortedRecipesProducing(itemId)[0]?.id ?? '';
@@ -36,32 +50,26 @@ function recipeItemName(itemId: string, lang: Lang): string {
 
 function joinRecipeItemNames(entries: Array<{ itemId: string }>, lang: Lang): string {
   const separator = lang === 'ja' ? '・' : ', ';
-
   return entries.map((entry) => recipeItemName(entry.itemId, lang)).join(separator);
 }
 
 function recipeOptionLabel(itemId: string, recipe: Recipe, lang: Lang): string {
   const machine = machineById[recipe.machineId];
-
-  const inputNames = recipe.inputs.length
-    ? joinRecipeItemNames(recipe.inputs, lang)
-    : recipeItemName(itemId, lang);
-
+  const inputNames = recipe.inputs.length ? joinRecipeItemNames(recipe.inputs, lang) : recipeItemName(itemId, lang);
   const machineName = machine ? text(machine.name, lang) : recipe.machineId;
-
-  const outputNames = recipe.outputs.length
-    ? joinRecipeItemNames(recipe.outputs, lang)
-    : recipeItemName(itemId, lang);
-
-  return `${inputNames} → ${machineName} → ${outputNames}`;
+  const outputNames = recipe.outputs.length ? joinRecipeItemNames(recipe.outputs, lang) : recipeItemName(itemId, lang);
+  return inputNames + ' → ' + machineName + ' → ' + outputNames;
 }
-
 
 function mergeState(current: AppState, imported: Partial<AppState>): AppState {
   return {
     ...current,
     ...imported,
-    settings: { ...current.settings, ...imported.settings },
+    settings: {
+      ...current.settings,
+      ...imported.settings,
+      fuel: { ...getFuelSettings(current), ...(imported.settings?.fuel ?? {}) },
+    },
     abilities: { ...current.abilities, ...imported.abilities },
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
     surplusPolicies: { ...current.surplusPolicies, ...imported.surplusPolicies },
@@ -73,17 +81,29 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
 
 export function SettingsTab({ state, setState }: SettingsTabProps) {
   const lang = state.language;
+  const fuel = getFuelSettings(state);
 
   function patchSettings(patch: Partial<AppSettings>) {
     setState({ ...state, settings: { ...state.settings, ...patch } });
   }
 
+  function patchFuelSettings(patch: Partial<AppSettings['fuel']>) {
+    setState({
+      ...state,
+      settings: {
+        ...state.settings,
+        fuel: {
+          ...fuel,
+          ...patch,
+        },
+      },
+    });
+  }
+
   async function importJson(file: File | undefined) {
     if (!file) return;
-
     const raw = await file.text();
     const parsed = JSON.parse(raw) as Partial<AppState>;
-
     setState(mergeState(state, parsed));
   }
 
@@ -99,7 +119,6 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
           {recipeItems.map((item) => {
             const recipes = getSortedRecipesProducing(item.id);
             const value = state.recipePreferences[item.id] ?? getDefaultRecipeId(item.id);
-
             return (
               <label key={item.id} className="recipe-setting-row">
                 <span className="recipe-setting-item-name">{text(item.name, lang)}</span>
@@ -138,7 +157,6 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 <option value="all">{t('roundingAll', lang)}</option>
               </select>
             </label>
-
             <label>
               {t('defaultSurplusPolicy', lang)}
               <select
@@ -149,7 +167,6 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 <option value="discard">{t('discard', lang)}</option>
               </select>
             </label>
-
             <label>
               {lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}
               <select
@@ -161,7 +178,6 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
                 <option value="detailed">{t('detailed', lang)}</option>
               </select>
             </label>
-
             <label className="checkbox-row">
               <input
                 type="checkbox"
@@ -173,18 +189,76 @@ export function SettingsTab({ state, setState }: SettingsTabProps) {
           </div>
         </section>
 
+        <section className="panel fuel-settings-panel">
+          <h2>{lang === 'ja' ? '燃料' : 'Fuel'}</h2>
+          <div className="fuel-settings-grid">
+            <label className="checkbox-row fuel-checkbox-row">
+              <input type="checkbox" checked={fuel.enabled} onChange={(e) => patchFuelSettings({ enabled: e.target.checked })} />
+              {lang === 'ja' ? '燃料計算を有効' : 'Enable fuel calculation'}
+            </label>
+            <label>
+              {lang === 'ja' ? '使用燃料' : 'Fuel'}
+              <select value={fuel.fuelItemId} onChange={(e) => patchFuelSettings({ fuelItemId: e.target.value })}>
+                {FUEL_ITEM_IDS.map((itemId) => (
+                  <option key={itemId} value={itemId}>
+                    {recipeItemName(itemId, lang)} ({FUEL_HEAT_VALUE_BY_ITEM_ID[itemId]})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {lang === 'ja' ? '燃料の扱い' : 'Fuel source'}
+              <select
+                value={fuel.fuelSourceMode}
+                onChange={(e) => patchFuelSettings({ fuelSourceMode: e.target.value as AppSettings['fuel']['fuelSourceMode'] })}
+              >
+                <option value="craft">{lang === 'ja' ? '内部生産' : 'Craft internally'}</option>
+                <option value="buy">{lang === 'ja' ? '購入扱い' : 'Buy'}</option>
+              </select>
+            </label>
+            <label>
+              {lang === 'ja' ? '坩堝設備' : 'Crucible device'}
+              <select
+                value={fuel.crucibleVariant}
+                onChange={(e) => patchFuelSettings({ crucibleVariant: e.target.value as AppSettings['fuel']['crucibleVariant'] })}
+              >
+                <option value="crucible">{lang === 'ja' ? '通常坩堝' : 'Crucible'}</option>
+                <option value="stackable_crucible">{lang === 'ja' ? '積層坩堝' : 'Stackable Crucible'}</option>
+              </select>
+            </label>
+            <label>
+              {lang === 'ja' ? '坩堝の炉近似' : 'Crucible furnace overhead'}
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                value={fuel.crucibleOverheadHeatPerSec}
+                onChange={(e) => patchFuelSettings({ crucibleOverheadHeatPerSec: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              {lang === 'ja' ? 'その他の炉近似' : 'Other furnace overhead'}
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                value={fuel.otherOverheadHeatPerSec}
+                onChange={(e) => patchFuelSettings({ otherOverheadHeatPerSec: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+        </section>
+
         <section className="panel">
           <h2>{t('data', lang)}</h2>
           <div className="settings-actions">
             <button type="button" onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
               {t('exportJson', lang)}
             </button>
-
             <label className="file-label">
               {t('importJson', lang)}
               <input type="file" accept="application/json" onChange={(e) => void importJson(e.currentTarget.files?.[0])} />
             </label>
-
             <button
               type="button"
               className="danger"

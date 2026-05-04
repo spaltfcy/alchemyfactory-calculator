@@ -1,9 +1,6 @@
 export type Lang = 'ja' | 'en';
 
-export type LocalizedText = {
-  ja: string;
-  en: string;
-};
+export type LocalizedText = { ja: string; en: string };
 
 export type ItemCategory =
   | 'raw'
@@ -58,6 +55,19 @@ export type SurplusPolicy = 'reuse' | 'discard';
 export type ItemSourceMode = 'auto' | 'craft' | 'buy' | 'stock';
 export type GraphDetailLevel = 'simple' | 'normal' | 'detailed';
 
+export type FuelSourceMode = 'craft' | 'buy';
+export type CrucibleVariant = 'crucible' | 'stackable_crucible';
+
+export type FuelSettings = {
+  enabled: boolean;
+  fuelItemId: string;
+  fuelSourceMode: FuelSourceMode;
+  crucibleVariant: CrucibleVariant;
+  crucibleOverheadHeatPerSec: number;
+  otherOverheadHeatPerSec: number;
+  maxIterations: number;
+};
+
 export type AbilityId =
   | 'logisticsEfficiency'
   | 'throwingEfficiency'
@@ -79,6 +89,7 @@ export type AppSettings = {
   showSurplus: boolean;
   showDiscardedByproducts: boolean;
   showCompleted: boolean;
+  fuel: FuelSettings;
 };
 
 export type AppState = {

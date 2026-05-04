@@ -41,7 +41,7 @@ export const ABILITY_TABLES = {
     extractorOutputPercentAdd: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
   },
   fuelEfficiency: {
-    fuelHeatValuePercentAdd: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    fuelHeatValuePercentAdd: [0.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0],
   },
   fertilizerEfficiency: {
     fertilizerNutritionPercentAdd: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -63,6 +63,7 @@ export const ABILITY_TABLES = {
 export const ABILITY_BASE_VALUES = {
   conveyorItemsPerMinute: 60.0,
   productionSpeedMultiplier: 1.0,
+  fuelHeatValueMultiplier: 1.0,
   sellPriceMultiplier: 1.0,
   questRandomMultiplier: 1.3,
   questBulkMultiplier: 1.6,
@@ -72,7 +73,9 @@ export const ABILITY_BASE_VALUES = {
 function sumLevels(values: readonly number[], level: number): number {
   const safeLevel = Math.max(0, Math.min(Math.floor(level), values.length - 1));
   let total = 0;
+
   for (let i = 0; i <= safeLevel; i += 1) total += values[i] ?? 0;
+
   return total;
 }
 
@@ -85,15 +88,27 @@ export function getConveyorItemsPerMinute(abilities: AbilitySettings): number {
 
 export function getProductionSpeedMultiplier(abilities: AbilitySettings): number {
   const addPercent = sumLevels(ABILITY_TABLES.factoryEfficiency.productionSpeedPercentAdd, abilities.factoryEfficiency);
+
   return ABILITY_BASE_VALUES.productionSpeedMultiplier * (1 + addPercent / 100);
 }
 
-export function getSellPriceMultiplier(abilities: AbilitySettings, sellMode: 'shop' | 'questRandom' | 'questBulk' | 'questUrgent'): number {
+export function getFuelHeatValueMultiplier(abilities: AbilitySettings): number {
+  const addPercent = sumLevels(ABILITY_TABLES.fuelEfficiency.fuelHeatValuePercentAdd, abilities.fuelEfficiency);
+
+  return ABILITY_BASE_VALUES.fuelHeatValueMultiplier * (1 + addPercent / 100);
+}
+
+export function getSellPriceMultiplier(
+  abilities: AbilitySettings,
+  sellMode: 'shop' | 'questRandom' | 'questBulk' | 'questUrgent',
+): number {
   const salesAdd = sumLevels(ABILITY_TABLES.salesAbility.sellPricePercentAdd, abilities.salesAbility);
   const customerAdd = sumLevels(ABILITY_TABLES.customerManagement.questRewardPercentAdd, abilities.customerManagement);
   const shop = ABILITY_BASE_VALUES.sellPriceMultiplier * (1 + salesAdd / 100);
+
   if (sellMode === 'questRandom') return shop * ABILITY_BASE_VALUES.questRandomMultiplier * (1 + customerAdd / 100);
   if (sellMode === 'questBulk') return shop * ABILITY_BASE_VALUES.questBulkMultiplier * (1 + customerAdd / 100);
   if (sellMode === 'questUrgent') return shop * ABILITY_BASE_VALUES.questUrgentMultiplier * (1 + customerAdd / 100);
+
   return shop;
 }
