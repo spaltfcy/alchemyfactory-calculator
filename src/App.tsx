@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AbilityId, AppState } from './types';
 import { DEFAULT_STATE } from './defaultState';
@@ -13,14 +12,10 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.7';
+const APP_VERSION = '0.3.8';
 const GAME_VERSION = '0.4.4.4323';
 
-type RuntimeFlags = {
-  debug: boolean;
-  explicitSafeMode: boolean;
-  safeMode: boolean;
-};
+type RuntimeFlags = { debug: boolean; explicitSafeMode: boolean; safeMode: boolean };
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   logisticsEfficiency: { ja: '物流効率', en: 'Logistics' },
@@ -37,59 +32,36 @@ const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
 
 function parseRuntimeFlags(): RuntimeFlags {
   const rawHash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
-  const parts = rawHash.split('&').filter(Boolean);
   const cleanParts: string[] = [];
-
   let debug = false;
   let explicitSafeMode = false;
 
-  for (const part of parts) {
+  for (const part of rawHash.split('&').filter(Boolean)) {
     if (part === 'DEBUG=ON') {
-      if (!debug) {
-        debug = true;
-        cleanParts.push('DEBUG=ON');
-      }
-
+      if (!debug) cleanParts.push('DEBUG=ON');
+      debug = true;
       continue;
     }
 
     const lower = part.toLowerCase();
     if (lower === 'safe' || lower === 'safemode') {
-      if (!explicitSafeMode) {
-        explicitSafeMode = true;
-        cleanParts.push(lower);
-      }
-
-      continue;
+      if (!explicitSafeMode) cleanParts.push(lower);
+      explicitSafeMode = true;
     }
   }
 
-  const cleanHash = cleanParts.length ? '#' + cleanParts.join('&') : '';
-
+  const cleanHash = cleanParts.length ? `#${cleanParts.join('&')}` : '';
   if (window.location.hash !== cleanHash) {
-    window.history.replaceState(null, '', window.location.pathname + window.location.search + cleanHash);
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${cleanHash}`);
   }
 
-  return {
-    debug,
-    explicitSafeMode,
-    safeMode: debug || explicitSafeMode,
-  };
-}
-
-function resetStateForSafeMode(current: AppState): AppState {
-  return {
-    ...DEFAULT_STATE,
-    language: current.language,
-    activeTab: current.activeTab,
-  };
+  return { debug, explicitSafeMode, safeMode: debug || explicitSafeMode };
 }
 
 function mergeInitialState(safeMode: boolean): AppState {
   if (safeMode) return DEFAULT_STATE;
 
   const saved = loadState();
-
   if (!saved) return DEFAULT_STATE;
 
   const merged: AppState = {
@@ -108,42 +80,47 @@ function mergeInitialState(safeMode: boolean): AppState {
     nodeNotes: { ...DEFAULT_STATE.nodeNotes, ...saved.nodeNotes },
   };
 
-  if ((saved.version ?? 0) < 4) {
-    merged.settings.showSurplus = true;
-  }
-
+  if ((saved.version ?? 0) < 4) merged.settings.showSurplus = true;
   merged.version = Math.max(DEFAULT_STATE.version, saved.version ?? 0);
-
   return merged;
 }
 
+function resetStateForSafeMode(current: AppState): AppState {
+  return { ...DEFAULT_STATE, language: current.language, activeTab: current.activeTab };
+}
+
 export function App() {
-  const [runtimeFlags, setRuntimeFlags] = useState(() => parseRuntimeFlags());
-  const [state, setState] = useState(() => mergeInitialState(parseRuntimeFlags().safeMode));
+  const [runtimeFlags, setRuntimeFlags] = useState<RuntimeFlags>(() => parseRuntimeFlags());
+  const [state, setState] = useState<AppState>(() => mergeInitialState(parseRuntimeFlags().safeMode));
   const [abilityOpen, setAbilityOpen] = useState(false);
-  const previousSafeMode = useRef(runtimeFlags.safeMode);
+  const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
 
   useEffect(() => {
-    const onHashChange = () => {
-      setRuntimeFlags(parseRuntimeFlags());
-    };
-
+    const onHashChange = () => setRuntimeFlags(parseRuntimeFlags());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   useEffect(() => {
-    if (!previousSafeMode.current && runtimeFlags.safeMode) {
+    const previousSafeMode = safeTransitionRef.current.previousSafeMode;
+
+    if (previousSafeMode && !runtimeFlags.safeMode) {
+      safeTransitionRef.current.reloading = true;
+      window.location.reload();
+      return;
+    }
+
+    if (!previousSafeMode && runtimeFlags.safeMode) {
       setState((current) => resetStateForSafeMode(current));
     }
 
-    previousSafeMode.current = runtimeFlags.safeMode;
+    safeTransitionRef.current.previousSafeMode = runtimeFlags.safeMode;
   }, [runtimeFlags.safeMode]);
 
   useEffect(() => {
-    if (runtimeFlags.safeMode) return;
+    if (runtimeFlags.safeMode || safeTransitionRef.current.reloading) return;
     saveState(state);
   }, [state, runtimeFlags.safeMode]);
 
@@ -176,21 +153,14 @@ export function App() {
 
   function setAbility(id: AbilityId, value: number) {
     const nextValue = Math.max(0, Math.min(13, Math.floor(Number.isFinite(value) ? value : 0)));
-
-    setState({
-      ...state,
-      abilities: {
-        ...state.abilities,
-        [id]: nextValue,
-      },
-    });
+    setState({ ...state, abilities: { ...state.abilities, [id]: nextValue } });
   }
 
   const initialCost = result.totals.initialCostCopper ?? 0;
   const runningCost = result.totals.runningCostCopperPerMin ?? result.totals.purchaseCostCopperPerMin ?? 0;
+  const abilityButtonLabel = lang === 'ja' ? 'アビリティ' : 'Abilities';
   const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
   const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
-  const abilityButtonLabel = lang === 'ja' ? 'アビリティ' : 'Abilities';
   const siteVersionLabel = lang === 'ja' ? 'サイトバージョン' : 'Site version';
   const gameVersionLabel = lang === 'ja' ? 'ゲームバージョン' : 'Game version';
 
@@ -209,6 +179,14 @@ export function App() {
             {formatCopper(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
             {formatNumber(result.totals.conveyorItemsPerMinute)}/min
           </p>
+
+          <nav className="tabs" aria-label={lang === 'ja' ? '画面切り替え' : 'Views'}>
+            {(['graph', 'table', 'settings', 'about'] as const).map((tab) => (
+              <button key={tab} type="button" className={state.activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
+                {t(tab, lang)}
+              </button>
+            ))}
+          </nav>
         </div>
 
         <div className={abilityOpen ? 'header-ability-panel is-open' : 'header-ability-panel'} aria-label={t('abilities', lang)}>
@@ -221,7 +199,7 @@ export function App() {
                 max={13}
                 step={1}
                 value={state.abilities[id] ?? 0}
-                onChange={(e) => setAbility(id, Number(e.target.value))}
+                onChange={(event: { target: { value: string } }) => setAbility(id, Number(event.target.value))}
               />
             </label>
           ))}
@@ -237,28 +215,16 @@ export function App() {
           </button>
 
           <div className="version-stack">
-            <span>
-              {siteVersionLabel}: {APP_VERSION}
-            </span>
-            <span>
-              {gameVersionLabel}: {GAME_VERSION}
-            </span>
+            <span>{siteVersionLabel}: {APP_VERSION}</span>
+            <span>{gameVersionLabel}: {GAME_VERSION}</span>
           </div>
 
-          <select value={lang} onChange={(e) => setState({ ...state, language: e.target.value as AppState['language'] })}>
+          <select value={lang} onChange={(event: { target: { value: string } }) => setState({ ...state, language: event.target.value as AppState['language'] })}>
             <option value="ja">日本語</option>
             <option value="en">English</option>
           </select>
         </div>
       </header>
-
-      <nav className="tabs">
-        {(['graph', 'table', 'settings', 'about'] as const).map((tab) => (
-          <button key={tab} type="button" className={state.activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
-            {t(tab, lang)}
-          </button>
-        ))}
-      </nav>
 
       <main className={showSidebar ? 'main-layout' : 'main-layout main-layout-full'}>
         {showSidebar && (

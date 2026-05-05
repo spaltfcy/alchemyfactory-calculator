@@ -16,18 +16,9 @@ export function PlannerNode({ data }: NodeProps) {
   const sourceHandles = nodeData.sourceHandles ?? [];
 
   return (
-    <div
-      className={`planner-node planner-node-${kind}${nodeData.completed ? ' is-completed' : ''}`}
-      title={nodeData.tooltip}
-    >
+    <div className={`planner-node planner-node-${kind}${nodeData.completed ? ' is-completed' : ''}`} title={nodeData.tooltip}>
       {targetHandles.map((handle) => (
-        <Handle
-          key={handle.id}
-          id={handle.id}
-          type="target"
-          position={Position.Left}
-          style={handleStyle(handle.topPct, handle.color)}
-        />
+        <Handle key={handle.id} id={handle.id} type="target" position={Position.Left} style={handleStyle(handle.topPct, handle.color)} />
       ))}
 
       <div className="planner-node-title">
@@ -37,13 +28,7 @@ export function PlannerNode({ data }: NodeProps) {
       {nodeData.subLabel && <pre className="planner-node-subtitle">{nodeData.subLabel}</pre>}
 
       {sourceHandles.map((handle) => (
-        <Handle
-          key={handle.id}
-          id={handle.id}
-          type="source"
-          position={Position.Right}
-          style={handleStyle(handle.topPct, handle.color)}
-        />
+        <Handle key={handle.id} id={handle.id} type="source" position={Position.Right} style={handleStyle(handle.topPct, handle.color)} />
       ))}
     </div>
   );
