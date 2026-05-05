@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AbilityId, AppState } from './types';
 import { DEFAULT_STATE } from './defaultState';
 import { calculate } from './engine/calculate';
@@ -13,8 +13,14 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.5';
+const APP_VERSION = '0.3.6';
 const GAME_VERSION = '0.4.4.4323';
+
+type RuntimeFlags = {
+  debug: boolean;
+  explicitSafeMode: boolean;
+  safeMode: boolean;
+};
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   logisticsEfficiency: { ja: '物流効率', en: 'Logistics' },
@@ -26,19 +32,56 @@ const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   salesAbility: { ja: '販売能力', en: 'Sales' },
   negotiationSkill: { ja: '交渉スキル', en: 'Negotiation' },
   customerManagement: { ja: '顧客管理', en: 'Customers' },
-  relicKnowledge: { ja: '遺物知識', en: 'Relics' },
+  relicKnowledge: { ja: '聖遺物の知識', en: 'Relics' },
 };
 
-function parseRuntimeFlags() {
-  const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
-  const params = hash.split('&').filter(Boolean);
+function parseRuntimeFlags(): RuntimeFlags {
+  const rawHash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+  const parts = rawHash.split('&').filter(Boolean);
+  const cleanParts: string[] = [];
+
+  let debug = false;
+  let explicitSafeMode = false;
+
+  for (const part of parts) {
+    if (part === 'DEBUG=ON') {
+      if (!debug) {
+        debug = true;
+        cleanParts.push('DEBUG=ON');
+      }
+
+      continue;
+    }
+
+    const lower = part.toLowerCase();
+    if (lower === 'safe' || lower === 'safemode') {
+      if (!explicitSafeMode) {
+        explicitSafeMode = true;
+        cleanParts.push(lower);
+      }
+
+      continue;
+    }
+  }
+
+  const cleanHash = cleanParts.length ? '#' + cleanParts.join('&') : '';
+
+  if (window.location.hash !== cleanHash) {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search + cleanHash);
+  }
 
   return {
-    debug: params.includes('DEBUG=ON'),
-    safeMode: params.some((part) => {
-      const lower = part.toLowerCase();
-      return lower === 'safe' || lower === 'safemode';
-    }),
+    debug,
+    explicitSafeMode,
+    safeMode: debug || explicitSafeMode,
+  };
+}
+
+function resetStateForSafeMode(current: AppState): AppState {
+  return {
+    ...DEFAULT_STATE,
+    language: current.language,
+    activeTab: current.activeTab,
   };
 }
 
@@ -75,11 +118,29 @@ function mergeInitialState(safeMode: boolean): AppState {
 }
 
 export function App() {
-  const runtimeFlags = useMemo(() => parseRuntimeFlags(), []);
-  const [state, setState] = useState(() => mergeInitialState(runtimeFlags.safeMode));
+  const [runtimeFlags, setRuntimeFlags] = useState(() => parseRuntimeFlags());
+  const [state, setState] = useState(() => mergeInitialState(parseRuntimeFlags().safeMode));
   const [abilityOpen, setAbilityOpen] = useState(false);
+  const previousSafeMode = useRef(runtimeFlags.safeMode);
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
+
+  useEffect(() => {
+    const onHashChange = () => {
+      setRuntimeFlags(parseRuntimeFlags());
+    };
+
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (!previousSafeMode.current && runtimeFlags.safeMode) {
+      setState((current) => resetStateForSafeMode(current));
+    }
+
+    previousSafeMode.current = runtimeFlags.safeMode;
+  }, [runtimeFlags.safeMode]);
 
   useEffect(() => {
     if (runtimeFlags.safeMode) return;
@@ -142,7 +203,7 @@ export function App() {
           <h1>
             {t('appTitle', lang)}
             {runtimeFlags.debug && <span className="debug-badge">[DEBUG]</span>}
-            {runtimeFlags.safeMode && <span className="safe-mode-badge">Safe mode</span>}
+            {runtimeFlags.explicitSafeMode && <span className="safe-mode-badge">Safe mode</span>}
           </h1>
           <p>
             {initialCostLabel}: {formatCopper(initialCost)} + {runningCostLabel}: {formatCopper(runningCost)} /{' '}
@@ -150,7 +211,7 @@ export function App() {
             {formatCopper(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
             {formatNumber(result.totals.conveyorItemsPerMinute)}/min
           </p>
-          {runtimeFlags.safeMode && <p className="safe-mode-notice">{safeModeNotice}</p>}
+          {runtimeFlags.explicitSafeMode && <p className="safe-mode-notice">{safeModeNotice}</p>}
         </div>
 
         <div className={abilityOpen ? 'header-ability-panel is-open' : 'header-ability-panel'} aria-label={t('abilities', lang)}>

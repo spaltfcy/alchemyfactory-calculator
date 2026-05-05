@@ -1199,3 +1199,75 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* v0.3.6 runtime flags and selection UI */
+.tabs {
+  padding-top: 0.45rem;
+  padding-left: 1rem;
+}
+
+.debug-badge {
+  margin-left: 0.55rem;
+  color: #ff4d4f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72em;
+  vertical-align: middle;
+}
+
+.safe-mode-badge {
+  margin-left: 0.55rem;
+  color: #9fe870;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72em;
+  vertical-align: middle;
+}
+
+.safe-mode-notice {
+  margin-top: 0.25rem;
+  color: #9fe870;
+  font-weight: 700;
+}
+
+.target-editor select optgroup {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.target-editor select option {
+  color: #111827;
+  font-weight: 400;
+}
+
+.about-panel {
+  height: 100%;
+  max-width: 68rem;
+  margin-inline: auto;
+  overflow: auto;
+}
+
+.about-panel h2 {
+  margin-top: 0;
+}
+
+.about-panel h3 {
+  margin: 0.9rem 0 0.45rem;
+}
+
+.about-feature-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(14rem, 1fr));
+  gap: 0.35rem 1.25rem;
+  margin: 0.4rem 0 0.9rem;
+  padding-left: 1.25rem;
+}
+
+.about-feature-list li {
+  line-height: 1.35;
+}
+
+@media (max-width: 820px) {
+  .about-feature-list {
+    grid-template-columns: 1fr;
+  }
+}
