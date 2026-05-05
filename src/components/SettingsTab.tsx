@@ -165,7 +165,10 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
               <label key={item.id} className="recipe-setting-row">
                 <span className="recipe-setting-item-name">{text(item.name, lang)}</span>
                 <select
+                  id={`recipe-preference-${item.id}`}
+                  name={`recipe-preference-${item.id}`}
                   value={value}
+                  autoComplete="off"
                   onChange={(e) => {
                     const next = { ...state.recipePreferences };
                     next[item.id] = e.target.value;
@@ -191,7 +194,10 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
             <label>
               {t('machineRounding', lang)}
               <select
+                id="machine-rounding"
+                name="machine-rounding"
                 value={state.settings.machineRounding}
+                autoComplete="off"
                 onChange={(e) => patchSettings({ machineRounding: e.target.value as AppSettings['machineRounding'] })}
               >
                 <option value="none">{t('roundingNone', lang)}</option>
@@ -203,7 +209,10 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
             <label>
               {t('defaultSurplusPolicy', lang)}
               <select
+                id="default-surplus-policy"
+                name="default-surplus-policy"
                 value={state.settings.defaultSurplusPolicy}
+                autoComplete="off"
                 onChange={(e) => patchSettings({ defaultSurplusPolicy: e.target.value as SurplusPolicy })}
               >
                 <option value="reuse">{t('reuse', lang)}</option>
@@ -214,7 +223,10 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
             <label>
               {lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}
               <select
+                id="graph-detail-level"
+                name="graph-detail-level"
                 value={state.settings.graphDetailLevel}
+                autoComplete="off"
                 onChange={(e) => patchSettings({ graphDetailLevel: e.target.value as AppSettings['graphDetailLevel'] })}
               >
                 <option value="simple">{t('simple', lang)}</option>
@@ -225,8 +237,11 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
 
             <label className="checkbox-row">
               <input
+                id="show-surplus"
+                name="show-surplus"
                 type="checkbox"
                 checked={state.settings.showSurplus}
+                autoComplete="off"
                 onChange={(e) => patchSettings({ showSurplus: e.target.checked })}
               />
               {lang === 'ja' ? '余剰ノードを表示' : 'Show surplus nodes'}
@@ -245,8 +260,11 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
           <div className="fuel-settings-grid">
             <label className="checkbox-row fuel-checkbox-row">
               <input
+                id="fuel-enabled"
+                name="fuel-enabled"
                 type="checkbox"
                 checked={fuel.enabled}
+                autoComplete="off"
                 onChange={(e) => patchFuelSettings({ enabled: e.target.checked })}
               />
               {lang === 'ja' ? '燃料計算を有効' : 'Enable fuel calculation'}
@@ -254,7 +272,13 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
 
             <label>
               {lang === 'ja' ? '使用燃料' : 'Fuel'}
-              <select value={fuel.fuelItemId} onChange={(e) => patchFuelSettings({ fuelItemId: e.target.value })}>
+              <select
+                id="fuel-item"
+                name="fuel-item"
+                value={fuel.fuelItemId}
+                autoComplete="off"
+                onChange={(e) => patchFuelSettings({ fuelItemId: e.target.value })}
+              >
                 {FUEL_ITEM_IDS.map((itemId) => (
                   <option key={itemId} value={itemId}>
                     {recipeItemName(itemId, lang)} ({FUEL_HEAT_VALUE_BY_ITEM_ID[itemId]})
@@ -266,7 +290,10 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
             <label>
               {lang === 'ja' ? '燃料の扱い' : 'Fuel source'}
               <select
+                id="fuel-source-mode"
+                name="fuel-source-mode"
                 value={fuel.fuelSourceMode}
+                autoComplete="off"
                 onChange={(e) => patchFuelSettings({ fuelSourceMode: e.target.value as AppSettings['fuel']['fuelSourceMode'] })}
               >
                 <option value="craft">{lang === 'ja' ? '内部生産' : 'Craft internally'}</option>
@@ -277,7 +304,10 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
             <label>
               {lang === 'ja' ? '坩堝設備' : 'Crucible device'}
               <select
+                id="crucible-variant"
+                name="crucible-variant"
                 value={fuel.crucibleVariant}
+                autoComplete="off"
                 onChange={(e) => patchFuelSettings({ crucibleVariant: e.target.value as AppSettings['fuel']['crucibleVariant'] })}
               >
                 <option value="crucible">{lang === 'ja' ? '通常坩堝' : 'Crucible'}</option>
@@ -288,10 +318,13 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
             <label>
               {lang === 'ja' ? '坩堝の炉近似' : 'Crucible furnace overhead'}
               <input
+                id="crucible-overhead-heat"
+                name="crucible-overhead-heat"
                 type="number"
                 min={0}
                 step={0.1}
                 value={fuel.crucibleOverheadHeatPerSec}
+                autoComplete="off"
                 onChange={(e) => patchFuelSettings({ crucibleOverheadHeatPerSec: Number(e.target.value) })}
               />
             </label>
@@ -299,10 +332,13 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
             <label>
               {lang === 'ja' ? 'その他の炉近似' : 'Other furnace overhead'}
               <input
+                id="other-overhead-heat"
+                name="other-overhead-heat"
                 type="number"
                 min={0}
                 step={0.1}
                 value={fuel.otherOverheadHeatPerSec}
+                autoComplete="off"
                 onChange={(e) => patchFuelSettings({ otherOverheadHeatPerSec: Number(e.target.value) })}
               />
             </label>
@@ -319,7 +355,14 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
 
             <div className="data-io-label">{lang === 'ja' ? '入力' : 'Input'}</div>
             <label className="file-label data-io-file">
-              <input type="file" accept="application/json" onChange={(e) => void importJson(e.currentTarget.files?.[0])} />
+              <input
+                id="json-file-input"
+                name="json-file-input"
+                type="file"
+                accept="application/json"
+                autoComplete="off"
+                onChange={(e) => void importJson(e.currentTarget.files?.[0])}
+              />
             </label>
           </div>
         </section>

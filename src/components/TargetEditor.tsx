@@ -101,7 +101,10 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
             <label className="target-field target-item-field">
               {lang === 'ja' ? 'アイテム' : 'Item'}
               <select
+                id={`target-item-${target.id}`}
+                name={`target-item-${target.id}`}
                 value={target.outputItemId}
+                autoComplete="off"
                 onChange={(event: ChangeEvent<HTMLSelectElement>) =>
                   updateTarget(target.id, { outputItemId: event.target.value })
                 }
@@ -117,10 +120,13 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
             <label className="target-field target-value-field">
               {lang === 'ja' ? '出力' : 'Output'}
               <input
+                id={`target-value-${target.id}`}
+                name={`target-value-${target.id}`}
                 type="number"
                 min={0}
                 step={1}
                 value={target.value}
+                autoComplete="off"
                 onChange={(event: ChangeEvent<HTMLInputElement>) =>
                   updateTarget(target.id, { value: Number(event.target.value) })
                 }
@@ -130,7 +136,10 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
             <label className="target-field target-mode-field">
               {t('mode', lang)}
               <select
+                id={`target-mode-${target.id}`}
+                name={`target-mode-${target.id}`}
                 value={target.mode}
+                autoComplete="off"
                 onChange={(event: ChangeEvent<HTMLSelectElement>) =>
                   updateTarget(target.id, { mode: event.target.value as ProductionTarget['mode'] })
                 }
