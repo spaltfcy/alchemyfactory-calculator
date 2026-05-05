@@ -659,20 +659,7 @@ export function calculate(input: CalculateInput): CalculationResult {
       }
     }
 
-    for (const [itemId, lots] of byproductLotsByItem.entries()) {
-      for (const lot of lots) {
-        if (lot.rate <= EPS) continue;
-        const rs = recipeStats[lot.recipeId];
-        const s = stat(itemId);
-        s.surplus += lot.rate;
-        s.discarded += lot.rate;
-        if (rs) {
-          addToRecord(rs.surplusOutputRates, itemId, lot.rate);
-          addToRecord(rs.discardedOutputRates, itemId, lot.rate);
-        }
-        addFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'discard' }, itemId, lot.rate, 'discard');
-      }
-    }
+    for (const [itemId, lots] of byproductLotsByItem.entries()) { for (const lot of lots) { if (lot.rate <= EPS) continue; const rs = recipeStats[lot.recipeId]; const s = stat(itemId); s.discarded += lot.rate; if (rs) { addToRecord(rs.discardedOutputRates, itemId, lot.rate); } addFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'discard' }, itemId, lot.rate, 'discard'); } }
 
     for (const itemId of new Set(input.targets.map((target) => target.outputItemId).filter(Boolean))) {
       const s = stat(itemId as string);
@@ -721,7 +708,7 @@ export function calculate(input: CalculateInput): CalculationResult {
         fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : '',
         toItemId: flow.itemId,
         rate: flow.rate,
-        byproduct: flow.role === 'discard' || flow.role === 'byproductReuse',
+        byproduct: flow.role === 'discard',
         discarded: flow.role === 'discard',
       }));
 
