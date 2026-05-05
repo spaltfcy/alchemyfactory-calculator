@@ -30,12 +30,12 @@ export type PlannerNodeData = {
 
 const OUTPUT_COLORS = [
   '#ff6b6b', // red
-  '#4dabf7', // blue
-  '#f06595', // pink
-  '#2f9e44', // dark green
+  '#1c7ed6', // dark blue
+  '#d633ff', // magenta
+  '#f8f9fa', // white
   '#845ef7', // purple
-  '#e9ecef', // white
-] as const;
+  '#b08968', // brown
+] as const
 const DEFAULT_OUTPUT_COLOR = '#ff6b6b';
 const FINAL_FLOW_COLOR = '#9fe870';
 const DISCARD_FLOW_COLOR = '#ffd43b'; const SURPLUS_FLOW_COLOR = '#ffd43b';
