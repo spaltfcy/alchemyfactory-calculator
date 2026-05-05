@@ -918,3 +918,14 @@ a {
 .planner-node.is-fuel-source .planner-node-title {
  color: #ffcf91;
 }
+
+/* v0.4.4: surplus node styling */
+.planner-node-surplus {
+  border-color: rgba(255, 212, 59, 0.72);
+  background: linear-gradient(180deg, rgba(67, 48, 18, 0.98), rgba(35, 26, 14, 0.98));
+}
+
+.planner-node-surplus .planner-node-title,
+.planner-node-surplus .planner-node-title-line {
+  color: #ffe4a8;
+}

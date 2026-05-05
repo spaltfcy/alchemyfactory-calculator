@@ -368,7 +368,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
             zoomable
             nodeColor={(node) => {
               if (node.data?.kind === 'final') return '#9fe870';
-              if (node.data?.kind === 'discard') return '#ffd27d';
+              if (node.data?.kind === 'discard') return '#ffd27d'; if (node.data?.kind === 'surplus') return '#ffd27d';
               return node.data?.kind === 'recipe' ? '#5d4ba2' : '#28618f';
             }}
             maskColor="rgba(5, 7, 12, 0.68)"

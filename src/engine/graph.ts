@@ -28,10 +28,10 @@ export type PlannerNodeData = {
   isFuelSource?: boolean;
 };
 
-const OUTPUT_COLORS = ['#ff6b6b', '#ff8787', '#f06595', '#e8590c', '#fd7e14', '#ffa94d', '#cc5de8', '#845ef7'];
+const OUTPUT_COLORS = ["#ff6b6b","#ff8787","#f06595","#e8590c","#fd7e14","#ffa94d","#cc5de8","#845ef7"] as const;
 const DEFAULT_OUTPUT_COLOR = '#ff6b6b';
 const FINAL_FLOW_COLOR = '#9fe870';
-const DISCARD_FLOW_COLOR = '#ffd43b';
+const DISCARD_FLOW_COLOR = '#ffd43b'; const SURPLUS_FLOW_COLOR = '#ffd43b';
 const FUEL_FLOW_COLOR = '#ff9f43';
 const FERTILIZER_FLOW_COLOR = '#a9e34b';
 const STEAM_FLOW_COLOR = '#74c0fc';
@@ -78,6 +78,7 @@ function roleColor(role: CalculatedFlowRole, fallback: string): string {
   if (role === 'fertilizer') return FERTILIZER_FLOW_COLOR;
   if (role === 'steam') return STEAM_FLOW_COLOR;
   if (role === 'discard') return DISCARD_FLOW_COLOR;
+  if (role === 'surplus') return SURPLUS_FLOW_COLOR;
   if (role === 'finalOutput') return FINAL_FLOW_COLOR;
   return fallback;
 }
@@ -198,27 +199,56 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
 
 function assignNormalColors(flows: CalculatedFlow[]): Map<string, string> {
   const colorByFlowId = new Map<string, string>();
-  const incomingColors = new Map<string, Set<string>>();
+  const normalFlows = flows.filter((flow) => {
+    if (flow.role === 'fuel') return false;
+    if (flow.role === 'fertilizer') return false;
+    if (flow.role === 'steam') return false;
+    if (flow.role === 'discard') return false;
+    if (flow.role === 'surplus') return false;
+    if (flow.role === 'finalOutput') return false;
+    return true;
+  });
+
   for (const flow of flows) {
-    if (flow.role !== 'fuel' && flow.role !== 'fertilizer' && flow.role !== 'steam' && flow.role !== 'discard' && flow.role !== 'finalOutput') continue;
-    const color = roleColor(flow.role, DEFAULT_OUTPUT_COLOR);
-    colorByFlowId.set(flow.id, color);
-    const target = endpointNodeId(flow.to);
-    const set = incomingColors.get(target) ?? new Set<string>();
-    set.add(color);
-    incomingColors.set(target, set);
+    if (normalFlows.includes(flow)) continue;
+    colorByFlowId.set(flow.id, roleColor(flow.role, DEFAULT_OUTPUT_COLOR));
   }
-  for (const flow of flows) {
-    if (colorByFlowId.has(flow.id)) continue;
-    const source = endpointNodeId(flow.from);
-    const forbidden = incomingColors.get(source) ?? new Set<string>();
-    const color = OUTPUT_COLORS.find((candidate) => !forbidden.has(candidate)) ?? DEFAULT_OUTPUT_COLOR;
-    colorByFlowId.set(flow.id, color);
-    const target = endpointNodeId(flow.to);
-    const set = incomingColors.get(target) ?? new Set<string>();
-    set.add(color);
-    incomingColors.set(target, set);
+
+  for (const flow of normalFlows) {
+    if (!colorByFlowId.has(flow.id)) colorByFlowId.set(flow.id, DEFAULT_OUTPUT_COLOR);
   }
+
+  const incomingColorsFor = (nodeId: string, ignoreFlowId?: string): Set<string> => {
+    const set = new Set<string>();
+    for (const flow of flows) {
+      if (ignoreFlowId && flow.id === ignoreFlowId) continue;
+      if (endpointNodeId(flow.to) !== nodeId) continue;
+      const color = colorByFlowId.get(flow.id);
+      if (color) set.add(color);
+    }
+    return set;
+  };
+
+  const chooseNormalColor = (forbidden: Set<string>): string => {
+    if (forbidden.size === 0) return DEFAULT_OUTPUT_COLOR;
+    return OUTPUT_COLORS.find((candidate) => !forbidden.has(candidate)) ?? DEFAULT_OUTPUT_COLOR;
+  };
+
+  const maxIterations = Math.max(12, normalFlows.length * 4);
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    let changed = false;
+    for (const flow of normalFlows) {
+      const sourceNodeId = endpointNodeId(flow.from);
+      const forbidden = incomingColorsFor(sourceNodeId, flow.id);
+      const nextColor = chooseNormalColor(forbidden);
+      if (colorByFlowId.get(flow.id) !== nextColor) {
+        colorByFlowId.set(flow.id, nextColor);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
   return colorByFlowId;
 }
 
