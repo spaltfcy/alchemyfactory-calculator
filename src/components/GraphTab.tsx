@@ -189,6 +189,21 @@ function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
   return { nodes: nextNodes, edges: nextEdges };
 }
 
+function applyCompletedStateToNodes(nodes: Node[], completedGraphNodeIds: Record<string, boolean>): Node[] {
+  return nodes.map((node) => {
+    const completed = completedGraphNodeIds[node.id] ?? false;
+    const data = node.data as Record<string, unknown> | undefined;
+    if ((data?.completed ?? false) === completed) return node;
+    return {
+      ...node,
+      data: {
+        ...(node.data ?? {}),
+        completed,
+      },
+    };
+  });
+}
+
 function GraphControls({ lang, isInteractive, onToggleInteractive }: GraphControlsProps) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const labels =
@@ -215,7 +230,14 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
   const [edges, setEdges] = useState<Edge[]>([]);
   const [isInteractive, setIsInteractive] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
-  const raw = useMemo(() => buildFlowGraph(result, lang, settings, completedGraphNodeIds), [result, lang, settings, completedGraphNodeIds]);
+  const completedRef = useRef(completedGraphNodeIds);
+
+  const raw = useMemo(() => buildFlowGraph(result, lang, settings, {}), [result, lang, settings]);
+
+  useEffect(() => {
+    completedRef.current = completedGraphNodeIds;
+    setNodes((current) => applyCompletedStateToNodes(current, completedGraphNodeIds));
+  }, [completedGraphNodeIds]);
 
   useEffect(() => {
     let disposed = false;
@@ -237,12 +259,12 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
       .then((layouted) => {
         if (disposed || latestLayoutId.current !== layoutId) return;
         const positionById = new Map(layouted.map((node) => [node.id, node.position]));
-        const fresh = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
+        const fresh = buildFlowGraph(result, lang, settings, {});
         const positionedNodes = fresh.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position }));
         const realigned = realignIncomingHandlesBySourceY(positionedNodes, fresh.edges);
         const layoutMs = Math.round(performance.now() - startedAt);
 
-        setNodes(realigned.nodes);
+        setNodes(applyCompletedStateToNodes(realigned.nodes, completedRef.current));
         setEdges(realigned.edges);
         setIsUpdating(false);
 
@@ -256,7 +278,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
       })
       .catch((error: unknown) => {
         if (disposed || latestLayoutId.current !== layoutId) return;
-        setNodes(raw.nodes);
+        setNodes(applyCompletedStateToNodes(raw.nodes, completedRef.current));
         setEdges(raw.edges);
         setIsUpdating(false);
         if (debug) console.warn('[graph] layout failed', error);
@@ -266,7 +288,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
     return () => {
       disposed = true;
     };
-  }, [raw, result, lang, settings, completedGraphNodeIds, debug]);
+  }, [raw, result, lang, settings, debug]);
 
   const onNodeDoubleClick: NodeMouseHandler = (_, node) => {
     if (isInteractive) onToggleCompleted(node.id);

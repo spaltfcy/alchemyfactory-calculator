@@ -12,7 +12,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.14';
+const APP_VERSION = '0.3.15';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -151,7 +151,7 @@ export function App() {
   );
 
   function setActiveTab(activeTab: AppState['activeTab']) {
-    setState({ ...state, activeTab });
+    setState((current) => (current.activeTab === activeTab ? current : { ...current, activeTab }));
   }
 
   function toggleCompleted(nodeId: string) {
@@ -281,7 +281,11 @@ export function App() {
         )}
 
         <section className={`content-pane content-pane-${state.activeTab}`}>
-          {state.activeTab === 'graph' && (
+          {/* Keep GraphTab mounted so tab changes do not relayout/reset manually moved nodes. */}
+          <div
+            className={state.activeTab === 'graph' ? 'keep-alive-tab' : 'keep-alive-tab is-hidden'}
+            aria-hidden={state.activeTab !== 'graph'}
+          >
             <GraphTab
               lang={lang}
               result={result}
@@ -290,7 +294,7 @@ export function App() {
               onToggleCompleted={toggleCompleted}
               debug={runtimeFlags.debug}
             />
-          )}
+          </div>
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}

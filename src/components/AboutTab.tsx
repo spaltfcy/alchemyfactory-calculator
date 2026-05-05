@@ -8,7 +8,7 @@ export function AboutTab({ lang }: { lang: Lang }) {
     return (
       <section className="panel about-panel">
         <h2>About this tool</h2>
-        <p>This is an Alchemy Factory production planner that runs on GitHub Pages.</p>
+        <p>This is an Alchemy Factory calculator that runs on GitHub Pages.</p>
         <p>If you find bugs or incorrect recipes, please report them on GitHub.</p>
 
         <h3>Features</h3>
@@ -36,12 +36,12 @@ export function AboutTab({ lang }: { lang: Lang }) {
   return (
     <section className="panel about-panel">
       <h2>このツールについて</h2>
-      <p>GitHub Pages で使える Alchemy Factory 生産計画ツールです。</p>
+      <p>GitHub Pages で使える Alchemy Factory 計算機です。</p>
       <p>不具合やレシピの間違え等ありましたら GitHub で報告してください。</p>
 
       <h3>機能</h3>
       <ul className="about-feature-list">
-        <li>複数アイテムの生産計画</li>
+        <li>複数アイテムの生産計算</li>
         <li>生産数/min または機械台数指定</li>
         <li>必要設備数とベルコン本数の計算</li>
         <li>副産物の再利用 / 破棄</li>

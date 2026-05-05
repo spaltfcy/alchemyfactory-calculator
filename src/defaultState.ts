@@ -2,7 +2,7 @@ import type { AppState } from './types';
 import { DEFAULT_ABILITIES } from './data/abilityTables';
 
 export const DEFAULT_STATE: AppState = {
-  version: 18,
+  version: 19,
   language: 'ja',
   activeTab: 'graph',
   targets: [
@@ -33,7 +33,21 @@ export const DEFAULT_STATE: AppState = {
     },
   },
   abilities: DEFAULT_ABILITIES,
-  recipePreferences: {},
+  recipePreferences: {
+  coke: 'coke',
+  emerald: 'emerald',
+  sapphire: 'sapphire',
+  ruby: 'ruby',
+  adamant: 'adamant',
+  obsidian: 'obsidian_and_volcanic_ash',
+  iron_sand: 'iron_sand',
+  shattered_crystal: 'shattered_crystal',
+  salt: 'salt_and_sand_2',
+  sand: 'sand',
+  copper_powder: 'copper_powder_and_impure_copper_powder',
+  gold_dust: 'gold_dust',
+  impure_gold_dust: 'impure_gold_dust',
+},
   surplusPolicies: {},
   itemSourceModes: {},
   completedGraphNodeIds: {},

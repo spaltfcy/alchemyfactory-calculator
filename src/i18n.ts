@@ -1,7 +1,7 @@
 import type { Lang, LocalizedText } from './types';
 
 export const UI = {
-  appTitle: { ja: 'Alchemy Factory 生産計画', en: 'Alchemy Factory Planner' },
+  appTitle: { ja: 'Alchemy Factory 計算機', en: 'Alchemy Factory Calculator' },
   graph: { ja: 'グラフ', en: 'Graph' },
   table: { ja: '表', en: 'Table' },
   settings: { ja: '設定', en: 'Settings' },

@@ -28,6 +28,22 @@ function getFuelSettings(state: AppState): AppSettings['fuel'] {
   return { ...DEFAULT_FUEL_SETTINGS, ...(state.settings.fuel ?? {}) };
 }
 
+function padDatePart(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function saveFileTimestamp(date = new Date()): string {
+  return (
+    String(date.getFullYear()) +
+    padDatePart(date.getMonth() + 1) +
+    padDatePart(date.getDate()) +
+    '-' +
+    padDatePart(date.getHours()) +
+    padDatePart(date.getMinutes()) +
+    padDatePart(date.getSeconds())
+  );
+}
+
 function getDefaultRecipeId(itemId: string): string {
   return DEFAULT_RECIPE_BY_ITEM_ID[itemId] ?? getSortedRecipesProducing(itemId)[0]?.id ?? '';
 }
@@ -403,7 +419,7 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
             <div className="settings-form-grid">
               <div className="form-field">
                 <span>{lang === 'ja' ? '出力' : 'Output'}</span>
-                <button type="button" className="data-io-button" onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
+                <button type="button" className="data-io-button" onClick={() => downloadJson(`alchemy-factory-calculator-save-${saveFileTimestamp()}.json`, state)}>
                   {lang === 'ja' ? '保存' : 'Save'}
                 </button>
               </div>
