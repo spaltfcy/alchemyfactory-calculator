@@ -12,7 +12,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.10';
+const APP_VERSION = '0.3.11';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = { debug: boolean; explicitSafeMode: boolean; safeMode: boolean };

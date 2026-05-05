@@ -121,7 +121,7 @@ a { color: var(--accent); }
   gap: 0.55rem;
   align-items: end;
   width: max-content;
-  padding: 0.9rem 2.55rem 0.85rem 0.85rem;
+  padding: 0.9rem 0.85rem 0.85rem;
   border: 1px solid var(--border);
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.025);
@@ -133,7 +133,7 @@ a { color: var(--accent); }
 .target-remove {
   position: absolute;
   top: 0.58rem;
-  right: 1.55rem;
+  right: 0.85rem;
   display: inline-grid;
   place-items: center;
   width: 1.35rem;
@@ -171,30 +171,29 @@ a { color: var(--accent); }
 .planner-node-discard .planner-node-title { color: #ffe4a8; }
 .planner-node .react-flow__handle { width: .7rem; height: .7rem; box-shadow: 0 0 0 2px rgba(7,10,17,.92); }
 
-.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--page-gap); }
-.recipe-settings-panel, .settings-side { min-width: 0; }
-.recipe-settings-list, .settings-side { display: grid; gap: .8rem; }
-.recipe-setting-row { display: grid; grid-template-columns: minmax(7rem,9rem) minmax(0,1fr); align-items: center; gap: .65rem; padding: .65rem; border: 1px solid var(--border); border-radius: 12px; }
-.recipe-setting-row select { min-width: 0; width: 100%; }
-.settings-grid, .fuel-settings-grid, .data-io-grid { display: grid; gap: .65rem; }
-.settings-grid, .fuel-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.checkbox-row { display: flex; gap: .5rem; align-items: center; }
-.settings-reset-row { display: flex; justify-content: flex-end; margin-top: .7rem; }
-.data-io-grid { grid-template-columns: 4rem minmax(0, 1fr); align-items: center; }
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--page-gap);
+  align-items: start;
+}
 
-.table-wrap { overflow: auto; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: .5rem .65rem; border-bottom: 1px solid var(--border); text-align: left; }
-
-.about-panel { width: 100%; max-width: none; max-height: 100%; margin: 0; padding: 1rem 1.15rem; overflow: hidden; }
-.about-panel p { margin: .38rem 0; line-height: 1.36; }
-.about-feature-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .22rem 1rem; margin: .35rem 0 .65rem; padding-left: 1.2rem; }
-/* v0.3.10 settings form layout */
+.settings-side {
+  display: grid;
+  gap: var(--page-gap);
+  align-content: start;
+  align-items: start;
+  grid-auto-rows: max-content;
+  min-height: 0;
+}
 
 .recipe-settings-panel,
 .calculation-settings-panel,
 .fuel-settings-panel,
 .data-io-panel {
+  align-self: start;
+  min-height: 0;
+  height: fit-content;
   padding: 1rem;
 }
 
@@ -288,3 +287,39 @@ th, td { padding: .5rem .65rem; border-bottom: 1px solid var(--border); text-ali
     width: 100%;
     grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width);
   }
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(12rem, 1fr));
+  gap: 0.95rem 1.35rem;
+  align-items: start;
+}
+
+.content-pane-table {
+  overflow: auto;
+  padding: 1rem;
+}
+
+.table-tab {
+  display: grid;
+  gap: var(--page-gap);
+  align-content: start;
+}
+
+.table-tab .panel,
+.content-pane-table > .panel {
+  padding: 1rem;
+  align-self: start;
+  min-height: 0;
+}
+
+.table-tab h2,
+.content-pane-table h2 {
+  margin: 0 0 0.8rem;
+}
+
+.table-tab p,
+.content-pane-table p {
+  margin: 0.25rem 0;
+  line-height: 1.45;
+}
