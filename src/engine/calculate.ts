@@ -498,81 +498,104 @@ function consumeSupplyLots(lots: SupplyLot[] | undefined, rate: number): number 
 }
 
 function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRate: number): RunMap {
- let current = cloneRunMap(candidateRuns);
- for (let pass = 0; pass < MAX_SOLVE_ITERATIONS; pass += 1) {
-  const analysis = analyzeRuns(current, injectedFuelRate);
-  const primaryLotsByItem = new Map<string, SupplyLot[]>();
-  const byproductLotsByItem = new Map<string, SupplyLot[]>();
+  let current = cloneRunMap(candidateRuns);
 
-  for (const [recipeId, runsPerMinute] of current.entries()) {
-   const recipe = recipeById[recipeId];
-   if (!recipe || runsPerMinute <= EPS) continue;
-   for (const output of recipe.outputs) {
-    const rate = output.amount * (output.probability ?? 1) * runsPerMinute;
-    if (rate <= EPS) continue;
-    const primary = output.itemId === recipe.primaryOutputId;
-    const lot: SupplyLot = {
-     recipeId: recipe.id,
-     itemId: output.itemId,
-     rate,
-     originalRate: rate,
-     byproduct: !primary,
-     primary,
-    };
-    const map = primary ? primaryLotsByItem : byproductLotsByItem;
-    const lots = map.get(output.itemId) ?? [];
-    lots.push(lot);
-    map.set(output.itemId, lots);
-   }
+  function consumeLotsForPrune(
+    lots: SupplyLot[] | undefined,
+    rate: number,
+    usedOutputByRecipe: Set<string>,
+  ): number {
+    const sourceLots = lots ?? [];
+    let remaining = rate;
+    for (const lot of sourceLots) {
+      if (remaining <= EPS) break;
+      if (lot.rate <= EPS) continue;
+      const take = Math.min(lot.rate, remaining);
+      if (take > EPS) usedOutputByRecipe.add(lot.recipeId);
+      lot.rate -= take;
+      remaining -= take;
+    }
+    return remaining;
   }
 
-  for (const lock of locks) {
-   consumeSupplyLots(primaryLotsByItem.get(lock.itemId), lock.actualRate);
+  for (let pass = 0; pass < MAX_SOLVE_ITERATIONS; pass += 1) {
+    const analysis = analyzeRuns(current, injectedFuelRate);
+    const primaryLotsByItem = new Map<string, SupplyLot[]>();
+    const byproductLotsByItem = new Map<string, SupplyLot[]>();
+    const usedOutputByRecipe = new Set<string>();
+
+    for (const [recipeId, runsPerMinute] of current.entries()) {
+      const recipe = recipeById[recipeId];
+      if (!recipe || runsPerMinute <= EPS) continue;
+      for (const output of recipe.outputs) {
+        const rate = output.amount * (output.probability ?? 1) * runsPerMinute;
+        if (rate <= EPS) continue;
+        const primary = output.itemId === recipe.primaryOutputId;
+        const lot: SupplyLot = {
+          recipeId: recipe.id,
+          itemId: output.itemId,
+          rate,
+          originalRate: rate,
+          byproduct: !primary,
+          primary,
+        };
+        const map = primary ? primaryLotsByItem : byproductLotsByItem;
+        const lots = map.get(output.itemId) ?? [];
+        lots.push(lot);
+        map.set(output.itemId, lots);
+      }
+    }
+
+    for (const lock of locks) {
+      consumeLotsForPrune(primaryLotsByItem.get(lock.itemId), lock.actualRate, usedOutputByRecipe);
+    }
+
+    for (const demand of analysis.demandLots) {
+      let remaining = demand.rate;
+      if (input.settings.defaultSurplusPolicy === 'reuse') {
+        remaining = consumeLotsForPrune(byproductLotsByItem.get(demand.itemId), remaining, usedOutputByRecipe);
+      }
+      remaining = consumeLotsForPrune(primaryLotsByItem.get(demand.itemId), remaining, usedOutputByRecipe);
+    }
+
+    const reductions = new Map<string, number>();
+    for (const [, lots] of primaryLotsByItem.entries()) {
+      for (const lot of lots) {
+        if (lot.rate <= EPS) continue;
+        if (lot.rate < lot.originalRate - 0.000001) continue;
+        if (usedOutputByRecipe.has(lot.recipeId)) continue;
+
+        const currentRuns = current.get(lot.recipeId) ?? 0;
+        const lockedRunsForRecipe = lockedRuns.get(lot.recipeId) ?? 0;
+        const removableRuns = currentRuns - lockedRunsForRecipe;
+        if (removableRuns <= EPS) continue;
+        const recipe = recipeById[lot.recipeId];
+        if (!recipe) continue;
+        const perRun = outputPerRun(recipe, lot.itemId);
+        if (perRun <= EPS) continue;
+        const runsForUnusedOutput = lot.rate / perRun;
+        const reduceBy = Math.min(removableRuns, runsForUnusedOutput);
+        if (reduceBy > EPS) addToMap(reductions, lot.recipeId, reduceBy);
+      }
+    }
+
+    if (reductions.size === 0) return current;
+
+    const next = cloneRunMap(current);
+    for (const [recipeId, reduceBy] of reductions.entries()) {
+      const lockedRunsForRecipe = lockedRuns.get(recipeId) ?? 0;
+      const currentRuns = next.get(recipeId) ?? 0;
+      const nextRuns = Math.max(lockedRunsForRecipe, currentRuns - reduceBy);
+      if (nextRuns <= EPS) next.delete(recipeId);
+      else next.set(recipeId, nextRuns);
+    }
+
+    if (mapsAlmostEqual(current, next)) return next;
+    current = next;
   }
-
-  for (const demand of analysis.demandLots) {
-   let remaining = demand.rate;
-   if (input.settings.defaultSurplusPolicy === 'reuse') {
-    remaining = consumeSupplyLots(byproductLotsByItem.get(demand.itemId), remaining);
-   }
-   remaining = consumeSupplyLots(primaryLotsByItem.get(demand.itemId), remaining);
-  }
-
-  const reductions = new Map<string, number>();
-  for (const [, lots] of primaryLotsByItem.entries()) {
-   for (const lot of lots) {
-    if (lot.rate <= EPS) continue;
-    if (lot.rate < lot.originalRate - 0.000001) continue;
-    const currentRuns = current.get(lot.recipeId) ?? 0;
-    const lockedRunsForRecipe = lockedRuns.get(lot.recipeId) ?? 0;
-    const removableRuns = currentRuns - lockedRunsForRecipe;
-    if (removableRuns <= EPS) continue;
-    const recipe = recipeById[lot.recipeId];
-    if (!recipe) continue;
-    const perRun = outputPerRun(recipe, lot.itemId);
-    if (perRun <= EPS) continue;
-    const runsForUnusedOutput = lot.rate / perRun;
-    const reduceBy = Math.min(removableRuns, runsForUnusedOutput);
-    if (reduceBy > EPS) addToMap(reductions, lot.recipeId, reduceBy);
-   }
-  }
-
-  if (reductions.size === 0) return current;
-
-  const next = cloneRunMap(current);
-  for (const [recipeId, reduceBy] of reductions.entries()) {
-   const lockedRunsForRecipe = lockedRuns.get(recipeId) ?? 0;
-   const currentRuns = next.get(recipeId) ?? 0;
-   const nextRuns = Math.max(lockedRunsForRecipe, currentRuns - reduceBy);
-   if (nextRuns <= EPS) next.delete(recipeId);
-   else next.set(recipeId, nextRuns);
-  }
-
-  if (mapsAlmostEqual(current, next)) return next;
-  current = next;
- }
- return current;
+  return current;
 }
+
 
 
   function addDemandRuns(map: RunMap, itemId: string, missingRate: number): void {
@@ -631,22 +654,22 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
   }
 
   function resolveUnmetAutoDemands(candidateRuns: RunMap, injectedFuelRate: number): RunMap {
-    let current = cloneRunMap(candidateRuns);
-    for (let pass = 0; pass < MAX_SOLVE_ITERATIONS; pass += 1) {
-      const { missingByItem } = findUnresolvedAutoDemands(current, injectedFuelRate);
-      if (missingByItem.size === 0) return current;
+  let current = cloneRunMap(candidateRuns);
+  for (let pass = 0; pass < MAX_SOLVE_ITERATIONS; pass += 1) {
+    const { missingByItem } = findUnresolvedAutoDemands(current, injectedFuelRate);
+    if (missingByItem.size === 0) return current;
 
-      const next = cloneRunMap(current);
-      for (const [itemId, missingRate] of missingByItem.entries()) {
-        addDemandRuns(next, itemId, missingRate);
-      }
-
-      const pruned = pruneRunsWithUnusedPrimaryOutputs(next, injectedFuelRate);
-      if (mapsAlmostEqual(current, pruned)) return pruned;
-      current = pruned;
+    const next = cloneRunMap(current);
+    for (const [itemId, missingRate] of missingByItem.entries()) {
+      addDemandRuns(next, itemId, missingRate);
     }
-    return current;
+
+    if (mapsAlmostEqual(current, next)) return next;
+    current = next;
   }
+  return current;
+}
+
 
   function solveRuns(injectedFuelRate: number): { runs: RunMap; analysis: RunAnalysis; iterations: number; queueMax: number } {
     let runs = cloneRunMap(lockedRuns);
@@ -828,7 +851,7 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
         addFlow({ type: 'recipe', recipeId: lot.recipeId }, consumer, demand.itemId, take, demandRole);
       }
 
-      if (remaining > EPS) {
+      if (remaining > 0.000001) {
         const mode = input.itemSourceModes[demand.itemId] === 'stock' ? 'stock' : 'buy';
         if (mode === 'buy') addPurchase(demand.itemId, remaining);
         addFlow({ type: 'itemSource', itemId: demand.itemId, sourceMode: mode }, consumer, demand.itemId, remaining, demandRole);
@@ -988,7 +1011,7 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
     if (flow.from.type === 'itemSource' && flow.from.sourceMode === 'buy' && flow.to.type === 'recipe') {
       const sourceMode = input.itemSourceModes[flow.itemId] ?? 'auto';
       const selectedRecipe = chooseRecipeForItem(flow.itemId, input.recipePreferences);
-      if (sourceMode === 'auto' && selectedRecipe) {
+      if (sourceMode === 'auto' && selectedRecipe && flow.rate > 0.000001) {
         purchasedAutoCraftableFlows.push({
           itemId: flow.itemId,
           rate: flow.rate,

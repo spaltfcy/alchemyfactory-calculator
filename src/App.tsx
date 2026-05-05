@@ -13,7 +13,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.4.10';
+const APP_VERSION = '0.4.11';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -193,6 +193,10 @@ export function App() {
  const debugCalculationLine = runtimeFlags.debug
  ? (lang === 'ja' ? '計算' : 'Calc') + ': ' + formatNumber(result.totals.calculationMs ?? 0, 1) + 'ms / ' + (lang === 'ja' ? '燃料反復' : 'Fuel iterations') + ': ' + String(result.totals.fuelIterations ?? 0)
  : '';
+
+  const visibleTabs: AppState['activeTab'][] = runtimeFlags.debug
+    ? ['graph', 'table', 'settings', 'about', 'debug']
+    : ['graph', 'table', 'settings', 'about'];
 
   return (
     <div className={runtimeFlags.safeMode ? 'app-shell is-safe-mode' : 'app-shell'}>
