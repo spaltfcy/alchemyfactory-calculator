@@ -106,7 +106,7 @@ export type AppSettings = {
 export type AppState = {
   version: number;
   language: Lang;
-  activeTab: 'graph' | 'table' | 'settings' | 'about';
+  activeTab: 'graph' | 'table' | 'settings' | 'about' | 'debug';
   targets: ProductionTarget[];
   settings: AppSettings;
   abilities: AbilitySettings;

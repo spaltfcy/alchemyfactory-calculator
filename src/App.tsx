@@ -10,9 +10,10 @@ import { GraphTab } from './components/GraphTab';
 import { TableTab } from './components/TableTab';
 import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
+import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.4.9';
+const APP_VERSION = '0.4.10';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -138,6 +139,11 @@ export function App() {
     saveState(state);
   }, [state, runtimeFlags.safeMode]);
 
+  useEffect(() => {
+    if (runtimeFlags.debug || state.activeTab !== 'debug') return;
+    setState((current) => (current.activeTab === 'debug' ? { ...current, activeTab: 'graph' } : current));
+  }, [runtimeFlags.debug, state.activeTab]);
+
   const result = useMemo(
     () =>
       calculate({
@@ -206,15 +212,14 @@ export function App() {
   {runtimeFlags.debug && debugCalculationLine && <span className="debug-metric-inline"> / {debugCalculationLine}</span>}
           </p>
 
-          <nav className="tabs">
-            {(['graph', 'table', 'settings', 'about'] as const).map((tab) => (
+          <nav className="tabs">            {(runtimeFlags.debug ? (['graph', 'table', 'settings', 'about', 'debug'] as const) : (['graph', 'table', 'settings', 'about'] as const)).map((tab) => (
               <button
                 key={tab}
                 type="button"
                 className={state.activeTab === tab ? 'active' : ''}
                 onClick={() => setActiveTab(tab)}
               >
-                {t(tab, lang)}
+                {tab === 'debug' ? 'DEBUG' : t(tab, lang)}
               </button>
             ))}
           </nav>
@@ -299,6 +304,7 @@ export function App() {
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
+          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} />}
         </section>
       </main>
     </div>

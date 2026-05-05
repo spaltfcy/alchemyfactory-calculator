@@ -929,3 +929,125 @@ a {
 .planner-node-surplus .planner-node-title-line {
   color: #ffe4a8;
 }
+
+
+.debug-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.debug-panel,
+.debug-card {
+  background: rgba(17, 24, 39, 0.88);
+  border: 1px solid rgba(126, 148, 181, 0.3);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.debug-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.debug-panel h2,
+.debug-card h3 {
+  margin: 0 0 8px;
+}
+
+.debug-panel p,
+.debug-card p {
+  margin: 0;
+  color: #b7c4d8;
+}
+
+.debug-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.debug-actions button {
+  min-width: 120px;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 16px;
+}
+
+.debug-summary-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.debug-summary-list div {
+  background: rgba(8, 13, 23, 0.72);
+  border: 1px solid rgba(126, 148, 181, 0.2);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.debug-summary-list dt {
+  color: #93a4bf;
+  font-size: 12px;
+}
+
+.debug-summary-list dd {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.debug-issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.debug-issue {
+  display: grid;
+  gap: 4px;
+  background: rgba(8, 13, 23, 0.72);
+  border: 1px solid rgba(255, 209, 102, 0.32);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.debug-issue strong {
+  color: #ffd166;
+}
+
+.debug-log-textarea {
+  width: 100%;
+  min-height: 520px;
+  resize: vertical;
+  border-radius: 16px;
+  border: 1px solid rgba(126, 148, 181, 0.3);
+  background: #050914;
+  color: #d9e8ff;
+  padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .debug-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .debug-grid {
+    grid-template-columns: 1fr;
+  }
+}

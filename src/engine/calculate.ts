@@ -149,6 +149,44 @@ export type CalculateInput = {
   itemSourceModes: Record<string, string>;
 };
 
+export type CalculationDebugIssue = {
+  severity: 'info' | 'warning' | 'error';
+  code: string;
+  messageJa: string;
+  messageEn: string;
+  data?: unknown;
+};
+
+export type CalculationDebugLog = {
+  generatedAt: string;
+  input: CalculateInput;
+  totals: CalculationResult['totals'];
+  warnings: PlanWarning[];
+  issues: CalculationDebugIssue[];
+  summary: {
+    itemCount: number;
+    recipeCount: number;
+    flowCount: number;
+    flowsByRole: Record<string, number>;
+    purchasedAutoCraftableCount: number;
+  };
+  purchasedAutoCraftableFlows: Array<{
+    itemId: string;
+    rate: number;
+    consumerRecipeId: string;
+    selectedRecipeId: string;
+    role: CalculatedFlowRole;
+  }>;
+  flows: CalculatedFlow[];
+  itemStats: ItemStat[];
+  recipeStats: RecipeStat[];
+};
+
+export type CalculationDebugResult = {
+  result: CalculationResult;
+  debugLog: CalculationDebugLog;
+};
+
 type WorkRole = 'material' | 'fuel' | 'fertilizer';
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: WorkRole };
 type SupplyLot = { recipeId: string; itemId: string; rate: number; originalRate: number; byproduct: boolean; primary: boolean };
@@ -936,6 +974,74 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
       calculationMs: Math.max(0, nowMs() - startedAt),
     },
   };
+}
+
+export function calculateWithDebug(input: CalculateInput): CalculationDebugResult {
+  const result = calculate(input);
+  const issues: CalculationDebugIssue[] = [];
+  const flowsByRole: Record<string, number> = {};
+  const purchasedAutoCraftableFlows: CalculationDebugLog['purchasedAutoCraftableFlows'] = [];
+
+  for (const flow of result.flows) {
+    flowsByRole[flow.role] = (flowsByRole[flow.role] ?? 0) + 1;
+
+    if (flow.from.type === 'itemSource' && flow.from.sourceMode === 'buy' && flow.to.type === 'recipe') {
+      const sourceMode = input.itemSourceModes[flow.itemId] ?? 'auto';
+      const selectedRecipe = chooseRecipeForItem(flow.itemId, input.recipePreferences);
+      if (sourceMode === 'auto' && selectedRecipe) {
+        purchasedAutoCraftableFlows.push({
+          itemId: flow.itemId,
+          rate: flow.rate,
+          consumerRecipeId: flow.to.recipeId,
+          selectedRecipeId: selectedRecipe.id,
+          role: flow.role,
+        });
+      }
+    }
+  }
+
+  if (purchasedAutoCraftableFlows.length > 0) {
+    issues.push({
+      severity: 'warning',
+      code: 'AUTO_CRAFTABLE_ITEM_PURCHASED',
+      messageJa: 'auto設定で生産レシピがあるアイテムが購入扱いに落ちています。solverで未解決需要が残っている可能性があります。',
+      messageEn: 'An auto item with a craftable recipe was purchased. The solver may have left an unresolved demand.',
+      data: purchasedAutoCraftableFlows,
+    });
+  }
+
+  for (const stat of Object.values(result.itemStats)) {
+    if (stat.surplus > EPS && stat.discarded > EPS) {
+      issues.push({
+        severity: 'warning',
+        code: 'ITEM_HAS_BOTH_SURPLUS_AND_DISCARD',
+        messageJa: '同じアイテムに余剰と破棄が同時に出ています。主生成物余りと副産物余りが混在していないか確認してください。',
+        messageEn: 'The same item has both surplus and discard. Check whether primary leftovers and byproduct leftovers are mixed.',
+        data: { itemId: stat.itemId, surplus: stat.surplus, discarded: stat.discarded },
+      });
+    }
+  }
+
+  const debugLog: CalculationDebugLog = {
+    generatedAt: new Date().toISOString(),
+    input: JSON.parse(JSON.stringify(input)) as CalculateInput,
+    totals: result.totals,
+    warnings: result.warnings,
+    issues,
+    summary: {
+      itemCount: Object.keys(result.itemStats).length,
+      recipeCount: Object.keys(result.recipeStats).length,
+      flowCount: result.flows.length,
+      flowsByRole,
+      purchasedAutoCraftableCount: purchasedAutoCraftableFlows.length,
+    },
+    purchasedAutoCraftableFlows,
+    flows: result.flows,
+    itemStats: Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId)),
+    recipeStats: Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId)),
+  };
+
+  return { result, debugLog };
 }
 
 export function getByproductKeys(): Array<{ key: string; recipeId: string; itemId: string }> {
