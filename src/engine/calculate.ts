@@ -682,6 +682,10 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
       let desired = desiredRunsFromAnalysis(analysis);
       desired = pruneRunsWithUnusedPrimaryOutputs(desired, injectedFuelRate);
       desired = resolveUnmetAutoDemands(desired, injectedFuelRate);
+      // resolveUnmetAutoDemands can add a byproduct producer that makes another
+      // primary-output recipe unnecessary. Prune again before accepting the plan.
+      desired = pruneRunsWithUnusedPrimaryOutputs(desired, injectedFuelRate);
+      desired = resolveUnmetAutoDemands(desired, injectedFuelRate);
       queueMax = Math.max(queueMax, desired.size);
 
       const nextAnalysis = analyzeRuns(desired, injectedFuelRate);
@@ -1040,7 +1044,30 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
         code: 'ITEM_HAS_BOTH_SURPLUS_AND_DISCARD',
         messageJa: '同じアイテムに余剰と破棄が同時に出ています。主生成物余りと副産物余りが混在していないか確認してください。',
         messageEn: 'The same item has both surplus and discard. Check whether primary leftovers and byproduct leftovers are mixed.',
-        data: { itemId: stat.itemId, surplus: stat.surplus, discarded: stat.discarded },
+        data: {
+          itemId: stat.itemId,
+          surplus: stat.surplus,
+          discarded: stat.discarded,
+          surplusFlows: result.flows
+            .filter((flow) => flow.itemId === stat.itemId && flow.role === 'surplus')
+            .map((flow) => ({
+              fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+              rate: flow.rate,
+            })),
+          discardFlows: result.flows
+            .filter((flow) => flow.itemId === stat.itemId && flow.role === 'discard')
+            .map((flow) => ({
+              fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+              rate: flow.rate,
+            })),
+          reuseFlows: result.flows
+            .filter((flow) => flow.itemId === stat.itemId && flow.role === 'byproductReuse')
+            .map((flow) => ({
+              fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+              toRecipeId: flow.to.type === 'recipe' ? flow.to.recipeId : undefined,
+              rate: flow.rate,
+            })),
+        },
       });
     }
   }

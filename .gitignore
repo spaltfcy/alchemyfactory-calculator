@@ -5,3 +5,4 @@ dist
 *.local
 package-lock.json
 apply_v*.cjs
+*-current.txt
