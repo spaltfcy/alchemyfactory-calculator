@@ -537,23 +537,103 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
 }
 
 
+  function addDemandRuns(map: RunMap, itemId: string, missingRate: number): void {
+    if (missingRate <= EPS) return;
+    const sourceMode = input.itemSourceModes[itemId] ?? 'auto';
+    if (sourceMode === 'buy' || sourceMode === 'stock') return;
+    const recipe = chooseRecipeForItem(itemId, input.recipePreferences);
+    if (!recipe) return;
+    const outputRate = outputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
+    if (outputRate <= EPS) return;
+    const theoreticalMachines = missingRate / outputRate;
+    const actualMachines = shouldRound(input.settings.machineRounding, false) ? safeCeil(theoreticalMachines) : theoreticalMachines;
+    addRun(map, recipe.id, actualMachines * runRatePerMachine(recipe, productionSpeedMultiplier));
+  }
+
+  function findUnresolvedAutoDemands(runs: RunMap, injectedFuelRate: number): { analysis: RunAnalysis; missingByItem: Map<string, number> } {
+    const analysis = analyzeRuns(runs, injectedFuelRate);
+    const primaryLotsByItem = new Map<string, SupplyLot[]>();
+    const byproductLotsByItem = new Map<string, SupplyLot[]>();
+
+    for (const [recipeId, runsPerMinute] of runs.entries()) {
+      const recipe = recipeById[recipeId];
+      if (!recipe || runsPerMinute <= EPS) continue;
+      for (const output of recipe.outputs) {
+        const rate = output.amount * (output.probability ?? 1) * runsPerMinute;
+        if (rate <= EPS) continue;
+        const primary = output.itemId === recipe.primaryOutputId;
+        const lot: SupplyLot = { recipeId: recipe.id, itemId: output.itemId, rate, originalRate: rate, byproduct: !primary, primary };
+        const map = primary ? primaryLotsByItem : byproductLotsByItem;
+        const lots = map.get(output.itemId) ?? [];
+        lots.push(lot);
+        map.set(output.itemId, lots);
+      }
+    }
+
+    for (const lock of locks) {
+      consumeSupplyLots(primaryLotsByItem.get(lock.itemId), lock.actualRate);
+    }
+
+    const missingByItem = new Map<string, number>();
+    for (const demand of analysis.demandLots) {
+      let remaining = demand.rate;
+      if (input.settings.defaultSurplusPolicy === 'reuse') {
+        remaining = consumeSupplyLots(byproductLotsByItem.get(demand.itemId), remaining);
+      }
+      remaining = consumeSupplyLots(primaryLotsByItem.get(demand.itemId), remaining);
+      if (remaining <= EPS) continue;
+      const sourceMode = input.itemSourceModes[demand.itemId] ?? 'auto';
+      if (sourceMode !== 'auto') continue;
+      const recipe = chooseRecipeForItem(demand.itemId, input.recipePreferences);
+      if (!recipe) continue;
+      addToMap(missingByItem, demand.itemId, remaining);
+    }
+
+    return { analysis, missingByItem };
+  }
+
+  function resolveUnmetAutoDemands(candidateRuns: RunMap, injectedFuelRate: number): RunMap {
+    let current = cloneRunMap(candidateRuns);
+    for (let pass = 0; pass < MAX_SOLVE_ITERATIONS; pass += 1) {
+      const { missingByItem } = findUnresolvedAutoDemands(current, injectedFuelRate);
+      if (missingByItem.size === 0) return current;
+
+      const next = cloneRunMap(current);
+      for (const [itemId, missingRate] of missingByItem.entries()) {
+        addDemandRuns(next, itemId, missingRate);
+      }
+
+      const pruned = pruneRunsWithUnusedPrimaryOutputs(next, injectedFuelRate);
+      if (mapsAlmostEqual(current, pruned)) return pruned;
+      current = pruned;
+    }
+    return current;
+  }
+
   function solveRuns(injectedFuelRate: number): { runs: RunMap; analysis: RunAnalysis; iterations: number; queueMax: number } {
     let runs = cloneRunMap(lockedRuns);
     let analysis = analyzeRuns(runs, injectedFuelRate);
     let queueMax = runs.size;
     let iterations = 0;
+
     for (let i = 0; i < MAX_SOLVE_ITERATIONS; i += 1) {
       iterations = i + 1;
-      const desired = pruneRunsWithUnusedPrimaryOutputs(desiredRunsFromAnalysis(analysis), injectedFuelRate);
+      let desired = desiredRunsFromAnalysis(analysis);
+      desired = pruneRunsWithUnusedPrimaryOutputs(desired, injectedFuelRate);
+      desired = resolveUnmetAutoDemands(desired, injectedFuelRate);
       queueMax = Math.max(queueMax, desired.size);
+
+      const nextAnalysis = analyzeRuns(desired, injectedFuelRate);
       if (mapsAlmostEqual(runs, desired)) {
         runs = desired;
-        analysis = analyzeRuns(runs, injectedFuelRate);
+        analysis = nextAnalysis;
         break;
       }
+
       runs = desired;
-      analysis = analyzeRuns(runs, injectedFuelRate);
+      analysis = nextAnalysis;
     }
+
     return { runs, analysis, iterations, queueMax };
   }
 
