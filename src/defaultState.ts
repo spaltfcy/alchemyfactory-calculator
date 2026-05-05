@@ -29,7 +29,7 @@ export const DEFAULT_STATE: AppState = {
       crucibleVariant: 'crucible',
       crucibleOverheadHeatPerSec: 0.4,
       otherOverheadHeatPerSec: 1,
-      maxIterations: 8,
+      maxIterations: 16,
     },
     fertilizer: {
       enabled: false,

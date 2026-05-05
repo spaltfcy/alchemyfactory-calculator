@@ -162,8 +162,11 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     };
   }
   if (endpoint.type === 'itemSource') {
-    const stat = result.itemStats[endpoint.itemId];
-    const rate = endpoint.sourceMode === 'stock' ? 0 : stat?.purchased ?? 0;
+    const endpointId = endpointNodeId(endpoint);
+    const flowRate = result.flows
+      .filter((flow) => endpointNodeId(flow.from) === endpointId)
+      .reduce((sum, flow) => sum + flow.rate, 0);
+    const rate = endpoint.sourceMode === 'stock' ? 0 : flowRate;
     const label = itemName(endpoint.itemId, lang);
     const modeLabel = endpoint.sourceMode === 'stock' ? (lang === 'ja' ? '在庫' : 'Stock') : (lang === 'ja' ? '購入' : 'Buy');
     return {

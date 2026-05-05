@@ -133,6 +133,15 @@ export type CalculationResult = {
     fertilizerRequiredPerMin: number;
     fertilizerItemId: string;
     fuelIterations?: number;
+    fuelConverged?: boolean;
+    fuelHitMaxIterations?: boolean;
+    fuelConvergenceDelta?: number;
+    fuelIterationTrace?: Array<{
+      iteration: number;
+      injectedFuelRate: number;
+      nextFuelRate: number;
+      delta: number;
+    }>;
     byproductIterations?: number;
     calculationMs?: number;
     queueSteps?: number;
@@ -205,6 +214,8 @@ type RunAnalysis = {
 };
 
 const EPS = 1e-9;
+const VISIBLE_RATE_EPS = 0.000001;
+const FUEL_CONVERGENCE_EPS = 0.0001;
 const MAX_SOLVE_ITERATIONS = 120;
 
 const DEFAULT_FUEL_SETTINGS: FuelSettings = {
@@ -214,7 +225,7 @@ const DEFAULT_FUEL_SETTINGS: FuelSettings = {
   crucibleVariant: 'crucible',
   crucibleOverheadHeatPerSec: 0.4,
   otherOverheadHeatPerSec: 1,
-  maxIterations: 8,
+  maxIterations: 16,
 };
 
 const DEFAULT_FERTILIZER_SETTINGS: FertilizerSettings = {
@@ -231,7 +242,7 @@ function normalizeFuelSettings(settings: AppSettings): FuelSettings {
     ...(settings.fuel ?? {}),
     crucibleOverheadHeatPerSec: Math.max(0, Number(settings.fuel?.crucibleOverheadHeatPerSec ?? 0.4)),
     otherOverheadHeatPerSec: Math.max(0, Number(settings.fuel?.otherOverheadHeatPerSec ?? 1)),
-    maxIterations: Math.max(1, Math.min(20, Math.floor(Number(settings.fuel?.maxIterations ?? 8)))),
+    maxIterations: Math.max(1, Math.min(20, Math.floor(Number(settings.fuel?.maxIterations ?? 16)))),
   };
 }
 
@@ -351,6 +362,10 @@ function endpointKey(endpoint: CalculatedEndpoint): string {
   if (endpoint.type === 'recipe') return 'recipe:' + endpoint.recipeId;
   if (endpoint.type === 'itemSource') return 'source:' + endpoint.sourceMode + ':' + endpoint.itemId;
   return 'sink:' + endpoint.sinkMode + ':' + endpoint.itemId;
+}
+
+function normalizeVisibleRate(rate: number): number {
+  return Math.abs(rate) <= VISIBLE_RATE_EPS ? 0 : rate;
 }
 
 export function calculate(input: CalculateInput): CalculationResult {
@@ -716,15 +731,20 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
     }
 
     function addFlow(from: CalculatedEndpoint, to: CalculatedEndpoint, itemId: string, rate: number, role: CalculatedFlowRole): void {
-      if (rate <= EPS) return;
+      const cleanRate = normalizeVisibleRate(rate);
+      if (cleanRate <= 0) return;
       const idBase = endpointKey(from) + '->' + endpointKey(to) + ':' + itemId + ':' + role;
       const existing = flows.find((flow) => flow.id === idBase);
       if (existing) {
-        existing.rate += rate;
+        existing.rate = normalizeVisibleRate(existing.rate + cleanRate);
+        if (existing.rate <= 0) {
+          flows.splice(flows.indexOf(existing), 1);
+          return;
+        }
         existing.belts = safeCeil(existing.rate / conveyorItemsPerMinute);
         return;
       }
-      flows.push({ id: idBase, from, to, itemId, rate, belts: safeCeil(rate / conveyorItemsPerMinute), role });
+      flows.push({ id: idBase, from, to, itemId, rate: cleanRate, belts: safeCeil(cleanRate / conveyorItemsPerMinute), role });
     }
 
     function addPurchase(itemId: string, rate: number): void {
@@ -886,16 +906,27 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
 
     for (const [itemId, lots] of primaryLotsByItem.entries()) {
       for (const lot of lots) {
-        if (lot.rate <= EPS) continue;
+        const leftoverRate = normalizeVisibleRate(lot.rate);
+        if (leftoverRate <= 0) continue;
         const rs = recipeStats[lot.recipeId];
         const s = stat(itemId);
-        s.surplus += lot.rate;
-        if (rs) addToRecord(rs.surplusOutputRates, itemId, lot.rate);
-        addFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'surplus' }, itemId, lot.rate, 'surplus');
+        s.surplus += leftoverRate;
+        if (rs) addToRecord(rs.surplusOutputRates, itemId, leftoverRate);
+        addFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'surplus' }, itemId, leftoverRate, 'surplus');
       }
     }
 
-    for (const [itemId, lots] of byproductLotsByItem.entries()) { for (const lot of lots) { if (lot.rate <= EPS) continue; const rs = recipeStats[lot.recipeId]; const s = stat(itemId); s.discarded += lot.rate; if (rs) { addToRecord(rs.discardedOutputRates, itemId, lot.rate); } addFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'discard' }, itemId, lot.rate, 'discard'); } }
+    for (const [itemId, lots] of byproductLotsByItem.entries()) {
+      for (const lot of lots) {
+        const leftoverRate = normalizeVisibleRate(lot.rate);
+        if (leftoverRate <= 0) continue;
+        const rs = recipeStats[lot.recipeId];
+        const s = stat(itemId);
+        s.discarded += leftoverRate;
+        if (rs) addToRecord(rs.discardedOutputRates, itemId, leftoverRate);
+        addFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'discard' }, itemId, leftoverRate, 'discard');
+      }
+    }
 
     for (const itemId of new Set(input.targets.map((target) => target.outputItemId).filter(Boolean))) {
       const s = stat(itemId as string);
@@ -982,22 +1013,42 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
 
   let result = buildPlan(0);
   let fuelIterations = 0;
+  let fuelConverged = !fuelSettings.enabled;
+  let fuelConvergenceDelta = 0;
+  const fuelIterationTrace: NonNullable<CalculationResult['totals']['fuelIterationTrace']> = [];
+
   if (fuelSettings.enabled) {
     let injectedFuelRate = 0;
     for (let i = 0; i < fuelSettings.maxIterations; i += 1) {
       fuelIterations = i + 1;
       const nextFuelRate = result.totals.fuelRequiredPerMin;
+      fuelConvergenceDelta = Math.abs(nextFuelRate - injectedFuelRate);
+      fuelIterationTrace.push({
+        iteration: fuelIterations,
+        injectedFuelRate,
+        nextFuelRate,
+        delta: fuelConvergenceDelta,
+      });
       result = buildPlan(nextFuelRate);
-      if (Math.abs(nextFuelRate - injectedFuelRate) < 0.0001) break;
+      if (fuelConvergenceDelta < FUEL_CONVERGENCE_EPS) {
+        fuelConverged = true;
+        break;
+      }
       injectedFuelRate = nextFuelRate;
     }
   }
+
+  const fuelHitMaxIterations = fuelSettings.enabled && !fuelConverged && fuelIterations >= fuelSettings.maxIterations;
 
   return {
     ...result,
     totals: {
       ...result.totals,
       fuelIterations,
+      fuelConverged,
+      fuelHitMaxIterations,
+      fuelConvergenceDelta,
+      fuelIterationTrace,
       calculationMs: Math.max(0, nowMs() - startedAt),
     },
   };
@@ -1034,6 +1085,20 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
       messageJa: 'auto設定で生産レシピがあるアイテムが購入扱いに落ちています。solverで未解決需要が残っている可能性があります。',
       messageEn: 'An auto item with a craftable recipe was purchased. The solver may have left an unresolved demand.',
       data: purchasedAutoCraftableFlows,
+    });
+  }
+
+  if (result.totals.fuelHitMaxIterations) {
+    issues.push({
+      severity: 'info',
+      code: 'FUEL_HIT_MAX_ITERATIONS',
+      messageJa: '燃料計算が最大反復回数に到達しました。fuelIterationTrace の delta を確認してください。',
+      messageEn: 'Fuel calculation reached the maximum iteration count. Check fuelIterationTrace deltas.',
+      data: {
+        fuelIterations: result.totals.fuelIterations,
+        fuelConvergenceDelta: result.totals.fuelConvergenceDelta,
+        fuelIterationTrace: result.totals.fuelIterationTrace,
+      },
     });
   }
 

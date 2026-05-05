@@ -21,7 +21,7 @@ const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
   crucibleVariant: 'crucible',
   crucibleOverheadHeatPerSec: 0.4,
   otherOverheadHeatPerSec: 1,
-  maxIterations: 8,
+  maxIterations: 16,
 };
 
 const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
