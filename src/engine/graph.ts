@@ -517,9 +517,13 @@ export function buildFlowGraph(
   }
 
   const sourceItemIds = new Set(
-    result.conveyorEdges
-      .filter((edge) => !producerByItemId[edge.fromItemId])
-      .map((edge) => edge.fromItemId),
+
+  result.conveyorEdges
+
+  .filter((edge) => edge.sourceKind === 'item' || (!edge.fromRecipeId && !producerByItemId[edge.fromItemId]))
+
+  .map((edge) => edge.fromItemId),
+
   );
 
    const graphFuel = graphFuelSettings(settings);
@@ -627,8 +631,9 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
   }
 
   const sortedConveyorEdges = [...result.conveyorEdges].sort((a, b) => {
-    const aProducer = producerByItemId[a.fromItemId] ?? '';
-    const bProducer = producerByItemId[b.fromItemId] ?? '';
+    const aProducer = a.sourceKind === 'item' ? '' : (a.fromRecipeId ?? producerByItemId[a.fromItemId] ?? '');
+
+  const bProducer = b.sourceKind === 'item' ? '' : (b.fromRecipeId ?? producerByItemId[b.fromItemId] ?? '');
 
     if (aProducer !== bProducer) return aProducer.localeCompare(bProducer);
 
@@ -640,7 +645,7 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
   });
 
   for (const edge of sortedConveyorEdges) {
-    const producerRecipeId = producerByItemId[edge.fromItemId];
+    const producerRecipeId = edge.sourceKind === 'item' ? undefined : (edge.fromRecipeId ?? producerByItemId[edge.fromItemId]);
 
     const sourceId = producerRecipeId ? 'recipe:' + producerRecipeId : 'item:' + edge.fromItemId;
     const targetId = 'recipe:' + edge.toRecipeId;
