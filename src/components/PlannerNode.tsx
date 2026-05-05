@@ -34,7 +34,7 @@ export function PlannerNode({ data }: NodeProps) {
 
   return (
     <div
-      className={`planner-node planner-node-${kind}${nodeData.completed ? ' is-completed' : ''}`}
+      className={`planner-node planner-node-${kind}${nodeData.completed ? ' is-completed' : ''}${nodeData.isFuelSource ? ' is-fuel-source' : ''}`}
       title={nodeData.tooltip}
     >
       {targetHandles.map((handle) => (

@@ -28,6 +28,8 @@ export type PlannerNodeData = {
   subLabel?: string;
   completed?: boolean;
   tooltip?: string;
+
+ isFuelSource?: boolean;
   sourceHandles?: PlannerHandleData[];
   targetHandles?: PlannerHandleData[];
 
@@ -44,6 +46,18 @@ const FLOW_COLORS = [
   '#38d9a9',
   '#91a7ff',
 ] as const;
+
+const INPUT_FLOW_COLORS = [
+ '#8ecae6',
+ '#a5d8ff',
+ '#b2f2bb',
+ '#d0bfff',
+ '#ffd6a5',
+ '#c3fae8',
+ '#e9fac8',
+ '#ffc9c9',
+] as const;
+
 
 const DEFAULT_FLOW_COLOR = '#7dc4ff';
 const FINAL_FLOW_COLOR = '#9fe870';
@@ -129,6 +143,18 @@ function outputSortKey(recipeId: string, itemId: string): number {
 function colorForRecipeOutput(recipeId: string, itemId: string): string {
   const index = outputSortKey(recipeId, itemId);
   return FLOW_COLORS[index % FLOW_COLORS.length] ?? DEFAULT_FLOW_COLOR;
+}
+
+function inputSortKey(recipeId: string, itemId: string): number {
+ const recipe = recipeById[recipeId];
+ if (!recipe) return 9999;
+ const index = recipe.inputs.findIndex((input) => input.itemId === itemId);
+ return index >= 0 ? index : 9999;
+}
+
+function colorForRecipeInput(recipeId: string, itemId: string): string {
+ const index = inputSortKey(recipeId, itemId);
+ return INPUT_FLOW_COLORS[index % INPUT_FLOW_COLORS.length] ?? DEFAULT_FLOW_COLOR;
 }
 
 function marker(color: string) {
@@ -543,7 +569,7 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
 
     if (sourceId === targetId) continue;
 
-    const color = producerRecipeId ? colorForRecipeOutput(producerRecipeId, edge.fromItemId) : DEFAULT_FLOW_COLOR;
+    const color = colorForRecipeInput(edge.toRecipeId, edge.fromItemId);
 
     addOrMergeEdge(
       edges,
@@ -703,6 +729,17 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
      outputOrder: -1000,
     }),
    );
+  }
+ }
+
+ const fuelSourceNodeIds = new Set(edges.filter((edge) => edge.id.startsWith('fuel:')).map((edge) => edge.source));
+ if (fuelSourceNodeIds.size > 0) {
+  for (const node of nodes) {
+   if (!fuelSourceNodeIds.has(node.id)) continue;
+   node.data = {
+    ...(node.data as PlannerNodeData),
+    isFuelSource: true,
+   };
   }
  }
 

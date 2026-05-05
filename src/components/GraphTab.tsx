@@ -64,20 +64,53 @@ function readEdgeData(edge: Edge): EdgeData {
 }
 
 function getCyclePath(sourceX: number, sourceY: number, targetX: number, targetY: number, side: number) {
-  const dx = targetX - sourceX;
-  const dy = targetY - sourceY;
-  const length = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-  const nx = -dy / length;
-  const ny = dx / length;
-  const offset = 92 * side;
-  const controlX = (sourceX + targetX) / 2 + nx * offset;
-  const controlY = (sourceY + targetY) / 2 + ny * offset;
-
-  return {
-    path: `M ${sourceX},${sourceY} Q ${controlX},${controlY} ${targetX},${targetY}`,
-    labelX: sourceX * 0.25 + controlX * 0.5 + targetX * 0.25,
-    labelY: sourceY * 0.25 + controlY * 0.5 + targetY * 0.25,
-  };
+ const dx = targetX - sourceX;
+ const dy = targetY - sourceY;
+ const length = Math.max(Math.hypot(dx, dy), 1);
+ const ux = dx / length;
+ const uy = dy / length;
+ const nx = -uy;
+ const ny = ux;
+ const straight = Math.min(64, Math.max(24, length * 0.1));
+ const offset = Math.min(180, Math.max(92, length * 0.32)) * side;
+ const bend = Math.min(120, Math.max(44, length * 0.22));
+ const startX = sourceX + ux * straight;
+ const startY = sourceY + uy * straight;
+ const endX = targetX - ux * straight;
+ const endY = targetY - uy * straight;
+ const c1x = startX + ux * bend + nx * offset;
+ const c1y = startY + uy * bend + ny * offset;
+ const c2x = endX - ux * bend + nx * offset;
+ const c2y = endY - uy * bend + ny * offset;
+ return {
+  path:
+   'M ' +
+   sourceX +
+   ',' +
+   sourceY +
+   ' L ' +
+   startX +
+   ',' +
+   startY +
+   ' C ' +
+   c1x +
+   ',' +
+   c1y +
+   ' ' +
+   c2x +
+   ',' +
+   c2y +
+   ' ' +
+   endX +
+   ',' +
+   endY +
+   ' L ' +
+   targetX +
+   ',' +
+   targetY,
+  labelX: (startX + c1x + c2x + endX) / 4,
+  labelY: (startY + c1y + c2y + endY) / 4,
+ };
 }
 
 function FlowEdge(props: EdgeProps) {
@@ -134,59 +167,100 @@ function edgeTargetSide(edge: Edge): PlannerHandleSide {
  const data = edge.data as { targetSide?: PlannerHandleSide } | undefined;
  return data?.targetSide ?? 'left';
 }
+function edgeSourceSide(edge: Edge): PlannerHandleSide {
+ const data = edge.data as { sourceSide?: PlannerHandleSide } | undefined;
+ return data?.sourceSide ?? 'right';
+}
+
 
 function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
-  const incoming = new Map<string, Edge[]>();
-  const nodeY = new Map(nodes.map((node) => [node.id, node.position.y]));
-  const nextNodes = nodes.map((node) => ({ ...node, data: { ...(node.data ?? {}) } }));
-  const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
-  const nextEdges = edges.map((edge) => ({ ...edge, data: { ...(edge.data ?? {}) } }));
-  const nextEdgeById = new Map(nextEdges.map((edge) => [edge.id, edge]));
+ const incoming = new Map<string, Edge[]>();
+ const outgoing = new Map<string, Edge[]>();
+ const nodeY = new Map(nodes.map((node) => [node.id, node.position.y]));
+ const nextNodes = nodes.map((node) => ({ ...node, data: { ...(node.data ?? {}) } }));
+ const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
+ const nextEdges = edges.map((edge) => ({ ...edge, data: { ...(edge.data ?? {}) } }));
+ const nextEdgeById = new Map(nextEdges.map((edge) => [edge.id, edge]));
 
-  for (const edge of edges) {
-    const group = incoming.get(edge.target) ?? [];
-    group.push(edge);
-    incoming.set(edge.target, group);
-  }
+ for (const edge of edges) {
+  const inc = incoming.get(edge.target) ?? [];
+  inc.push(edge);
+  incoming.set(edge.target, inc);
 
-  for (const [targetId, group] of incoming.entries()) {
-    const target = nextNodeById.get(targetId);
-    if (!target) continue;
+  const out = outgoing.get(edge.source) ?? [];
+  out.push(edge);
+  outgoing.set(edge.source, out);
+ }
 
-    const sorted = [...group].sort((a, b) => {
-      const aData = readEdgeData(a);
-      const bData = readEdgeData(b);
-      return (
-        (nodeY.get(a.source) ?? 0) - (nodeY.get(b.source) ?? 0) ||
-        Number(aData.outputOrder ?? 9999) - Number(bData.outputOrder ?? 9999) ||
-        String(aData.itemId ?? '').localeCompare(String(bData.itemId ?? '')) ||
-        a.source.localeCompare(b.source)
-      );
-    });
+ const sideOrder: PlannerHandleSide[] = ['top', 'left', 'right', 'bottom'];
 
-    const sideOrder: PlannerHandleSide[] = ['top', 'left', 'right', 'bottom'];
-  const targetHandles: Array<{ id: string; topPct: number; color: string; side?: PlannerHandleSide }> = [];
+ for (const [targetId, group] of incoming.entries()) {
+  const target = nextNodeById.get(targetId);
+  if (!target) continue;
+  const sorted = [...group].sort((a, b) => {
+   const aData = readEdgeData(a);
+   const bData = readEdgeData(b);
+   return (
+    (nodeY.get(a.source) ?? 0) - (nodeY.get(b.source) ?? 0) ||
+    Number(aData.outputOrder ?? 9999) - Number(bData.outputOrder ?? 9999) ||
+    String(aData.itemId ?? '').localeCompare(String(bData.itemId ?? '')) ||
+    a.source.localeCompare(b.source)
+   );
+  });
 
+  const targetHandles: Array<PlannerHandleData & { side?: PlannerHandleSide }> = [];
   for (const side of sideOrder) {
    const sideEdges = sorted.filter((edge) => edgeTargetSide(nextEdgeById.get(edge.id) ?? edge) === side);
    sideEdges.forEach((edge, index) => {
     const nextEdge = nextEdgeById.get(edge.id);
-    const data = nextEdge?.data as Record<string, unknown> | undefined;
+    const data = nextEdge ? readEdgeData(nextEdge) : readEdgeData(edge);
     const id = side === 'left' ? 't' + targetHandles.length : 't-' + side + '-' + index;
     if (nextEdge) nextEdge.targetHandle = id;
     targetHandles.push({
      id,
      topPct: ((index + 1) / (sideEdges.length + 1)) * 100,
-     color: String(data?.color ?? '#7dc4ff'),
+     color: String(data.color ?? '#7dc4ff'),
      side,
     });
    });
   }
-
   target.data = { ...(target.data ?? {}), targetHandles };
-  }
+ }
 
-  return { nodes: nextNodes, edges: nextEdges };
+ for (const [sourceId, group] of outgoing.entries()) {
+  const source = nextNodeById.get(sourceId);
+  if (!source) continue;
+  const sorted = [...group].sort((a, b) => {
+   const aData = readEdgeData(a);
+   const bData = readEdgeData(b);
+   return (
+    (nodeY.get(a.target) ?? 0) - (nodeY.get(b.target) ?? 0) ||
+    Number(aData.outputOrder ?? 9999) - Number(bData.outputOrder ?? 9999) ||
+    String(aData.itemId ?? '').localeCompare(String(bData.itemId ?? '')) ||
+    a.target.localeCompare(b.target)
+   );
+  });
+
+  const sourceHandles: Array<PlannerHandleData & { side?: PlannerHandleSide }> = [];
+  for (const side of sideOrder) {
+   const sideEdges = sorted.filter((edge) => edgeSourceSide(nextEdgeById.get(edge.id) ?? edge) === side);
+   sideEdges.forEach((edge, index) => {
+    const nextEdge = nextEdgeById.get(edge.id);
+    const data = nextEdge ? readEdgeData(nextEdge) : readEdgeData(edge);
+    const id = side === 'right' ? 's' + sourceHandles.length : 's-' + side + '-' + index;
+    if (nextEdge) nextEdge.sourceHandle = id;
+    sourceHandles.push({
+     id,
+     topPct: ((index + 1) / (sideEdges.length + 1)) * 100,
+     color: String(data.color ?? '#7dc4ff'),
+     side,
+    });
+   });
+  }
+  source.data = { ...(source.data ?? {}), sourceHandles };
+ }
+
+ return { nodes: nextNodes, edges: nextEdges };
 }
 
 function applyCompletedStateToNodes(nodes: Node[], completedGraphNodeIds: Record<string, boolean>): Node[] {
