@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Lang } from '../types';
 import type { CalculationResult } from '../engine/calculate';
 import { itemById } from '../data/items';
@@ -12,51 +11,57 @@ export type TableTabProps = {
   result: CalculationResult;
 };
 
+function fallbackName(id: string, lang: Lang): string {
+  return text({ ja: id, en: id }, lang);
+}
+
 export function TableTab({ lang, result }: TableTabProps) {
   const recipeRows = Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId));
   const itemRows = Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId));
-
   const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
   const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
   const initialPurchasedLabel = lang === 'ja' ? '初期購入' : 'Initial purchase';
 
   return (
-    <div className="stack">
-      <section className="metric-grid">
-        <div>
-          <span>{initialCostLabel}</span>
-          <strong>{formatCopper(result.totals.initialCostCopper)}</strong>
+    <div className="table-tab">
+      <section className="panel table-summary-panel">
+        <div className="table-summary-grid">
+          <div>
+            <span>{initialCostLabel}</span>
+            <strong>{formatCopper(result.totals.initialCostCopper)}</strong>
+          </div>
+          <div>
+            <span>{runningCostLabel}</span>
+            <strong>{formatCopper(result.totals.runningCostCopperPerMin)}</strong>
+          </div>
+          <div>
+            <span>{t('revenue', lang)}</span>
+            <strong>{formatCopper(result.totals.revenueCopperPerMin)}</strong>
+          </div>
+          <div>
+            <span>{t('profit', lang)}</span>
+            <strong>{formatCopper(result.totals.profitCopperPerMin)}</strong>
+          </div>
+          <div>
+            <span>{t('conveyorSpeed', lang)}</span>
+            <strong>{formatNumber(result.totals.conveyorItemsPerMinute)}/min</strong>
+          </div>
         </div>
-        <div>
-          <span>{runningCostLabel}</span>
-          <strong>{formatCopper(result.totals.runningCostCopperPerMin)}</strong>
-        </div>
-        <div>
-          <span>{t('revenue', lang)}</span>
-          <strong>{formatCopper(result.totals.revenueCopperPerMin)}</strong>
-        </div>
-        <div>
-          <span>{t('profit', lang)}</span>
-          <strong>{formatCopper(result.totals.profitCopperPerMin)}</strong>
-        </div>
-        <div>
-          <span>{t('conveyorSpeed', lang)}</span>
-          <strong>{formatNumber(result.totals.conveyorItemsPerMinute)}/min</strong>
-        </div>
+
+        {result.warnings.length > 0 && (
+          <div className="warning-list">
+            {result.warnings.map((warning, index) => (
+              <p key={index}>! {lang === 'ja' ? warning.messageJa : warning.messageEn}</p>
+            ))}
+          </div>
+        )}
       </section>
 
-      {result.warnings.length > 0 && (
-        <section className="panel warnings">
-          {result.warnings.map((warning, index) => (
-            <p key={index}>! {lang === 'ja' ? warning.messageJa : warning.messageEn}</p>
-          ))}
-        </section>
-      )}
-
-      <section className="panel">
+      <section className="panel table-section">
         <h2>{t('machinesTable', lang)}</h2>
-        <div className="table-scroll">
-          <table>
+
+        <div className="table-wrap">
+          <table className="data-table">
             <thead>
               <tr>
                 <th>{t('recipe', lang)}</th>
@@ -72,7 +77,10 @@ export function TableTab({ lang, result }: TableTabProps) {
                 const machine = machineById[row.machineId];
                 const surplus = Object.entries(row.surplusOutputRates)
                   .filter(([, value]) => value > 0)
-                  .map(([itemId, value]) => `${text(itemById[itemId]?.name ?? { ja: itemId, en: itemId }, lang)} +${formatNumber(value)}/min`)
+                  .map(([itemId, value]) => {
+                    const item = itemById[itemId];
+                    return `${item ? text(item.name, lang) : fallbackName(itemId, lang)} +${formatNumber(value)}/min`;
+                  })
                   .join(', ');
 
                 return (
@@ -90,10 +98,11 @@ export function TableTab({ lang, result }: TableTabProps) {
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel table-section">
         <h2>{t('itemsTable', lang)}</h2>
-        <div className="table-scroll">
-          <table>
+
+        <div className="table-wrap">
+          <table className="data-table">
             <thead>
               <tr>
                 <th>{lang === 'ja' ? 'アイテム' : 'Item'}</th>
@@ -134,10 +143,11 @@ export function TableTab({ lang, result }: TableTabProps) {
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel table-section">
         <h2>{t('beltsTable', lang)}</h2>
-        <div className="table-scroll">
-          <table>
+
+        <div className="table-wrap">
+          <table className="data-table">
             <thead>
               <tr>
                 <th>{lang === 'ja' ? '経路' : 'Route'}</th>

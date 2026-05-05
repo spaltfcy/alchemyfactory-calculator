@@ -1,11 +1,12 @@
+import type { ChangeEvent } from 'react';
 import type { AppSettings, AppState, Lang, Recipe, SurplusPolicy } from '../types';
+import { DEFAULT_STATE } from '../defaultState';
+import { FUEL_HEAT_VALUE_BY_ITEM_ID, FUEL_ITEM_IDS } from '../data/heat';
 import { ITEMS, itemById } from '../data/items';
 import { machineById } from '../data/machines';
-import { FUEL_HEAT_VALUE_BY_ITEM_ID, FUEL_ITEM_IDS } from '../data/heat';
 import { CODEX_RECIPE_ORDER, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
 import { t, text } from '../i18n';
 import { clearState, downloadJson } from '../utils/storage';
-import { DEFAULT_STATE } from '../defaultState';
 
 export type SettingsTabProps = {
   state: AppState;
@@ -13,7 +14,7 @@ export type SettingsTabProps = {
   safeMode?: boolean;
 };
 
-const DEFAULT_FUEL_SETTINGS = {
+const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
   enabled: true,
   fuelItemId: 'charcoal_powder',
   fuelSourceMode: 'craft',
@@ -23,7 +24,7 @@ const DEFAULT_FUEL_SETTINGS = {
   maxIterations: 8,
 };
 
-function getFuelSettings(state: AppState) {
+function getFuelSettings(state: AppState): AppSettings['fuel'] {
   return { ...DEFAULT_FUEL_SETTINGS, ...(state.settings.fuel ?? {}) };
 }
 
@@ -46,13 +47,11 @@ function recipeItemOrder(itemId: string): number {
 
 function recipeItemName(itemId: string, lang: Lang): string {
   const item = itemById[itemId];
-
   return item ? text(item.name, lang) : itemId;
 }
 
 function joinRecipeItemNames(entries: Array<{ itemId: string }>, lang: Lang): string {
   const separator = lang === 'ja' ? '・' : ', ';
-
   return entries.map((entry) => recipeItemName(entry.itemId, lang)).join(separator);
 }
 
@@ -75,7 +74,6 @@ function recipeOutputNames(recipe: Recipe, lang: Lang): string {
 
 function recipeOptionLabel(itemId: string, recipe: Recipe, lang: Lang): string {
   const machine = machineById[recipe.machineId];
-
   const inputNames = recipe.inputs.length ? joinRecipeItemNames(recipe.inputs, lang) : recipeItemName(itemId, lang);
   const machineName = machine ? text(machine.name, lang) : recipe.machineId;
   const outputNames = recipeOutputNames(recipe, lang);
@@ -90,7 +88,10 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
     settings: {
       ...current.settings,
       ...imported.settings,
-      fuel: { ...getFuelSettings(current), ...(imported.settings?.fuel ?? {}) },
+      fuel: {
+        ...getFuelSettings(current),
+        ...(imported.settings?.fuel ?? {}),
+      },
     },
     abilities: { ...current.abilities, ...imported.abilities },
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
@@ -127,15 +128,12 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
 
     const raw = await file.text();
     const parsed = JSON.parse(raw) as Partial<AppState>;
-
     setState(mergeState(state, parsed));
   }
 
   function resetAll() {
     const message =
-      lang === 'ja'
-        ? '設定と保存データを初期化します。よろしいですか？'
-        : 'Reset settings and saved data. Are you sure?';
+      lang === 'ja' ? '設定と保存データを初期化します。よろしいですか？' : 'Reset settings and saved data. Are you sure?';
 
     if (!window.confirm(message)) return;
 
@@ -154,216 +152,246 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
 
   return (
     <div className="settings-layout">
-      <section className="panel recipe-settings-panel">
+      <section className="panel settings-panel recipe-settings-panel">
         <h2>{lang === 'ja' ? 'レシピ設定' : 'Recipe settings'}</h2>
-        <div className="recipe-settings-list">
-          {recipeItems.map((item) => {
-            const recipes = getSortedRecipesProducing(item.id);
-            const value = state.recipePreferences[item.id] ?? getDefaultRecipeId(item.id);
 
-            return (
-              <label key={item.id} className="recipe-setting-row">
-                <span className="recipe-setting-item-name">{text(item.name, lang)}</span>
-                <select
-                  id={`recipe-preference-${item.id}`}
-                  name={`recipe-preference-${item.id}`}
-                  value={value}
-                  autoComplete="off"
-                  onChange={(e) => {
-                    const next = { ...state.recipePreferences };
-                    next[item.id] = e.target.value;
-                    setState({ ...state, recipePreferences: next });
-                  }}
-                >
-                  {recipes.map((recipe) => (
-                    <option key={recipe.id} value={recipe.id}>
-                      {recipeOptionLabel(item.id, recipe, lang)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            );
-          })}
+        <div className="settings-panel-body">
+          <div className="recipe-settings-list">
+            {recipeItems.map((item) => {
+              const recipes = getSortedRecipesProducing(item.id);
+              const value = state.recipePreferences[item.id] ?? getDefaultRecipeId(item.id);
+
+              return (
+                <label key={item.id} className="recipe-setting-row">
+                  <span className="recipe-setting-item-name">{text(item.name, lang)}</span>
+                  <select
+                    id={`recipe-preference-${item.id}`}
+                    name={`recipe-preference-${item.id}`}
+                    value={value}
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+                      setState({
+                        ...state,
+                        recipePreferences: {
+                          ...state.recipePreferences,
+                          [item.id]: event.target.value,
+                        },
+                      });
+                    }}
+                  >
+                    {recipes.map((recipe) => (
+                      <option key={recipe.id} value={recipe.id}>
+                        {recipeOptionLabel(item.id, recipe, lang)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            })}
+          </div>
         </div>
       </section>
 
       <div className="settings-side">
-        <section className="panel calculation-settings-panel">
+        <section className="panel settings-panel calculation-settings-panel">
           <h2>{lang === 'ja' ? '計算・表示' : 'Calculation / Display'}</h2>
-          <div className="settings-grid">
-            <label>
-              {t('machineRounding', lang)}
-              <select
-                id="machine-rounding"
-                name="machine-rounding"
-                value={state.settings.machineRounding}
-                autoComplete="off"
-                onChange={(e) => patchSettings({ machineRounding: e.target.value as AppSettings['machineRounding'] })}
-              >
-                <option value="none">{t('roundingNone', lang)}</option>
-                <option value="intermediate">{t('roundingIntermediate', lang)}</option>
-                <option value="all">{t('roundingAll', lang)}</option>
-              </select>
-            </label>
 
-            <label>
-              {t('defaultSurplusPolicy', lang)}
-              <select
-                id="default-surplus-policy"
-                name="default-surplus-policy"
-                value={state.settings.defaultSurplusPolicy}
-                autoComplete="off"
-                onChange={(e) => patchSettings({ defaultSurplusPolicy: e.target.value as SurplusPolicy })}
-              >
-                <option value="reuse">{t('reuse', lang)}</option>
-                <option value="discard">{t('discard', lang)}</option>
-              </select>
-            </label>
+          <div className="settings-panel-body">
+            <div className="settings-form-grid">
+              <label className="form-field">
+                <span>{t('machineRounding', lang)}</span>
+                <select
+                  id="machine-rounding"
+                  name="machine-rounding"
+                  value={state.settings.machineRounding}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchSettings({ machineRounding: event.target.value as AppSettings['machineRounding'] })
+                  }
+                >
+                  <option value="none">{t('roundingNone', lang)}</option>
+                  <option value="intermediate">{t('roundingIntermediate', lang)}</option>
+                  <option value="all">{t('roundingAll', lang)}</option>
+                </select>
+              </label>
 
-            <label>
-              {lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}
-              <select
-                id="graph-detail-level"
-                name="graph-detail-level"
-                value={state.settings.graphDetailLevel}
-                autoComplete="off"
-                onChange={(e) => patchSettings({ graphDetailLevel: e.target.value as AppSettings['graphDetailLevel'] })}
-              >
-                <option value="simple">{t('simple', lang)}</option>
-                <option value="normal">{t('normal', lang)}</option>
-                <option value="detailed">{t('detailed', lang)}</option>
-              </select>
-            </label>
+              <label className="form-field">
+                <span>{t('defaultSurplusPolicy', lang)}</span>
+                <select
+                  id="default-surplus-policy"
+                  name="default-surplus-policy"
+                  value={state.settings.defaultSurplusPolicy}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchSettings({ defaultSurplusPolicy: event.target.value as SurplusPolicy })
+                  }
+                >
+                  <option value="reuse">{t('reuse', lang)}</option>
+                  <option value="discard">{t('discard', lang)}</option>
+                </select>
+              </label>
 
-            <label className="checkbox-row">
-              <input
-                id="show-surplus"
-                name="show-surplus"
-                type="checkbox"
-                checked={state.settings.showSurplus}
-                autoComplete="off"
-                onChange={(e) => patchSettings({ showSurplus: e.target.checked })}
-              />
-              {lang === 'ja' ? '余剰ノードを表示' : 'Show surplus nodes'}
-            </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}</span>
+                <select
+                  id="graph-detail-level"
+                  name="graph-detail-level"
+                  value={state.settings.graphDetailLevel}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchSettings({ graphDetailLevel: event.target.value as AppSettings['graphDetailLevel'] })
+                  }
+                >
+                  <option value="simple">{t('simple', lang)}</option>
+                  <option value="normal">{t('normal', lang)}</option>
+                  <option value="detailed">{t('detailed', lang)}</option>
+                </select>
+              </label>
+
+              <label className="checkbox-row form-checkbox">
+                <input
+                  id="show-surplus"
+                  name="show-surplus"
+                  type="checkbox"
+                  checked={state.settings.showSurplus}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => patchSettings({ showSurplus: event.target.checked })}
+                />
+                <span>{lang === 'ja' ? '余剰ノードを表示' : 'Show surplus nodes'}</span>
+              </label>
+            </div>
           </div>
 
-          <div className="settings-reset-row">
+          <div className="settings-panel-footer">
             <button type="button" className="danger" onClick={resetAll}>
               {t('reset', lang)}
             </button>
           </div>
         </section>
 
-        <section className="panel fuel-settings-panel">
+        <section className="panel settings-panel fuel-settings-panel">
           <h2>{lang === 'ja' ? '燃料' : 'Fuel'}</h2>
-          <div className="fuel-settings-grid">
-            <label className="checkbox-row fuel-checkbox-row">
-              <input
-                id="fuel-enabled"
-                name="fuel-enabled"
-                type="checkbox"
-                checked={fuel.enabled}
-                autoComplete="off"
-                onChange={(e) => patchFuelSettings({ enabled: e.target.checked })}
-              />
-              {lang === 'ja' ? '燃料計算を有効' : 'Enable fuel calculation'}
-            </label>
 
-            <label>
-              {lang === 'ja' ? '使用燃料' : 'Fuel'}
-              <select
-                id="fuel-item"
-                name="fuel-item"
-                value={fuel.fuelItemId}
-                autoComplete="off"
-                onChange={(e) => patchFuelSettings({ fuelItemId: e.target.value })}
-              >
-                {FUEL_ITEM_IDS.map((itemId) => (
-                  <option key={itemId} value={itemId}>
-                    {recipeItemName(itemId, lang)} ({FUEL_HEAT_VALUE_BY_ITEM_ID[itemId]})
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="settings-panel-body">
+            <div className="settings-form-grid">
+              <label className="checkbox-row form-checkbox">
+                <input
+                  id="fuel-enabled"
+                  name="fuel-enabled"
+                  type="checkbox"
+                  checked={fuel.enabled}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => patchFuelSettings({ enabled: event.target.checked })}
+                />
+                <span>{lang === 'ja' ? '燃料計算を有効' : 'Enable fuel calculation'}</span>
+              </label>
 
-            <label>
-              {lang === 'ja' ? '燃料の扱い' : 'Fuel source'}
-              <select
-                id="fuel-source-mode"
-                name="fuel-source-mode"
-                value={fuel.fuelSourceMode}
-                autoComplete="off"
-                onChange={(e) => patchFuelSettings({ fuelSourceMode: e.target.value as AppSettings['fuel']['fuelSourceMode'] })}
-              >
-                <option value="craft">{lang === 'ja' ? '内部生産' : 'Craft internally'}</option>
-                <option value="buy">{lang === 'ja' ? '購入扱い' : 'Buy'}</option>
-              </select>
-            </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '使用燃料' : 'Fuel'}</span>
+                <select
+                  id="fuel-item"
+                  name="fuel-item"
+                  value={fuel.fuelItemId}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) => patchFuelSettings({ fuelItemId: event.target.value })}
+                >
+                  {FUEL_ITEM_IDS.map((itemId) => (
+                    <option key={itemId} value={itemId}>
+                      {recipeItemName(itemId, lang)} ({FUEL_HEAT_VALUE_BY_ITEM_ID[itemId]})
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <label>
-              {lang === 'ja' ? '坩堝設備' : 'Crucible device'}
-              <select
-                id="crucible-variant"
-                name="crucible-variant"
-                value={fuel.crucibleVariant}
-                autoComplete="off"
-                onChange={(e) => patchFuelSettings({ crucibleVariant: e.target.value as AppSettings['fuel']['crucibleVariant'] })}
-              >
-                <option value="crucible">{lang === 'ja' ? '通常坩堝' : 'Crucible'}</option>
-                <option value="stackable_crucible">{lang === 'ja' ? '積層坩堝' : 'Stackable Crucible'}</option>
-              </select>
-            </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '燃料の扱い' : 'Fuel source'}</span>
+                <select
+                  id="fuel-source-mode"
+                  name="fuel-source-mode"
+                  value={fuel.fuelSourceMode}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchFuelSettings({ fuelSourceMode: event.target.value as AppSettings['fuel']['fuelSourceMode'] })
+                  }
+                >
+                  <option value="craft">{lang === 'ja' ? '内部生産' : 'Craft internally'}</option>
+                  <option value="buy">{lang === 'ja' ? '購入扱い' : 'Buy'}</option>
+                </select>
+              </label>
 
-            <label>
-              {lang === 'ja' ? '坩堝の炉近似' : 'Crucible furnace overhead'}
-              <input
-                id="crucible-overhead-heat"
-                name="crucible-overhead-heat"
-                type="number"
-                min={0}
-                step={0.1}
-                value={fuel.crucibleOverheadHeatPerSec}
-                autoComplete="off"
-                onChange={(e) => patchFuelSettings({ crucibleOverheadHeatPerSec: Number(e.target.value) })}
-              />
-            </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '坩堝設備' : 'Crucible device'}</span>
+                <select
+                  id="crucible-variant"
+                  name="crucible-variant"
+                  value={fuel.crucibleVariant}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchFuelSettings({ crucibleVariant: event.target.value as AppSettings['fuel']['crucibleVariant'] })
+                  }
+                >
+                  <option value="crucible">{lang === 'ja' ? '通常坩堝' : 'Crucible'}</option>
+                  <option value="stackable_crucible">{lang === 'ja' ? '積層坩堝' : 'Stackable Crucible'}</option>
+                </select>
+              </label>
 
-            <label>
-              {lang === 'ja' ? 'その他の炉近似' : 'Other furnace overhead'}
-              <input
-                id="other-overhead-heat"
-                name="other-overhead-heat"
-                type="number"
-                min={0}
-                step={0.1}
-                value={fuel.otherOverheadHeatPerSec}
-                autoComplete="off"
-                onChange={(e) => patchFuelSettings({ otherOverheadHeatPerSec: Number(e.target.value) })}
-              />
-            </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '坩堝の炉近似' : 'Crucible furnace overhead'}</span>
+                <input
+                  id="crucible-overhead-heat"
+                  name="crucible-overhead-heat"
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={fuel.crucibleOverheadHeatPerSec}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    patchFuelSettings({ crucibleOverheadHeatPerSec: Number(event.target.value) })
+                  }
+                />
+              </label>
+
+              <label className="form-field">
+                <span>{lang === 'ja' ? 'その他の炉近似' : 'Other furnace overhead'}</span>
+                <input
+                  id="other-overhead-heat"
+                  name="other-overhead-heat"
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={fuel.otherOverheadHeatPerSec}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    patchFuelSettings({ otherOverheadHeatPerSec: Number(event.target.value) })
+                  }
+                />
+              </label>
+            </div>
           </div>
         </section>
 
-        <section className="panel data-io-panel">
+        <section className="panel settings-panel data-io-panel">
           <h2>{lang === 'ja' ? 'データ入出力 (JSON)' : 'Data I/O (JSON)'}</h2>
-          <div className="data-io-grid">
-            <div className="data-io-label">{lang === 'ja' ? '出力' : 'Output'}</div>
-            <button type="button" className="data-io-button" onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
-              {lang === 'ja' ? '保存' : 'Save'}
-            </button>
 
-            <div className="data-io-label">{lang === 'ja' ? '入力' : 'Input'}</div>
-            <label className="file-label data-io-file">
-              <input
-                id="json-file-input"
-                name="json-file-input"
-                type="file"
-                accept="application/json"
-                autoComplete="off"
-                onChange={(e) => void importJson(e.currentTarget.files?.[0])}
-              />
-            </label>
+          <div className="settings-panel-body">
+            <div className="data-io-grid">
+              <div className="data-io-label">{lang === 'ja' ? '出力' : 'Output'}</div>
+              <button type="button" className="data-io-button" onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
+                {lang === 'ja' ? '保存' : 'Save'}
+              </button>
+
+              <div className="data-io-label">{lang === 'ja' ? '入力' : 'Input'}</div>
+              <label className="file-label data-io-file">
+                <input
+                  id="json-file-input"
+                  name="json-file-input"
+                  type="file"
+                  accept="application/json"
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => void importJson(event.currentTarget.files?.[0])}
+                />
+              </label>
+            </div>
           </div>
         </section>
       </div>

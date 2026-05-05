@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import type { AbilityId, AppState } from './types';
 import { DEFAULT_STATE } from './defaultState';
 import { calculate } from './engine/calculate';
@@ -12,10 +12,14 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.11';
+const APP_VERSION = '0.3.12';
 const GAME_VERSION = '0.4.4.4323';
 
-type RuntimeFlags = { debug: boolean; explicitSafeMode: boolean; safeMode: boolean };
+type RuntimeFlags = {
+  debug: boolean;
+  explicitSafeMode: boolean;
+  safeMode: boolean;
+};
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
   logisticsEfficiency: { ja: '物流効率', en: 'Logistics' },
@@ -51,6 +55,7 @@ function parseRuntimeFlags(): RuntimeFlags {
   }
 
   const cleanHash = cleanParts.length ? `#${cleanParts.join('&')}` : '';
+
   if (window.location.hash !== cleanHash) {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${cleanHash}`);
   }
@@ -70,7 +75,10 @@ function mergeInitialState(safeMode: boolean): AppState {
     settings: {
       ...DEFAULT_STATE.settings,
       ...saved.settings,
-      fuel: { ...DEFAULT_STATE.settings.fuel, ...(saved.settings?.fuel ?? {}) },
+      fuel: {
+        ...DEFAULT_STATE.settings.fuel,
+        ...(saved.settings?.fuel ?? {}),
+      },
     },
     abilities: { ...DEFAULT_STATE.abilities, ...saved.abilities },
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
@@ -81,12 +89,17 @@ function mergeInitialState(safeMode: boolean): AppState {
   };
 
   if ((saved.version ?? 0) < 4) merged.settings.showSurplus = true;
+
   merged.version = Math.max(DEFAULT_STATE.version, saved.version ?? 0);
   return merged;
 }
 
 function resetStateForSafeMode(current: AppState): AppState {
-  return { ...DEFAULT_STATE, language: current.language, activeTab: current.activeTab };
+  return {
+    ...DEFAULT_STATE,
+    language: current.language,
+    activeTab: current.activeTab,
+  };
 }
 
 export function App() {
@@ -153,14 +166,20 @@ export function App() {
 
   function setAbility(id: AbilityId, value: number) {
     const nextValue = Math.max(0, Math.min(13, Math.floor(Number.isFinite(value) ? value : 0)));
-    setState({ ...state, abilities: { ...state.abilities, [id]: nextValue } });
+    setState({
+      ...state,
+      abilities: {
+        ...state.abilities,
+        [id]: nextValue,
+      },
+    });
   }
 
   const initialCost = result.totals.initialCostCopper ?? 0;
   const runningCost = result.totals.runningCostCopperPerMin ?? result.totals.purchaseCostCopperPerMin ?? 0;
-  const abilityButtonLabel = lang === 'ja' ? 'アビリティ' : 'Abilities';
   const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
   const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
+  const abilityButtonLabel = lang === 'ja' ? 'アビリティ' : 'Abilities';
   const siteVersionLabel = lang === 'ja' ? 'サイトバージョン' : 'Site version';
   const gameVersionLabel = lang === 'ja' ? 'ゲームバージョン' : 'Game version';
 
@@ -173,16 +192,22 @@ export function App() {
             {runtimeFlags.debug && <span className="debug-badge">[DEBUG]</span>}
             {runtimeFlags.explicitSafeMode && <span className="safe-mode-badge">Safe mode</span>}
           </h1>
-          <p>
+
+          <p className="summary-line">
             {initialCostLabel}: {formatCopper(initialCost)} + {runningCostLabel}: {formatCopper(runningCost)} /{' '}
             {t('revenue', lang)} {formatCopper(result.totals.revenueCopperPerMin)} / {t('profit', lang)}{' '}
             {formatCopper(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
             {formatNumber(result.totals.conveyorItemsPerMinute)}/min
           </p>
 
-          <nav className="tabs" aria-label={lang === 'ja' ? '画面切り替え' : 'Views'}>
+          <nav className="tabs">
             {(['graph', 'table', 'settings', 'about'] as const).map((tab) => (
-              <button key={tab} type="button" className={state.activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
+              <button
+                key={tab}
+                type="button"
+                className={state.activeTab === tab ? 'active' : ''}
+                onClick={() => setActiveTab(tab)}
+              >
                 {t(tab, lang)}
               </button>
             ))}
@@ -194,35 +219,52 @@ export function App() {
             <label key={id} className="header-ability-field">
               <span>{abilityLabels[id][lang]}</span>
               <input
+                id={`ability-${id}`}
+                name={`ability-${id}`}
                 type="number"
                 min={0}
                 max={13}
                 step={1}
                 value={state.abilities[id] ?? 0}
-                onChange={(event: { target: { value: string } }) => setAbility(id, Number(event.target.value))}
+                autoComplete="off"
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setAbility(id, Number(event.target.value))}
               />
             </label>
           ))}
         </div>
 
         <div className="header-actions">
-          <button
-            type="button"
-            className={abilityOpen ? 'header-ability-toggle is-open' : 'header-ability-toggle'}
-            onClick={() => setAbilityOpen((current) => !current)}
-          >
-            {abilityButtonLabel}
-          </button>
-
           <div className="version-stack">
-            <span>{siteVersionLabel}: {APP_VERSION}</span>
-            <span>{gameVersionLabel}: {GAME_VERSION}</span>
+            <span>
+              {siteVersionLabel}: {APP_VERSION}
+            </span>
+            <span>
+              {gameVersionLabel}: {GAME_VERSION}
+            </span>
           </div>
 
-          <select value={lang} onChange={(event: { target: { value: string } }) => setState({ ...state, language: event.target.value as AppState['language'] })}>
-            <option value="ja">日本語</option>
-            <option value="en">English</option>
-          </select>
+          <div className="header-control-row">
+            <button
+              type="button"
+              className={abilityOpen ? 'header-ability-toggle is-open' : 'header-ability-toggle'}
+              onClick={() => setAbilityOpen((current) => !current)}
+            >
+              {abilityButtonLabel}
+            </button>
+
+            <select
+              id="app-language"
+              name="app-language"
+              value={lang}
+              autoComplete="off"
+              onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                setState({ ...state, language: event.target.value as AppState['language'] })
+              }
+            >
+              <option value="ja">日本語</option>
+              <option value="en">English</option>
+            </select>
+          </div>
         </div>
       </header>
 
