@@ -57,6 +57,7 @@ export type ItemSourceMode = 'auto' | 'craft' | 'buy' | 'stock';
 export type GraphDetailLevel = 'simple' | 'normal' | 'detailed';
 
 export type FuelSourceMode = 'craft' | 'buy';
+export type FertilizerSourceMode = 'craft' | 'buy';
 export type CrucibleVariant = 'crucible' | 'stackable_crucible';
 
 export type FuelSettings = {
@@ -66,6 +67,13 @@ export type FuelSettings = {
   crucibleVariant: CrucibleVariant;
   crucibleOverheadHeatPerSec: number;
   otherOverheadHeatPerSec: number;
+  maxIterations: number;
+};
+export type FertilizerSettings = {
+  enabled: boolean;
+  fertilizerItemId: string;
+  fertilizerSourceMode: FertilizerSourceMode;
+  nurseryNutrientsPerSec: number;
   maxIterations: number;
 };
 
@@ -92,6 +100,7 @@ export type AppSettings = {
   showDiscardedByproducts: boolean;
   showCompleted: boolean;
   fuel: FuelSettings;
+  fertilizer: FertilizerSettings;
 };
 
 export type AppState = {

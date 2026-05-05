@@ -31,6 +31,13 @@ export const DEFAULT_STATE: AppState = {
       otherOverheadHeatPerSec: 1,
       maxIterations: 8,
     },
+    fertilizer: {
+      enabled: false,
+      fertilizerItemId: 'basic_fertilizer',
+      fertilizerSourceMode: 'craft',
+      nurseryNutrientsPerSec: 12,
+      maxIterations: 4,
+    },
   },
   abilities: DEFAULT_ABILITIES,
   recipePreferences: {

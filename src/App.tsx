@@ -12,7 +12,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.19';
+const APP_VERSION = '0.4.0';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -79,6 +79,7 @@ function mergeInitialState(safeMode: boolean): AppState {
         ...DEFAULT_STATE.settings.fuel,
         ...(saved.settings?.fuel ?? {}),
       },
+      fertilizer: { ...DEFAULT_STATE.settings.fertilizer, ...(saved.settings?.fertilizer ?? {}) },
     },
     abilities: { ...DEFAULT_STATE.abilities, ...saved.abilities },
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },

@@ -24,6 +24,18 @@ const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
   maxIterations: 8,
 };
 
+const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
+  enabled: false,
+  fertilizerItemId: 'basic_fertilizer',
+  fertilizerSourceMode: 'craft',
+  nurseryNutrientsPerSec: 12,
+  maxIterations: 4,
+};
+
+function getFertilizerSettings(state: AppState): AppSettings['fertilizer'] {
+  return { ...DEFAULT_FERTILIZER_SETTINGS, ...(state.settings.fertilizer ?? {}) };
+}
+
 function getFuelSettings(state: AppState): AppSettings['fuel'] {
   return { ...DEFAULT_FUEL_SETTINGS, ...(state.settings.fuel ?? {}) };
 }
@@ -108,6 +120,7 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
         ...getFuelSettings(current),
         ...(imported.settings?.fuel ?? {}),
       },
+      fertilizer: { ...getFertilizerSettings(current), ...(imported.settings?.fertilizer ?? {}) },
     },
     abilities: { ...current.abilities, ...imported.abilities },
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },

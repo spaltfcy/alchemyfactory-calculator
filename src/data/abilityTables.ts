@@ -129,3 +129,8 @@ export function getSellPriceMultiplier(
 
   return shop;
 }
+
+export function getFertilizerNutritionMultiplier(abilities: AbilitySettings): number {
+  const addPercent = sumLevels(ABILITY_TABLES.fertilizerEfficiency.fertilizerNutritionPercentAdd, abilities.fertilizerEfficiency);
+  return 1 + addPercent / 100;
+}
