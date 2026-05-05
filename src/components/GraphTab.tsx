@@ -33,7 +33,7 @@ type EdgeData = {
   itemName?: string;
   rateLabel?: string;
   color?: string;
-  inputColor?: string; cycleSide?: number;
+  cycleSide?: number;
   labelShiftY?: number;
   outputOrder?: number;
 };
@@ -185,7 +185,7 @@ function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
     targetHandles.push({
      id,
      topPct: ((index + 1) / (sideEdges.length + 1)) * 100,
-     color: String(data.inputColor ?? data.color ?? '#7dc4ff'),
+     color: String(data.color ?? '#7dc4ff'),
      side,
     });
    });
@@ -218,7 +218,7 @@ function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
     sourceHandles.push({
      id,
      topPct: ((index + 1) / (sideEdges.length + 1)) * 100,
-     color: String(data.inputColor ?? data.color ?? '#7dc4ff'),
+     color: String(data.color ?? '#7dc4ff'),
      side,
     });
    });

@@ -38,28 +38,19 @@ export type PlannerNodeData = {
 
 const FLOW_COLORS = [
  '#ff6b6b',
- '#f06595',
- '#cc5de8',
- '#845ef7',
- '#ff922b',
- '#ffa94d',
- '#e64980',
- '#da77f2',
-] as const;
-
-const INPUT_FLOW_COLORS = [
  '#4dabf7',
- '#74c0fc',
- '#15aabf',
- '#22b8cf',
+ '#9775fa',
  '#20c997',
+ '#f06595',
+ '#74c0fc',
  '#38d9a9',
- '#a5d8ff',
- '#66d9e8',
+ '#91a7ff',
+ '#ffa94d',
+ '#cc5de8',
 ] as const;
 
 
-const DEFAULT_FLOW_COLOR = '#7dc4ff';
+const DEFAULT_FLOW_COLOR = '#ff6b6b';
 const FINAL_FLOW_COLOR = '#9fe870';
 const DISCARD_FLOW_COLOR = '#ffd43b';
 const FUEL_FLOW_COLOR = '#ff9f43';
@@ -152,11 +143,6 @@ function inputSortKey(recipeId: string, itemId: string): number {
  return index >= 0 ? index : 9999;
 }
 
-function colorForRecipeInput(recipeId: string, itemId: string): string {
- const index = inputSortKey(recipeId, itemId);
- return INPUT_FLOW_COLORS[index % INPUT_FLOW_COLORS.length] ?? DEFAULT_FLOW_COLOR;
-}
-
 function colorIndexFromKey(key: string): number {
  let hash = 0;
  for (let i = 0; i < key.length; i += 1) {
@@ -165,8 +151,8 @@ function colorIndexFromKey(key: string): number {
  return hash;
 }
 
-function colorForExternalOutput(itemId: string): string {
- return FLOW_COLORS[colorIndexFromKey(itemId) % FLOW_COLORS.length] ?? DEFAULT_FLOW_COLOR;
+function colorForExternalOutput(_itemId: string): string {
+ return DEFAULT_FLOW_COLOR;
 }
 
 function marker(color: string) {
@@ -211,9 +197,7 @@ function makeEdge(args: {
   itemId: string;
   rate: number;
   belts: number;
-  color: string;
- inputColor?: string;
-  lang: Lang;
+  color: string;  lang: Lang;
   dashed?: boolean;
   itemLabel?: string;
   rateLabelText?: string;
@@ -236,9 +220,7 @@ function makeEdge(args: {
       rateLabel: args.rateLabelText ?? rateLabel(args.rate, args.belts, args.lang, args.settings),
   sourceSide: args.sourceSide,
   targetSide: args.targetSide,
-      color: args.color,
- inputColor: args.inputColor ?? args.color,
-      cycleSide: 0,
+      color: args.color,      cycleSide: 0,
       labelShiftY: 0,
       outputOrder: args.outputOrder ?? 9999,
     },
@@ -319,6 +301,88 @@ function buildPlannerHandleData(edges: Edge[], direction: 'source' | 'target'): 
  return handles;
 }
 
+function isNormalFlowEdge(edge: Edge): boolean {
+ return edge.id.startsWith('in:');
+}
+
+function readEdgeColor(edge: Edge): string {
+ const data = edge.data as { color?: string } | undefined;
+ return String(data?.color ?? DEFAULT_FLOW_COLOR);
+}
+
+function chooseNormalFlowColor(avoidColors: Set<string>, offset: number): string {
+ if (avoidColors.size <= 0) return DEFAULT_FLOW_COLOR;
+ const candidates = FLOW_COLORS.filter((color) => !avoidColors.has(color));
+ if (candidates.length <= 0) return DEFAULT_FLOW_COLOR;
+ return candidates[Math.abs(offset) % candidates.length] ?? DEFAULT_FLOW_COLOR;
+}
+
+function writeEdgeColor(edge: Edge, color: string) {
+ const style = (edge.style ?? {}) as Record<string, unknown>;
+ const dashed = typeof style.strokeDasharray === 'string' && style.strokeDasharray.length > 0;
+ edge.style = edgeStyle(color, dashed);
+ edge.markerEnd = marker(color);
+ const data = { ...((edge.data ?? {}) as Record<string, unknown>) };
+ delete data.inputColor;
+ data.color = color;
+ edge.data = data;
+}
+
+function normalizeNormalFlowColors(edges: Edge[]) {
+ const normalEdges = edges.filter(isNormalFlowEdge);
+ if (normalEdges.length <= 0) return;
+
+ for (const edge of normalEdges) {
+  writeEdgeColor(edge, DEFAULT_FLOW_COLOR);
+ }
+
+ const maxPasses = Math.min(Math.max(normalEdges.length, 1), 24);
+ for (let pass = 0; pass < maxPasses; pass += 1) {
+  const incomingColorsByNode = new Map<string, Set<string>>();
+  const outgoingEdgesByNode = new Map<string, Edge[]>();
+
+  for (const edge of normalEdges) {
+   const incoming = incomingColorsByNode.get(edge.target) ?? new Set<string>();
+   incoming.add(readEdgeColor(edge));
+   incomingColorsByNode.set(edge.target, incoming);
+
+   const outgoing = outgoingEdgesByNode.get(edge.source) ?? [];
+   outgoing.push(edge);
+   outgoingEdgesByNode.set(edge.source, outgoing);
+  }
+
+  let changed = false;
+  for (const [nodeId, outgoingEdges] of outgoingEdgesByNode.entries()) {
+   const avoidColors = incomingColorsByNode.get(nodeId) ?? new Set<string>();
+   const sorted = [...outgoingEdges].sort((a, b) => {
+    const ad = a.data as Record<string, unknown> | undefined;
+    const bd = b.data as Record<string, unknown> | undefined;
+    return (
+     Number(ad?.outputOrder ?? 9999) - Number(bd?.outputOrder ?? 9999) ||
+     String(ad?.itemId ?? '').localeCompare(String(bd?.itemId ?? '')) ||
+     a.target.localeCompare(b.target)
+    );
+   });
+
+   const colorByItem = new Map<string, string>();
+   for (const edge of sorted) {
+    const data = edge.data as Record<string, unknown> | undefined;
+    const key = String(data?.itemId ?? edge.id);
+    let nextColor = colorByItem.get(key);
+    if (!nextColor) {
+     nextColor = chooseNormalFlowColor(avoidColors, colorByItem.size);
+     colorByItem.set(key, nextColor);
+    }
+    if (readEdgeColor(edge) !== nextColor) {
+     writeEdgeColor(edge, nextColor);
+     changed = true;
+    }
+   }
+  }
+
+  if (!changed) break;
+ }
+}
 function decorateEdgesAndHandles(nodes: Node[], edges: Edge[]) {
   const directedGroups = new Map<string, Edge[]>();
   const undirectedRecipeGroups = new Map<string, Edge[]>();
@@ -583,9 +647,7 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
 
     if (sourceId === targetId) continue;
 
-    const color = producerRecipeId ? colorForRecipeOutput(producerRecipeId, edge.fromItemId) : colorForExternalOutput(edge.fromItemId);
-
- const inputColor = colorForRecipeInput(edge.toRecipeId, edge.fromItemId);
+    const color = DEFAULT_FLOW_COLOR;
 
     addOrMergeEdge(
       edges,
@@ -597,8 +659,7 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
         rate: edge.rate,
         belts: edge.belts,
         color,
-   inputColor,
-        lang,
+lang,
   settings,
         outputOrder: inputSortKey(edge.toRecipeId, edge.fromItemId),
       }),
@@ -760,7 +821,8 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
   }
  }
 
-decorateEdgesAndHandles(nodes, edges);
+normalizeNormalFlowColors(edges);
+ decorateEdgesAndHandles(nodes, edges);
 
   return { nodes, edges };
 }
