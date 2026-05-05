@@ -28,7 +28,14 @@ export type PlannerNodeData = {
   isFuelSource?: boolean;
 };
 
-const OUTPUT_COLORS = ["#ff6b6b","#ff8787","#f06595","#e8590c","#fd7e14","#ffa94d","#cc5de8","#845ef7"] as const;
+const OUTPUT_COLORS = [
+  '#ff6b6b', // red
+  '#4dabf7', // blue
+  '#f06595', // pink
+  '#2f9e44', // dark green
+  '#845ef7', // purple
+  '#e9ecef', // white
+] as const;
 const DEFAULT_OUTPUT_COLOR = '#ff6b6b';
 const FINAL_FLOW_COLOR = '#9fe870';
 const DISCARD_FLOW_COLOR = '#ffd43b'; const SURPLUS_FLOW_COLOR = '#ffd43b';
