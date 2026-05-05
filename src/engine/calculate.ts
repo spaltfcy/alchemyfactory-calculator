@@ -446,6 +446,97 @@ export function calculate(input: CalculateInput): CalculationResult {
     return desired;
   }
 
+function consumeSupplyLots(lots: SupplyLot[] | undefined, rate: number): number {
+ const sourceLots = lots ?? [];
+ let remaining = rate;
+ for (const lot of sourceLots) {
+  if (remaining <= EPS) break;
+  if (lot.rate <= EPS) continue;
+  const take = Math.min(lot.rate, remaining);
+  lot.rate -= take;
+  remaining -= take;
+ }
+ return remaining;
+}
+
+function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRate: number): RunMap {
+ let current = cloneRunMap(candidateRuns);
+ for (let pass = 0; pass < MAX_SOLVE_ITERATIONS; pass += 1) {
+  const analysis = analyzeRuns(current, injectedFuelRate);
+  const primaryLotsByItem = new Map<string, SupplyLot[]>();
+  const byproductLotsByItem = new Map<string, SupplyLot[]>();
+
+  for (const [recipeId, runsPerMinute] of current.entries()) {
+   const recipe = recipeById[recipeId];
+   if (!recipe || runsPerMinute <= EPS) continue;
+   for (const output of recipe.outputs) {
+    const rate = output.amount * (output.probability ?? 1) * runsPerMinute;
+    if (rate <= EPS) continue;
+    const primary = output.itemId === recipe.primaryOutputId;
+    const lot: SupplyLot = {
+     recipeId: recipe.id,
+     itemId: output.itemId,
+     rate,
+     originalRate: rate,
+     byproduct: !primary,
+     primary,
+    };
+    const map = primary ? primaryLotsByItem : byproductLotsByItem;
+    const lots = map.get(output.itemId) ?? [];
+    lots.push(lot);
+    map.set(output.itemId, lots);
+   }
+  }
+
+  for (const lock of locks) {
+   consumeSupplyLots(primaryLotsByItem.get(lock.itemId), lock.actualRate);
+  }
+
+  for (const demand of analysis.demandLots) {
+   let remaining = demand.rate;
+   if (input.settings.defaultSurplusPolicy === 'reuse') {
+    remaining = consumeSupplyLots(byproductLotsByItem.get(demand.itemId), remaining);
+   }
+   remaining = consumeSupplyLots(primaryLotsByItem.get(demand.itemId), remaining);
+  }
+
+  const reductions = new Map<string, number>();
+  for (const [, lots] of primaryLotsByItem.entries()) {
+   for (const lot of lots) {
+    if (lot.rate <= EPS) continue;
+    if (lot.rate < lot.originalRate - 0.000001) continue;
+    const currentRuns = current.get(lot.recipeId) ?? 0;
+    const lockedRunsForRecipe = lockedRuns.get(lot.recipeId) ?? 0;
+    const removableRuns = currentRuns - lockedRunsForRecipe;
+    if (removableRuns <= EPS) continue;
+    const recipe = recipeById[lot.recipeId];
+    if (!recipe) continue;
+    const perRun = outputPerRun(recipe, lot.itemId);
+    if (perRun <= EPS) continue;
+    const runsForUnusedOutput = lot.rate / perRun;
+    const reduceBy = Math.min(removableRuns, runsForUnusedOutput);
+    if (reduceBy > EPS) addToMap(reductions, lot.recipeId, reduceBy);
+   }
+  }
+
+  if (reductions.size === 0) return current;
+
+  const next = cloneRunMap(current);
+  for (const [recipeId, reduceBy] of reductions.entries()) {
+   const lockedRunsForRecipe = lockedRuns.get(recipeId) ?? 0;
+   const currentRuns = next.get(recipeId) ?? 0;
+   const nextRuns = Math.max(lockedRunsForRecipe, currentRuns - reduceBy);
+   if (nextRuns <= EPS) next.delete(recipeId);
+   else next.set(recipeId, nextRuns);
+  }
+
+  if (mapsAlmostEqual(current, next)) return next;
+  current = next;
+ }
+ return current;
+}
+
+
   function solveRuns(injectedFuelRate: number): { runs: RunMap; analysis: RunAnalysis; iterations: number; queueMax: number } {
     let runs = cloneRunMap(lockedRuns);
     let analysis = analyzeRuns(runs, injectedFuelRate);
@@ -453,7 +544,7 @@ export function calculate(input: CalculateInput): CalculationResult {
     let iterations = 0;
     for (let i = 0; i < MAX_SOLVE_ITERATIONS; i += 1) {
       iterations = i + 1;
-      const desired = desiredRunsFromAnalysis(analysis);
+      const desired = pruneRunsWithUnusedPrimaryOutputs(desiredRunsFromAnalysis(analysis), injectedFuelRate);
       queueMax = Math.max(queueMax, desired.size);
       if (mapsAlmostEqual(runs, desired)) {
         runs = desired;
