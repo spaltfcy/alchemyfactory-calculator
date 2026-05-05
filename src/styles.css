@@ -1271,3 +1271,155 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* v0.3.7 layout repair */
+.app-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.app-header {
+  padding-bottom: 0.35rem;
+}
+
+.tabs {
+  padding: 0.55rem 1rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.main-layout {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.side-pane {
+  min-height: 0;
+  overflow: auto;
+}
+
+.content-pane {
+  min-height: 0;
+  height: 100%;
+}
+
+.content-pane-graph {
+  overflow: hidden;
+  display: flex;
+}
+
+.content-pane-table,
+.content-pane-settings {
+  overflow: auto;
+}
+
+.content-pane-about {
+  overflow: hidden;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.graph-tab,
+.flow-wrap {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.flow-wrap .react-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.target-card {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) minmax(5.5rem, 7.5rem) minmax(6.5rem, 8rem) auto;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.target-field {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.target-field select,
+.target-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.target-remove {
+  align-self: end;
+  justify-self: end;
+  width: 2.65rem;
+  min-width: 2.65rem;
+  height: 2.65rem;
+  padding: 0;
+}
+
+.about-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  max-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  padding: 1rem 1.15rem;
+}
+
+.about-panel h2 {
+  margin: 0 0 0.5rem;
+}
+
+.about-panel h3 {
+  margin: 0.7rem 0 0.35rem;
+}
+
+.about-panel p {
+  margin: 0.38rem 0;
+  line-height: 1.36;
+}
+
+.about-feature-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.22rem 1rem;
+  margin: 0.35rem 0 0.65rem;
+  padding-left: 1.2rem;
+}
+
+.about-feature-list li {
+  line-height: 1.28;
+}
+
+.safe-mode-notice {
+  display: none !important;
+}
+
+@media (max-width: 1180px) {
+  .target-card {
+    grid-template-columns: minmax(10rem, 1fr) minmax(5rem, 7rem) minmax(6rem, 7.5rem) auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .target-card {
+    grid-template-columns: 1fr;
+  }
+
+  .target-remove {
+    justify-self: start;
+  }
+
+  .about-feature-list {
+    grid-template-columns: 1fr;
+  }
+}

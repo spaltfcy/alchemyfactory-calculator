@@ -1,6 +1,6 @@
 // @ts-nocheck
 import type { ItemCategory, Lang, ProductionTarget } from '../types';
-import { itemById } from '../data/items';
+import { ITEMS, itemById } from '../data/items';
 import { DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing, recipeById } from '../data/recipes';
 import { t, text } from '../i18n';
 
@@ -72,7 +72,7 @@ function getDefaultRecipeId(itemId: string): string {
 
 function makeTarget(lang: Lang): ProductionTarget {
   const selectable = getSelectableOutputItems(lang);
-  const outputItemId = selectable[0] ?? recipeById[Object.keys(recipeById)[0]]?.primaryOutputId;
+  const outputItemId = selectable[0] ?? ITEMS[0]?.id ?? '';
 
   return {
     id: 'target-' + crypto.randomUUID(),
@@ -111,16 +111,7 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
       <div className="target-list">
         {targets.map((target) => (
           <div key={target.id} className="target-card">
-            <button
-              type="button"
-              className="target-remove"
-              aria-label={t('remove', lang)}
-              onClick={() => onChange(targets.filter((x) => x.id !== target.id))}
-            >
-              ×
-            </button>
-
-            <label>
+            <label className="target-field target-item-field">
               {lang === 'ja' ? 'アイテム' : 'Item'}
               <select value={target.outputItemId} onChange={(e) => updateTarget(target.id, { outputItemId: e.target.value })}>
                 {selectableGroups.map((group) => (
@@ -135,18 +126,27 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
               </select>
             </label>
 
-            <label>
+            <label className="target-field target-value-field">
               {lang === 'ja' ? '出力' : 'Output'}
               <input type="number" min={0} step={1} value={target.value} onChange={(e) => updateTarget(target.id, { value: Number(e.target.value) })} />
             </label>
 
-            <label>
+            <label className="target-field target-mode-field">
               {t('mode', lang)}
               <select value={target.mode} onChange={(e) => updateTarget(target.id, { mode: e.target.value as ProductionTarget['mode'] })}>
                 <option value="rate">{t('rateShort', lang)}</option>
                 <option value="machines">{t('machinesShort', lang)}</option>
               </select>
             </label>
+
+            <button
+              type="button"
+              className="target-remove"
+              aria-label={t('remove', lang)}
+              onClick={() => onChange(targets.filter((x) => x.id !== target.id))}
+            >
+              ×
+            </button>
           </div>
         ))}
       </div>

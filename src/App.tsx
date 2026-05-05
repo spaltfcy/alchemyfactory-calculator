@@ -13,7 +13,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.6';
+const APP_VERSION = '0.3.7';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -193,8 +193,6 @@ export function App() {
   const abilityButtonLabel = lang === 'ja' ? 'アビリティ' : 'Abilities';
   const siteVersionLabel = lang === 'ja' ? 'サイトバージョン' : 'Site version';
   const gameVersionLabel = lang === 'ja' ? 'ゲームバージョン' : 'Game version';
-  const safeModeNotice =
-    lang === 'ja' ? 'セーフモードのため自動保存されません' : 'Safe mode: changes are not auto-saved';
 
   return (
     <div className={runtimeFlags.safeMode ? 'app-shell is-safe-mode' : 'app-shell'}>
@@ -211,7 +209,6 @@ export function App() {
             {formatCopper(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
             {formatNumber(result.totals.conveyorItemsPerMinute)}/min
           </p>
-          {runtimeFlags.explicitSafeMode && <p className="safe-mode-notice">{safeModeNotice}</p>}
         </div>
 
         <div className={abilityOpen ? 'header-ability-panel is-open' : 'header-ability-panel'} aria-label={t('abilities', lang)}>

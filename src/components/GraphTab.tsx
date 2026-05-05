@@ -178,6 +178,67 @@ function LockIcon() {
   );
 }
 
+function nodeCenterY(node: Node | undefined): number {
+  if (!node) return 0;
+  const height = node.measured?.height ?? node.height ?? 0;
+  return node.position.y + height / 2;
+}
+
+function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const incoming = new Map<string, Edge[]>();
+
+  for (const edge of edges) {
+    const list = incoming.get(edge.target) ?? [];
+    list.push(edge);
+    incoming.set(edge.target, list);
+  }
+
+  const nextNodes = nodes.map((node) => ({
+    ...node,
+    data: { ...(node.data ?? {}) },
+  }));
+  const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
+  const nextEdges = edges.map((edge) => ({ ...edge, data: { ...(edge.data ?? {}) } }));
+
+  const nextEdgesById = new Map(nextEdges.map((edge) => [edge.id, edge]));
+
+  for (const [targetId, list] of incoming.entries()) {
+    const targetNode = nextNodeById.get(targetId);
+    if (!targetNode) continue;
+
+    const sorted = [...list].sort((a, b) => {
+      const ay = nodeCenterY(nodeById.get(a.source));
+      const by = nodeCenterY(nodeById.get(b.source));
+      const ad = a.data as Record<string, unknown> | undefined;
+      const bd = b.data as Record<string, unknown> | undefined;
+
+      return (
+        ay - by ||
+        Number(ad?.outputOrder ?? 9999) - Number(bd?.outputOrder ?? 9999) ||
+        String(ad?.itemId ?? '').localeCompare(String(bd?.itemId ?? '')) ||
+        a.source.localeCompare(b.source)
+      );
+    });
+
+    targetNode.data.targetHandles = sorted.map((edge, index) => {
+      const nextEdge = nextEdgesById.get(edge.id);
+      const data = nextEdge?.data as Record<string, unknown> | undefined;
+      const id = 't' + index;
+
+      if (nextEdge) nextEdge.targetHandle = id;
+
+      return {
+        id,
+        topPct: ((index + 1) / (sorted.length + 1)) * 100,
+        color: String(data?.color ?? '#7dc4ff'),
+      };
+    });
+  }
+
+  return { nodes: nextNodes, edges: nextEdges };
+}
+
 function GraphControls({ lang, isInteractive, onToggleInteractive }: GraphControlsProps) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
@@ -287,17 +348,18 @@ export function GraphTab({
         const positionById = new Map(layouted.map((node) => [node.id, node.position]));
         const nextNodes = layoutedRaw.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position }));
         const nextEdges = layoutedRaw.edges;
+        const realigned = realignIncomingHandlesBySourceY(nextNodes, nextEdges);
         const layoutMs = Math.round(performance.now() - startedAt);
 
-        setNodes(nextNodes);
-        setEdges(nextEdges);
+        setNodes(realigned.nodes);
+        setEdges(realigned.edges);
         setIsUpdating(false);
 
         if (debug) {
-          const discardNodes = nextNodes.filter((node) => node.data?.kind === 'discard').length;
-          const recipeNodes = nextNodes.filter((node) => node.data?.kind === 'recipe').length;
+          const discardNodes = realigned.nodes.filter((node) => node.data?.kind === 'discard').length;
+          const recipeNodes = realigned.nodes.filter((node) => node.data?.kind === 'recipe').length;
           console.info(
-            `[graph] nodes=${nextNodes.length} edges=${nextEdges.length} total=${nextNodes.length + nextEdges.length} layout=${layoutMs}ms updating=${showUpdating} recipeNodes=${recipeNodes} discardNodes=${discardNodes}`,
+            `[graph] nodes=${realigned.nodes.length} edges=${realigned.edges.length} total=${realigned.nodes.length + realigned.edges.length} layout=${layoutMs}ms updating=${showUpdating} recipeNodes=${recipeNodes} discardNodes=${discardNodes}`,
           );
         }
 
