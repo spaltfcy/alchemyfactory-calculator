@@ -67,49 +67,15 @@ function getCyclePath(sourceX: number, sourceY: number, targetX: number, targetY
  const dx = targetX - sourceX;
  const dy = targetY - sourceY;
  const length = Math.max(Math.hypot(dx, dy), 1);
- const ux = dx / length;
- const uy = dy / length;
- const nx = -uy;
- const ny = ux;
- const straight = Math.min(64, Math.max(24, length * 0.1));
- const offset = Math.min(180, Math.max(92, length * 0.32)) * side;
- const bend = Math.min(120, Math.max(44, length * 0.22));
- const startX = sourceX + ux * straight;
- const startY = sourceY + uy * straight;
- const endX = targetX - ux * straight;
- const endY = targetY - uy * straight;
- const c1x = startX + ux * bend + nx * offset;
- const c1y = startY + uy * bend + ny * offset;
- const c2x = endX - ux * bend + nx * offset;
- const c2y = endY - uy * bend + ny * offset;
+ const nx = -dy / length;
+ const ny = dx / length;
+ const offset = Math.min(132, Math.max(68, length * 0.24)) * side;
+ const controlX = (sourceX + targetX) / 2 + nx * offset;
+ const controlY = (sourceY + targetY) / 2 + ny * offset;
  return {
-  path:
-   'M ' +
-   sourceX +
-   ',' +
-   sourceY +
-   ' L ' +
-   startX +
-   ',' +
-   startY +
-   ' C ' +
-   c1x +
-   ',' +
-   c1y +
-   ' ' +
-   c2x +
-   ',' +
-   c2y +
-   ' ' +
-   endX +
-   ',' +
-   endY +
-   ' L ' +
-   targetX +
-   ',' +
-   targetY,
-  labelX: (startX + c1x + c2x + endX) / 4,
-  labelY: (startY + c1y + c2y + endY) / 4,
+  path: `M ${sourceX},${sourceY} Q ${controlX},${controlY} ${targetX},${targetY}`,
+  labelX: sourceX * 0.25 + controlX * 0.5 + targetX * 0.25,
+  labelY: sourceY * 0.25 + controlY * 0.5 + targetY * 0.25,
  };
 }
 

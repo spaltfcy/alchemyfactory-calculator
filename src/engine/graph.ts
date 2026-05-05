@@ -48,14 +48,14 @@ const FLOW_COLORS = [
 ] as const;
 
 const INPUT_FLOW_COLORS = [
- '#8ecae6',
+ '#7dc4ff',
+ '#4dabf7',
+ '#74c0fc',
  '#a5d8ff',
- '#b2f2bb',
- '#d0bfff',
- '#ffd6a5',
- '#c3fae8',
- '#e9fac8',
- '#ffc9c9',
+ '#91a7ff',
+ '#b197fc',
+ '#66d9e8',
+ '#63e6be',
 ] as const;
 
 
@@ -554,8 +554,8 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
 
     if (aProducer !== bProducer) return aProducer.localeCompare(bProducer);
 
-    const outputDiff = outputSortKey(aProducer, a.fromItemId) - outputSortKey(bProducer, b.fromItemId);
-    if (outputDiff !== 0) return outputDiff;
+    const inputDiff = inputSortKey(a.toRecipeId, a.fromItemId) - inputSortKey(b.toRecipeId, b.fromItemId);
+ if (inputDiff !== 0) return inputDiff;
 
     if (a.fromItemId !== b.fromItemId) return a.fromItemId.localeCompare(b.fromItemId);
     return a.toRecipeId.localeCompare(b.toRecipeId);
@@ -583,7 +583,7 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
         color,
         lang,
   settings,
-        outputOrder: producerRecipeId ? outputSortKey(producerRecipeId, edge.fromItemId) : 9999,
+        outputOrder: inputSortKey(edge.toRecipeId, edge.fromItemId),
       }),
     );
   }
