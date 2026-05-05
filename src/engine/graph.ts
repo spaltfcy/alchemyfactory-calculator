@@ -37,25 +37,25 @@ export type PlannerNodeData = {
 };
 
 const FLOW_COLORS = [
-  '#ff6b6b',
-  '#4dabf7',
-  '#9775fa',
-  '#20c997',
-  '#f06595',
-  '#74c0fc',
-  '#38d9a9',
-  '#91a7ff',
+ '#ff6b6b',
+ '#f06595',
+ '#cc5de8',
+ '#845ef7',
+ '#ff922b',
+ '#ffa94d',
+ '#e64980',
+ '#da77f2',
 ] as const;
 
 const INPUT_FLOW_COLORS = [
- '#7dc4ff',
  '#4dabf7',
  '#74c0fc',
+ '#15aabf',
+ '#22b8cf',
+ '#20c997',
+ '#38d9a9',
  '#a5d8ff',
- '#91a7ff',
- '#b197fc',
  '#66d9e8',
- '#63e6be',
 ] as const;
 
 
@@ -157,6 +157,18 @@ function colorForRecipeInput(recipeId: string, itemId: string): string {
  return INPUT_FLOW_COLORS[index % INPUT_FLOW_COLORS.length] ?? DEFAULT_FLOW_COLOR;
 }
 
+function colorIndexFromKey(key: string): number {
+ let hash = 0;
+ for (let i = 0; i < key.length; i += 1) {
+  hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+ }
+ return hash;
+}
+
+function colorForExternalOutput(itemId: string): string {
+ return FLOW_COLORS[colorIndexFromKey(itemId) % FLOW_COLORS.length] ?? DEFAULT_FLOW_COLOR;
+}
+
 function marker(color: string) {
   return { type: MarkerType.ArrowClosed, color };
 }
@@ -200,6 +212,7 @@ function makeEdge(args: {
   rate: number;
   belts: number;
   color: string;
+ inputColor?: string;
   lang: Lang;
   dashed?: boolean;
   itemLabel?: string;
@@ -224,6 +237,7 @@ function makeEdge(args: {
   sourceSide: args.sourceSide,
   targetSide: args.targetSide,
       color: args.color,
+ inputColor: args.inputColor ?? args.color,
       cycleSide: 0,
       labelShiftY: 0,
       outputOrder: args.outputOrder ?? 9999,
@@ -569,7 +583,9 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
 
     if (sourceId === targetId) continue;
 
-    const color = colorForRecipeInput(edge.toRecipeId, edge.fromItemId);
+    const color = producerRecipeId ? colorForRecipeOutput(producerRecipeId, edge.fromItemId) : colorForExternalOutput(edge.fromItemId);
+
+ const inputColor = colorForRecipeInput(edge.toRecipeId, edge.fromItemId);
 
     addOrMergeEdge(
       edges,
@@ -581,6 +597,7 @@ for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
         rate: edge.rate,
         belts: edge.belts,
         color,
+   inputColor,
         lang,
   settings,
         outputOrder: inputSortKey(edge.toRecipeId, edge.fromItemId),
