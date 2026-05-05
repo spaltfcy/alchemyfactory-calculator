@@ -16,6 +16,7 @@ export const DEFAULT_STATE: AppState = {
   ],
   settings: {
     machineRounding: 'none',
+  quantityRoundingStep: '0.01',
     defaultSurplusPolicy: 'reuse',
     graphDetailLevel: 'normal',
     showSurplus: true,

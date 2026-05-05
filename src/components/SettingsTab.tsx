@@ -215,6 +215,25 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                 </select>
               </label>
 
+<label className="form-field">
+ <span>{lang === 'ja' ? '数量丸め' : 'Quantity rounding'}</span>
+ <select
+  id="quantity-rounding-step"
+  name="quantity-rounding-step"
+  value={state.settings.quantityRoundingStep ?? '0.01'}
+  autoComplete="off"
+  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+   patchSettings({ quantityRoundingStep: event.target.value as AppSettings['quantityRoundingStep'] })
+  }
+ >
+  <option value="none">{lang === 'ja' ? 'なし' : 'None'}</option>
+  <option value="1">1</option>
+  <option value="0.1">0.1</option>
+  <option value="0.01">0.01</option>
+ </select>
+</label>
+
+
               <label className="form-field">
                 <span>{t('defaultSurplusPolicy', lang)}</span>
                 <select

@@ -12,7 +12,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.3.13';
+const APP_VERSION = '0.3.14';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -183,6 +183,10 @@ export function App() {
   const siteVersionLabel = lang === 'ja' ? 'サイトバージョン' : 'Site version';
   const gameVersionLabel = lang === 'ja' ? 'ゲームバージョン' : 'Game version';
 
+ const debugCalculationLine = runtimeFlags.debug
+ ? (lang === 'ja' ? '計算' : 'Calc') + ': ' + formatNumber(result.totals.calculationMs ?? 0, 1) + 'ms / ' + (lang === 'ja' ? '燃料反復' : 'Fuel iterations') + ': ' + String(result.totals.fuelIterations ?? 0)
+ : '';
+
   return (
     <div className={runtimeFlags.safeMode ? 'app-shell is-safe-mode' : 'app-shell'}>
       <header className="app-header">
@@ -198,6 +202,7 @@ export function App() {
             {t('revenue', lang)} {formatCopper(result.totals.revenueCopperPerMin)} / {t('profit', lang)}{' '}
             {formatCopper(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
             {formatNumber(result.totals.conveyorItemsPerMinute)}/min
+  {runtimeFlags.debug && debugCalculationLine && <span className="debug-metric-inline"> / {debugCalculationLine}</span>}
           </p>
 
           <nav className="tabs">

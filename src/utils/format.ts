@@ -17,3 +17,23 @@ export function safeCeil(value: number): number {
   const eps = 1e-9;
   return Math.ceil(value - eps);
 }
+
+export function safeCeilToStep(value: number, step = 1): number {
+  const eps = 1e-9;
+  if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return value;
+  return Math.ceil((value - eps) / step) * step;
+}
+
+export function parseQuantityRoundingStep(step?: string): number {
+  if (step === '1') return 1;
+  if (step === '0.1') return 0.1;
+  if (step === '0.01') return 0.01;
+  return 0;
+}
+
+export function formatRoundedNumber(value: number, roundingStep?: string, digits = 2): string {
+  const step = parseQuantityRoundingStep(roundingStep);
+  const rounded = step > 0 ? safeCeilToStep(value, step) : value;
+  const nextDigits = step === 1 ? 0 : step === 0.1 ? 1 : digits;
+  return formatNumber(rounded, nextDigits);
+}

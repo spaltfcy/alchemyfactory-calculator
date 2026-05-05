@@ -831,3 +831,56 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* v0.3.14: heat/fuel graph badges and side handles */
+.planner-node-title-line {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ gap: 8px;
+}
+
+.planner-node-badges {
+ display: inline-flex;
+ align-items: center;
+ gap: 4px;
+ flex-shrink: 0;
+}
+
+.planner-node-badge {
+ border-radius: 999px;
+ padding: 2px 7px;
+ font-size: 0.68rem;
+ font-weight: 800;
+ line-height: 1.2;
+ white-space: nowrap;
+}
+
+.planner-node-badge-heat {
+ background: rgba(255, 159, 67, 0.22);
+ border: 1px solid rgba(255, 159, 67, 0.65);
+ color: #ffbd7a;
+}
+
+.planner-node-badge-info {
+ background: rgba(125, 196, 255, 0.18);
+ border: 1px solid rgba(125, 196, 255, 0.5);
+ color: #a8d9ff;
+}
+
+.planner-node .react-flow__handle-top,
+.planner-node .react-flow__handle-bottom {
+ left: 50%;
+ transform: translateX(-50%);
+}
+
+.planner-node .react-flow__handle-left,
+.planner-node .react-flow__handle-right {
+ top: 50%;
+ transform: translateY(-50%);
+}
+
+.debug-metric-inline {
+ color: #ffcf7a;
+ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

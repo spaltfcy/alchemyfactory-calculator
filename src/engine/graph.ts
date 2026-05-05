@@ -4,13 +4,22 @@ import type { AppSettings, Lang } from '../types';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
+import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID, resolveHeatMachineId } from '../data/heat';
 import { text } from '../i18n';
-import { formatNumber } from '../utils/format';
+import { formatNumber, formatRoundedNumber } from '../utils/format';
+
+export type PlannerHandleSide = 'left' | 'right' | 'top' | 'bottom';
+
+export type PlannerNodeBadge = {
+ label: string;
+ tone?: 'heat' | 'info';
+};
 
 export type PlannerHandleData = {
-  id: string;
-  topPct: number;
-  color: string;
+ id: string;
+ topPct: number;
+ color: string;
+ side?: PlannerHandleSide;
 };
 
 export type PlannerNodeData = {
@@ -21,6 +30,8 @@ export type PlannerNodeData = {
   tooltip?: string;
   sourceHandles?: PlannerHandleData[];
   targetHandles?: PlannerHandleData[];
+
+ badges?: PlannerNodeBadge[];
 };
 
 const FLOW_COLORS = [
@@ -37,6 +48,7 @@ const FLOW_COLORS = [
 const DEFAULT_FLOW_COLOR = '#7dc4ff';
 const FINAL_FLOW_COLOR = '#9fe870';
 const DISCARD_FLOW_COLOR = '#ffd43b';
+const FUEL_FLOW_COLOR = '#ff9f43';
 
 function beltCount(rate: number, conveyorItemsPerMinute: number): number {
   if (rate <= 0 || conveyorItemsPerMinute <= 0) return 0;
@@ -48,11 +60,63 @@ function itemName(itemId: string, lang: Lang): string {
   return item ? text(item.name, lang) : itemId;
 }
 
-function rateLabel(rate: number, belts: number, lang: Lang): string {
-  const beltLabel = lang === 'ja' ? 'ベルト' : 'Belt';
-  const beltUnit = lang === 'ja' ? '本' : '';
-  return formatNumber(rate) + '/min ' + beltLabel + ':' + belts + beltUnit;
+function rateLabel(rate: number, belts: number, lang: Lang, settings?: AppSettings): string {
+ const beltUnit = lang === 'ja' ? '本' : ' belts';
+ const step = readQuantityRoundingStep(settings);
+ return formatRoundedNumber(rate, step) + '/min ・ ⚙ ' + formatRoundedNumber(belts, step) + beltUnit;
 }
+
+function readQuantityRoundingStep(settings?: AppSettings): string {
+ return String((settings as (AppSettings & { quantityRoundingStep?: string }) | undefined)?.quantityRoundingStep ?? '0.01');
+}
+
+function graphFuelSettings(settings: AppSettings) {
+ const fuel = settings.fuel;
+ return {
+  enabled: fuel?.enabled ?? true,
+  fuelItemId: fuel?.fuelItemId ?? 'charcoal_powder',
+  fuelSourceMode: fuel?.fuelSourceMode ?? 'craft',
+  crucibleVariant: fuel?.crucibleVariant ?? 'crucible',
+  crucibleOverheadHeatPerSec: fuel?.crucibleOverheadHeatPerSec ?? 0.4,
+  otherOverheadHeatPerSec: fuel?.otherOverheadHeatPerSec ?? 1,
+  maxIterations: fuel?.maxIterations ?? 8,
+ };
+}
+
+function heatRequiredNodeLabel(lang: Lang): string {
+ return lang === 'ja' ? '要:熱源' : 'Needs heat';
+}
+
+function fuelItemEdgeLabel(itemId: string, lang: Lang): string {
+ return itemName(itemId, lang) + (lang === 'ja' ? '（燃料）' : ' (fuel)');
+}
+
+function heatPerMachinePerSecond(machineId: string, settings: AppSettings): number {
+ const fuel = graphFuelSettings(settings);
+ if (!fuel.enabled) return 0;
+ const heatMachineId = resolveHeatMachineId(machineId, fuel.crucibleVariant);
+ const config = HEAT_CONSUMER_BY_MACHINE_ID[heatMachineId];
+ if (!config) return 0;
+ const overhead = config.overheadKind === 'crucible' ? fuel.crucibleOverheadHeatPerSec : fuel.otherOverheadHeatPerSec;
+ return config.heatPerSec + overhead;
+}
+
+function recipeNeedsHeat(machineId: string, settings: AppSettings): boolean {
+ return heatPerMachinePerSecond(machineId, settings) > 0;
+}
+
+function fuelRateForRecipePerMin(rs: { recipeId: string; actualMachines: number }, settings: AppSettings, result: CalculationResult): number {
+ const fuel = graphFuelSettings(settings);
+ if (!fuel.enabled) return 0;
+ const fuelHeat = (FUEL_HEAT_VALUE_BY_ITEM_ID[fuel.fuelItemId] ?? 0) * (result.totals.fuelHeatValueMultiplier ?? 1);
+ if (fuelHeat <= 0) return 0;
+ const recipe = recipeById[rs.recipeId];
+ if (!recipe) return 0;
+ const heatPerSec = heatPerMachinePerSecond(recipe.machineId, settings);
+ if (heatPerSec <= 0) return 0;
+ return (rs.actualMachines * heatPerSec * 60 * (result.totals.heatConsumptionMultiplier ?? 1)) / fuelHeat;
+}
+
 
 function outputSortKey(recipeId: string, itemId: string): number {
   const recipe = recipeById[recipeId];
@@ -115,6 +179,9 @@ function makeEdge(args: {
   itemLabel?: string;
   rateLabelText?: string;
   outputOrder?: number;
+ settings?: AppSettings;
+ sourceSide?: PlannerHandleSide;
+ targetSide?: PlannerHandleSide;
 }): Edge {
   return {
     id: args.id,
@@ -127,7 +194,9 @@ function makeEdge(args: {
     data: {
       itemId: args.itemId,
       itemName: args.itemLabel ?? itemName(args.itemId, args.lang),
-      rateLabel: args.rateLabelText ?? rateLabel(args.rate, args.belts, args.lang),
+      rateLabel: args.rateLabelText ?? rateLabel(args.rate, args.belts, args.lang, args.settings),
+  sourceSide: args.sourceSide,
+  targetSide: args.targetSide,
       color: args.color,
       cycleSide: 0,
       labelShiftY: 0,
@@ -179,6 +248,35 @@ function discardSummaryTooltip(edges: OutputEdgeStat[], lang: Lang): string {
 
 function discardNodeId(recipeId: string, edges: OutputEdgeStat[]): string {
   return edges.length >= 2 ? 'discard:' + recipeId + ':summary' : 'discard:' + recipeId + ':' + edges[0].toItemId;
+}
+
+function buildPlannerHandleData(edges: Edge[], direction: 'source' | 'target'): PlannerHandleData[] {
+ const defaultSide: PlannerHandleSide = direction === 'source' ? 'right' : 'left';
+ const sideOrder: PlannerHandleSide[] = ['top', 'left', 'right', 'bottom'];
+ const handles: PlannerHandleData[] = [];
+ let defaultIndex = 0;
+
+ for (const side of sideOrder) {
+  const sideEdges = edges.filter((edge) => {
+   const data = edge.data as { sourceSide?: PlannerHandleSide; targetSide?: PlannerHandleSide; color?: string } | undefined;
+   return ((direction === 'source' ? data?.sourceSide : data?.targetSide) ?? defaultSide) === side;
+  });
+
+  sideEdges.forEach((edge, index) => {
+   const data = edge.data as { color?: string } | undefined;
+   const id = side === defaultSide ? direction[0] + defaultIndex++ : direction[0] + '-' + side + '-' + index;
+   if (direction === 'source') edge.sourceHandle = id;
+   else edge.targetHandle = id;
+   handles.push({
+    id,
+    topPct: ((index + 1) / (sideEdges.length + 1)) * 100,
+    color: String(data?.color ?? DEFAULT_FLOW_COLOR),
+    side,
+   });
+  });
+ }
+
+ return handles;
 }
 
 function decorateEdgesAndHandles(nodes: Node[], edges: Edge[]) {
@@ -272,31 +370,11 @@ function decorateEdgesAndHandles(nodes: Node[], edges: Edge[]) {
     const sourceEdges = sortPortEdges(outgoing.get(nodeId) ?? []);
     const targetEdges = sortPortEdges(incoming.get(nodeId) ?? []);
 
-    nodeData.sourceHandles = sourceEdges.map((edge, index) => {
-      const data = edge.data as Record<string, unknown> | undefined;
-      const id = 's' + index;
-      edge.sourceHandle = id;
+    nodeData.sourceHandles = buildPlannerHandleData(sourceEdges, 'source');
 
-      return {
-        id,
-        topPct: ((index + 1) / (sourceEdges.length + 1)) * 100,
-        color: String(data?.color ?? DEFAULT_FLOW_COLOR),
-      };
-    });
+  nodeData.targetHandles = buildPlannerHandleData(targetEdges, 'target');
 
-    nodeData.targetHandles = targetEdges.map((edge, index) => {
-      const data = edge.data as Record<string, unknown> | undefined;
-      const id = 't' + index;
-      edge.targetHandle = id;
-
-      return {
-        id,
-        topPct: ((index + 1) / (targetEdges.length + 1)) * 100,
-        color: String(data?.color ?? DEFAULT_FLOW_COLOR),
-      };
-    });
-
-    node.data = nodeData;
+  node.data = nodeData;
   }
 }
 
@@ -340,7 +418,12 @@ export function buildFlowGraph(
       .map((edge) => edge.fromItemId),
   );
 
-  for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
+   const graphFuel = graphFuelSettings(settings);
+ if (graphFuel.enabled && graphFuel.fuelItemId && result.totals.fuelRequiredPerMin > 0 && graphFuel.fuelSourceMode === 'buy') {
+  sourceItemIds.add(graphFuel.fuelItemId);
+ }
+
+for (const itemId of new Set([...sourceItemIds, ...finalItemIds])) {
     const s = result.itemStats[itemId];
     const item = itemById[itemId];
 
@@ -396,6 +479,7 @@ export function buildFlowGraph(
         kind: 'recipe',
         subLabel: lines.join('\n'),
         completed: completedGraphNodeIds[id] ?? false,
+  badges: recipeNeedsHeat(recipe.machineId, settings) ? [{ label: heatRequiredNodeLabel(lang), tone: 'heat' }] : [],
       },
     });
   }
@@ -472,6 +556,7 @@ export function buildFlowGraph(
         belts: edge.belts,
         color,
         lang,
+  settings,
         outputOrder: producerRecipeId ? outputSortKey(producerRecipeId, edge.fromItemId) : 9999,
       }),
     );
@@ -516,6 +601,7 @@ export function buildFlowGraph(
             belts: 0,
             color: DISCARD_FLOW_COLOR,
             lang,
+  settings,
             dashed: true,
             itemLabel: lang === 'ja' ? '副産物（破棄）' : 'Byproducts (discard)',
             rateLabelText: '',
@@ -540,6 +626,7 @@ export function buildFlowGraph(
           belts,
           color,
           lang,
+  settings,
           dashed: true,
           outputOrder: outputSortKey(edge.fromRecipeId, edge.toItemId),
         }),
@@ -562,12 +649,64 @@ export function buildFlowGraph(
         belts,
         color,
         lang,
+  settings,
         outputOrder: outputSortKey(edge.fromRecipeId, edge.toItemId),
       }),
     );
   }
 
-  decorateEdgesAndHandles(nodes, edges);
+   if (graphFuel.enabled && graphFuel.fuelItemId && result.totals.fuelRequiredPerMin > 0) {
+  const fuelItemId = graphFuel.fuelItemId;
+  const fuelProducerRecipeId = producerByItemId[fuelItemId];
+  let sourceNodeId = fuelProducerRecipeId ? 'recipe:' + fuelProducerRecipeId : 'item:' + fuelItemId;
+
+  if (!nodes.some((node) => node.id === sourceNodeId)) {
+   const fuelItem = itemById[fuelItemId];
+   if (fuelItem) {
+    sourceNodeId = 'item:' + fuelItemId;
+    nodes.push({
+     id: sourceNodeId,
+     type: 'plannerNode',
+     position: { x: 0, y: 0 },
+     data: {
+      label: text(fuelItem.name, lang),
+      kind: 'item',
+      subLabel: lang === 'ja' ? '燃料' : 'Fuel',
+      completed: completedGraphNodeIds[sourceNodeId] ?? false,
+     },
+    });
+   }
+  }
+
+  for (const rs of Object.values(result.recipeStats)) {
+   const recipe = recipeById[rs.recipeId];
+   if (!recipe) continue;
+   const targetId = 'recipe:' + rs.recipeId;
+   if (sourceNodeId === targetId) continue;
+   const fuelRate = fuelRateForRecipePerMin(rs, settings, result);
+   if (fuelRate <= 0) continue;
+   const belts = beltCount(fuelRate, result.totals.conveyorItemsPerMinute);
+   addOrMergeEdge(
+    edges,
+    makeEdge({
+     id: 'fuel:' + graphFuel.fuelItemId + '->' + rs.recipeId,
+     source: sourceNodeId,
+     target: targetId,
+     itemId: fuelItemId,
+     rate: fuelRate,
+     belts,
+     color: FUEL_FLOW_COLOR,
+     lang,
+     settings,
+     itemLabel: fuelItemEdgeLabel(fuelItemId, lang),
+     targetSide: 'top',
+     outputOrder: -1000,
+    }),
+   );
+  }
+ }
+
+decorateEdgesAndHandles(nodes, edges);
 
   return { nodes, edges };
 }

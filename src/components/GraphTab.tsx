@@ -20,7 +20,7 @@ import {
 } from '@xyflow/react';
 import type { AppSettings, Lang } from '../types';
 import type { CalculationResult } from '../engine/calculate';
-import { buildFlowGraph } from '../engine/graph';
+import { buildFlowGraph, type PlannerHandleSide } from '../engine/graph';
 import { layoutWithElk } from '../engine/layout';
 import { PlannerNode } from './PlannerNode';
 
@@ -129,6 +129,12 @@ function LockIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="10.25" width="13" height="9.25" rx="2" /><path d="M8.5 10.25V7.75C8.5 5.45 9.95 3.75 12 3.75C14.05 3.75 15.5 5.45 15.5 7.75V10.25" /><path d="M12 13.5V16.25" /></svg>;
 }
 
+
+function edgeTargetSide(edge: Edge): PlannerHandleSide {
+ const data = edge.data as { targetSide?: PlannerHandleSide } | undefined;
+ return data?.targetSide ?? 'left';
+}
+
 function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
   const incoming = new Map<string, Edge[]>();
   const nodeY = new Map(nodes.map((node) => [node.id, node.position.y]));
@@ -158,15 +164,26 @@ function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
       );
     });
 
-    const targetHandles: PlannerHandleData[] = sorted.map((edge, index) => {
-      const nextEdge = nextEdgeById.get(edge.id);
-      const data = nextEdge ? readEdgeData(nextEdge) : readEdgeData(edge);
-      const id = `t${index}`;
-      if (nextEdge) nextEdge.targetHandle = id;
-      return { id, topPct: ((index + 1) / (sorted.length + 1)) * 100, color: String(data.color ?? '#7dc4ff') };
-    });
+    const sideOrder: PlannerHandleSide[] = ['top', 'left', 'right', 'bottom'];
+  const targetHandles: Array<{ id: string; topPct: number; color: string; side?: PlannerHandleSide }> = [];
 
-    target.data = { ...(target.data ?? {}), targetHandles };
+  for (const side of sideOrder) {
+   const sideEdges = sorted.filter((edge) => edgeTargetSide(nextEdgeById.get(edge.id) ?? edge) === side);
+   sideEdges.forEach((edge, index) => {
+    const nextEdge = nextEdgeById.get(edge.id);
+    const data = nextEdge?.data as Record<string, unknown> | undefined;
+    const id = side === 'left' ? 't' + targetHandles.length : 't-' + side + '-' + index;
+    if (nextEdge) nextEdge.targetHandle = id;
+    targetHandles.push({
+     id,
+     topPct: ((index + 1) / (sideEdges.length + 1)) * 100,
+     color: String(data?.color ?? '#7dc4ff'),
+     side,
+    });
+   });
+  }
+
+  target.data = { ...(target.data ?? {}), targetHandles };
   }
 
   return { nodes: nextNodes, edges: nextEdges };

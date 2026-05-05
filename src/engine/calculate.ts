@@ -93,6 +93,8 @@ export type CalculationResult = {
     heatRequiredPerMin: number;
     fuelRequiredPerMin: number;
     fuelItemId: string;
+    fuelIterations?: number;
+    calculationMs?: number;
   };
 };
 
@@ -213,8 +215,26 @@ function calculateHeatRequiredPerMin(
   return total;
 }
 
+function calculationNowMs(): number {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function attachCalculationDebugTotals(
+  result: CalculationResult,
+  fuelIterations: number,
+  startedAtMs: number,
+): CalculationResult {
+  result.totals.fuelIterations = fuelIterations;
+  result.totals.calculationMs = Math.max(0, calculationNowMs() - startedAtMs);
+  return result;
+}
+
 export function calculate(input: CalculateInput): CalculationResult {
-  const fuelSettings = normalizeFuelSettings(input.settings);
+  const calculationStartedAtMs = calculationNowMs();
+const fuelSettings = normalizeFuelSettings(input.settings);
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const heatConsumptionMultiplier = getHeatConsumptionMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
@@ -602,13 +622,14 @@ export function calculate(input: CalculateInput): CalculationResult {
   }
 
   if (!fuelSettings.enabled) {
-    return calculateOnce(0);
+    return attachCalculationDebugTotals(calculateOnce(0), 0, calculationStartedAtMs);
   }
 
   let injectedFuelRate = 0;
   let result = calculateOnce(0);
-
+  let fuelIterations = 0;
   for (let i = 0; i < fuelSettings.maxIterations; i += 1) {
+    fuelIterations = i + 1;
     const nextFuelRate = result.totals.fuelRequiredPerMin;
 
     result = calculateOnce(nextFuelRate);
@@ -620,7 +641,7 @@ export function calculate(input: CalculateInput): CalculationResult {
     injectedFuelRate = nextFuelRate;
   }
 
-  return result;
+  return attachCalculationDebugTotals(result, fuelIterations, calculationStartedAtMs);
 }
 
 export function getByproductKeys(): Array<{ key: string; recipeId: string; itemId: string }> {

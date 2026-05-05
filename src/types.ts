@@ -51,6 +51,7 @@ export type ProductionTarget = {
 };
 
 export type MachineRoundingMode = 'none' | 'intermediate' | 'all';
+export type QuantityRoundingStep = 'none' | '1' | '0.1' | '0.01';
 export type SurplusPolicy = 'reuse' | 'discard';
 export type ItemSourceMode = 'auto' | 'craft' | 'buy' | 'stock';
 export type GraphDetailLevel = 'simple' | 'normal' | 'detailed';
@@ -84,6 +85,7 @@ export type AbilitySettings = Record<AbilityId, number>;
 
 export type AppSettings = {
   machineRounding: MachineRoundingMode;
+  quantityRoundingStep: QuantityRoundingStep;
   defaultSurplusPolicy: SurplusPolicy;
   graphDetailLevel: GraphDetailLevel;
   showSurplus: boolean;
