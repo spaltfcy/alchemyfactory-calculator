@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { AppSettings, AppState, Lang, Recipe, SurplusPolicy } from '../types';
 import { ITEMS, itemById } from '../data/items';
 import { machineById } from '../data/machines';

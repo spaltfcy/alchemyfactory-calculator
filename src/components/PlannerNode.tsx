@@ -1,7 +1,9 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
+import type { NodeProps } from '@xyflow/react';
+import type { CSSProperties } from 'react';
 import type { PlannerNodeData } from '../engine/graph';
 
-function handleStyle(topPct: number, color: string) {
+function handleStyle(topPct: number, color: string): CSSProperties {
   return {
     top: `${topPct}%`,
     background: color,
@@ -16,7 +18,10 @@ export function PlannerNode({ data }: NodeProps) {
   const sourceHandles = nodeData.sourceHandles ?? [];
 
   return (
-    <div className={`planner-node planner-node-${kind}${nodeData.completed ? ' is-completed' : ''}`} title={nodeData.tooltip}>
+    <div
+      className={`planner-node planner-node-${kind}${nodeData.completed ? ' is-completed' : ''}`}
+      title={nodeData.tooltip}
+    >
       {targetHandles.map((handle) => (
         <Handle key={handle.id} id={handle.id} type="target" position={Position.Left} style={handleStyle(handle.topPct, handle.color)} />
       ))}
