@@ -248,24 +248,28 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                 </select>
               </label>
 
-              <label className="checkbox-row form-checkbox">
-                <input
-                  id="show-surplus"
-                  name="show-surplus"
-                  type="checkbox"
-                  checked={state.settings.showSurplus}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => patchSettings({ showSurplus: event.target.checked })}
-                />
-                <span>{lang === 'ja' ? '余剰ノードを表示' : 'Show surplus nodes'}</span>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '余剰ノード' : 'Surplus nodes'}</span>
+                <span className="checkbox-control">
+                  <input
+                    id="show-surplus"
+                    name="show-surplus"
+                    type="checkbox"
+                    checked={state.settings.showSurplus}
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchSettings({ showSurplus: event.target.checked })}
+                  />
+                  <span>{lang === 'ja' ? '表示' : 'Show'}</span>
+                </span>
               </label>
-            </div>
-          </div>
 
-          <div className="settings-panel-footer">
-            <button type="button" className="danger" onClick={resetAll}>
-              {t('reset', lang)}
-            </button>
+              <div className="form-field">
+                <span>{lang === 'ja' ? '初期化' : 'Reset'}</span>
+                <button type="button" className="danger" onClick={resetAll}>
+                  {lang === 'ja' ? '実行' : 'Run'}
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -274,16 +278,19 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
 
           <div className="settings-panel-body">
             <div className="settings-form-grid">
-              <label className="checkbox-row form-checkbox">
-                <input
-                  id="fuel-enabled"
-                  name="fuel-enabled"
-                  type="checkbox"
-                  checked={fuel.enabled}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => patchFuelSettings({ enabled: event.target.checked })}
-                />
-                <span>{lang === 'ja' ? '燃料計算を有効' : 'Enable fuel calculation'}</span>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '燃料計算' : 'Fuel calculation'}</span>
+                <span className="checkbox-control">
+                  <input
+                    id="fuel-enabled"
+                    name="fuel-enabled"
+                    type="checkbox"
+                    checked={fuel.enabled}
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchFuelSettings({ enabled: event.target.checked })}
+                  />
+                  <span>{lang === 'ja' ? '有効' : 'Enabled'}</span>
+                </span>
               </label>
 
               <label className="form-field">
@@ -374,22 +381,26 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
           <h2>{lang === 'ja' ? 'データ入出力 (JSON)' : 'Data I/O (JSON)'}</h2>
 
           <div className="settings-panel-body">
-            <div className="data-io-grid">
-              <div className="data-io-label">{lang === 'ja' ? '出力' : 'Output'}</div>
-              <button type="button" className="data-io-button" onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
-                {lang === 'ja' ? '保存' : 'Save'}
-              </button>
+            <div className="settings-form-grid">
+              <div className="form-field">
+                <span>{lang === 'ja' ? '出力' : 'Output'}</span>
+                <button type="button" className="data-io-button" onClick={() => downloadJson('alchemy-factory-planner-save.json', state)}>
+                  {lang === 'ja' ? '保存' : 'Save'}
+                </button>
+              </div>
 
-              <div className="data-io-label">{lang === 'ja' ? '入力' : 'Input'}</div>
-              <label className="file-label data-io-file">
-                <input
-                  id="json-file-input"
-                  name="json-file-input"
-                  type="file"
-                  accept="application/json"
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => void importJson(event.currentTarget.files?.[0])}
-                />
+              <label className="form-field data-io-file-field">
+                <span>{lang === 'ja' ? '入力' : 'Input'}</span>
+                <span className="file-label data-io-file">
+                  <input
+                    id="json-file-input"
+                    name="json-file-input"
+                    type="file"
+                    accept="application/json"
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => void importJson(event.currentTarget.files?.[0])}
+                  />
+                </span>
               </label>
             </div>
           </div>
