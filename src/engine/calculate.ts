@@ -7,7 +7,12 @@ import type {
   ProductionTarget,
   Recipe,
 } from '../types';
-import { RECIPES, recipeById, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
+import {
+  RECIPES,
+  recipeById,
+  DEFAULT_RECIPE_BY_ITEM_ID,
+  getRecipesProducing,
+} from '../data/recipes';
 import { economyByItemId } from '../data/economy';
 import {
   getConveyorItemsPerMinute,
@@ -55,22 +60,57 @@ export type RecipeStat = {
   targetIds: string[];
 };
 
+export type CalculatedEndpoint =
+  | { type: 'recipe'; recipeId: string }
+  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'stock' }
+  | { type: 'itemSink'; itemId: string; sinkMode: 'final' | 'discard' | 'surplus' };
+
+export type CalculatedFlowRole =
+  | 'material'
+  | 'byproductReuse'
+  | 'finalOutput'
+  | 'discard'
+  | 'surplus'
+  | 'fuel'
+  | 'fertilizer'
+  | 'steam';
+
+export type CalculatedFlow = {
+  id: string;
+  from: CalculatedEndpoint;
+  to: CalculatedEndpoint;
+  itemId: string;
+  rate: number;
+  belts: number;
+  role: CalculatedFlowRole;
+};
+
 export type ConveyorEdgeStat = {
   id: string;
   fromItemId: string;
   toRecipeId: string;
-  fromRecipeId?: string;
   rate: number;
   belts: number;
+  fromRecipeId?: string;
   sourceKind?: 'recipe' | 'item';
   role?: 'material' | 'byproduct' | 'fuel' | 'fertilizer';
 };
-export type OutputEdgeStat = { id: string; fromRecipeId: string; toItemId: string; rate: number; byproduct: boolean; discarded: boolean };
+
+export type OutputEdgeStat = {
+  id: string;
+  fromRecipeId: string;
+  toItemId: string;
+  rate: number;
+  byproduct: boolean;
+  discarded: boolean;
+};
+
 export type PlanWarning = { messageJa: string; messageEn: string };
 
 export type CalculationResult = {
   itemStats: Record<string, ItemStat>;
   recipeStats: Record<string, RecipeStat>;
+  flows: CalculatedFlow[];
   conveyorEdges: ConveyorEdgeStat[];
   outputEdges: OutputEdgeStat[];
   warnings: PlanWarning[];
@@ -109,33 +149,26 @@ export type CalculateInput = {
   itemSourceModes: Record<string, string>;
 };
 
-type WorkRole = 'target' | 'material' | 'fuel' | 'fertilizer';
-type DemandLot = { itemId: string; rate: number; consumerRecipeId?: string; role: WorkRole };
-type OutputLot = { recipeId: string; itemId: string; rate: number; byproduct: boolean; primary: boolean };
-type SupplyLot = { recipeId: string; itemId: string; rate: number; byproduct: boolean };
+type WorkRole = 'material' | 'fuel' | 'fertilizer';
+type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: WorkRole };
+type SupplyLot = { recipeId: string; itemId: string; rate: number; originalRate: number; byproduct: boolean; primary: boolean };
 type RunMap = Map<string, number>;
-
-type TargetLock = {
-  recipeId: string;
-  itemId: string;
-  targetId: string;
-  requestedRate: number;
-  actualRate: number;
-  runsPerMinute: number;
-};
-
+type TargetLock = { recipeId: string; itemId: string; targetId: string; requestedRate: number; actualRate: number; runsPerMinute: number };
+type DirectTargetPurchase = { itemId: string; rate: number; targetId: string };
 type RunAnalysis = {
   demandLots: DemandLot[];
   demandByItem: Map<string, number>;
   byproductSupplyByItem: Map<string, number>;
-  outputLots: OutputLot[];
+  heatByRecipe: Map<string, number>;
+  fertilizerNutrientsByRecipe: Map<string, number>;
   heatRequiredPerMin: number;
   fertilizerNutrientsRequiredPerMin: number;
   fertilizerRequiredPerMin: number;
 };
 
 const EPS = 1e-9;
-const MAX_SOLVE_ITERATIONS = 80;
+const MAX_SOLVE_ITERATIONS = 120;
+
 const DEFAULT_FUEL_SETTINGS: FuelSettings = {
   enabled: true,
   fuelItemId: 'charcoal_powder',
@@ -173,7 +206,7 @@ function normalizeFertilizerSettings(settings: AppSettings): FertilizerSettings 
   };
 }
 
-function calculationNowMs(): number {
+function nowMs(): number {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') return performance.now();
   return Date.now();
 }
@@ -199,8 +232,9 @@ function createItemStat(itemId: string): ItemStat {
 
 function addToRecord(record: Record<string, number>, key: string, value: number): void {
   if (Math.abs(value) <= EPS) return;
-  record[key] = (record[key] ?? 0) + value;
-  if (Math.abs(record[key]) <= EPS) delete record[key];
+  const next = (record[key] ?? 0) + value;
+  if (Math.abs(next) <= EPS) delete record[key];
+  else record[key] = next;
 }
 
 function addToMap(map: Map<string, number>, key: string, value: number): void {
@@ -215,6 +249,10 @@ function addRun(map: RunMap, recipeId: string, runsPerMinute: number): void {
   addToMap(map, recipeId, runsPerMinute);
 }
 
+function cloneRunMap(map: RunMap): RunMap {
+  return new Map([...map.entries()].filter(([, value]) => value > EPS));
+}
+
 function runRatePerMachine(recipe: Recipe, productionSpeedMultiplier: number): number {
   return (60 / recipe.timeSec) * productionSpeedMultiplier;
 }
@@ -225,7 +263,7 @@ function outputPerRun(recipe: Recipe, itemId: string): number {
   return output.amount * (output.probability ?? 1);
 }
 
-function getOutputRatePerMachine(recipe: Recipe, itemId: string, productionSpeedMultiplier: number): number {
+function outputRatePerMachine(recipe: Recipe, itemId: string, productionSpeedMultiplier: number): number {
   return outputPerRun(recipe, itemId) * runRatePerMachine(recipe, productionSpeedMultiplier);
 }
 
@@ -271,205 +309,196 @@ function mapsAlmostEqual(a: RunMap, b: RunMap): boolean {
   return true;
 }
 
-function cloneRunMap(map: RunMap): RunMap {
-  return new Map([...map.entries()].filter(([, value]) => value > EPS));
-}
-
-
-function sumHeatRequiredPerMin(recipeStats: Record<string, RecipeStat>, fuelSettings: FuelSettings, heatConsumptionMultiplier: number): number {
-  let total = 0;
-  for (const stat of Object.values(recipeStats)) {
-    const heatPerSec = heatPerMachinePerSecond(stat.machineId, fuelSettings);
-    if (heatPerSec > 0 && stat.actualMachines > 0) {
-      total += heatPerSec * stat.actualMachines * 60 * heatConsumptionMultiplier;
-    }
-  }
-  return total;
-}
-
-function attachCalculationDebugTotals(result: CalculationResult, fuelIterations: number, calculationStartedAtMs: number): CalculationResult {
-  return {
-    ...result,
-    totals: {
-      ...result.totals,
-      fuelIterations,
-      calculationMs: Math.max(0, calculationNowMs() - calculationStartedAtMs),
-    },
-  };
+function endpointKey(endpoint: CalculatedEndpoint): string {
+  if (endpoint.type === 'recipe') return 'recipe:' + endpoint.recipeId;
+  if (endpoint.type === 'itemSource') return 'source:' + endpoint.sourceMode + ':' + endpoint.itemId;
+  return 'sink:' + endpoint.sinkMode + ':' + endpoint.itemId;
 }
 
 export function calculate(input: CalculateInput): CalculationResult {
-  const calculationStartedAtMs = calculationNowMs();
+  const startedAt = nowMs();
   const fuelSettings = normalizeFuelSettings(input.settings);
+  const fertilizerSettings = normalizeFertilizerSettings(input.settings);
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const heatConsumptionMultiplier = getHeatConsumptionMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
   const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
   const fuelHeatValueMultiplier = getFuelHeatValueMultiplier(input.abilities);
-  const reuseByproducts = input.settings.defaultSurplusPolicy === 'reuse';
-  const EPS = 1e-7;
-  const MAX_QUEUE_STEPS = 200000;
-  const MAX_BYPRODUCT_ITERATIONS = 24;
+  const fertilizerNutritionMultiplier = getFertilizerNutritionMultiplier(input.abilities);
 
-  type Demand = {
-    itemId: string;
-    rate: number;
-    isFinal: boolean;
-    forcedRecipeId?: string;
-    targetId?: string;
-    consumerRecipeId?: string;
-  };
+  const lockedRuns: RunMap = new Map();
+  const locks: TargetLock[] = [];
+  const directTargetPurchases: DirectTargetPurchase[] = [];
 
-  type CreditLot = {
-    recipeId: string;
-    itemId: string;
-    rate: number;
-    byproduct: boolean;
-  };
-
-  type BuildOutput = {
-    result: CalculationResult;
-    generatedCredits: CreditLot[];
-    queueSteps: number;
-    queueMax: number;
-  };
-
-  function cloneCredits(credits: CreditLot[]): CreditLot[] {
-    return credits
-      .filter((lot) => lot.rate > EPS)
-      .map((lot) => ({ ...lot }));
-  }
-
-  function creditSignature(credits: CreditLot[]): string {
-    const sums = new Map<string, number>();
-    for (const lot of credits) {
-      if (lot.rate <= EPS) continue;
-      const key = lot.recipeId + '|' + lot.itemId + '|' + (lot.byproduct ? 'b' : 'p');
-      sums.set(key, (sums.get(key) ?? 0) + lot.rate);
+  for (const target of input.targets) {
+    const itemId = target.outputItemId;
+    if (!itemId) continue;
+    const recipe = target.recipeId && recipeById[target.recipeId] ? recipeById[target.recipeId] : chooseRecipeForItem(itemId, input.recipePreferences);
+    if (!recipe) {
+      directTargetPurchases.push({ itemId, rate: Math.max(0, target.value), targetId: target.id });
+      continue;
     }
-    return [...sums.entries()]
-      .map(([key, value]) => key + ':' + Math.round(value * 1000000) / 1000000)
-      .sort()
-      .join(';');
+    const outputRate = outputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
+    if (outputRate <= EPS) {
+      directTargetPurchases.push({ itemId, rate: Math.max(0, target.value), targetId: target.id });
+      continue;
+    }
+    const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+    let requestedRate: number;
+    let actualMachines: number;
+    if (target.mode === 'machines') {
+      actualMachines = Math.max(0, target.value);
+      requestedRate = actualMachines * outputRate;
+    } else {
+      requestedRate = Math.max(0, target.value);
+      const theoreticalMachines = requestedRate / outputRate;
+      actualMachines = shouldRound(input.settings.machineRounding, true) ? safeCeil(theoreticalMachines) : theoreticalMachines;
+    }
+    const runsPerMinute = actualMachines * machineRunRate;
+    const actualRate = outputPerRun(recipe, itemId) * runsPerMinute;
+    addRun(lockedRuns, recipe.id, runsPerMinute);
+    locks.push({ recipeId: recipe.id, itemId, targetId: target.id, requestedRate, actualRate, runsPerMinute });
   }
 
-  function addCredit(credits: CreditLot[], recipeId: string, itemId: string, rate: number, byproduct: boolean): void {
-    if (rate <= EPS) return;
-    const existing = credits.find((lot) => lot.recipeId === recipeId && lot.itemId === itemId && lot.byproduct === byproduct);
-    if (existing) existing.rate += rate;
-    else credits.push({ recipeId, itemId, rate, byproduct });
+  function analyzeRuns(runs: RunMap, injectedFuelRate: number): RunAnalysis {
+    const demandLots: DemandLot[] = [];
+    const demandByItem = new Map<string, number>();
+    const byproductSupplyByItem = new Map<string, number>();
+    const heatByRecipe = new Map<string, number>();
+    const fertilizerNutrientsByRecipe = new Map<string, number>();
+    let heatRequiredPerMin = 0;
+    let fertilizerNutrientsRequiredPerMin = 0;
+
+    function addDemand(lot: DemandLot): void {
+      if (lot.rate <= EPS) return;
+      demandLots.push(lot);
+      addToMap(demandByItem, lot.itemId, lot.rate);
+    }
+
+    for (const [recipeId, runsPerMinute] of runs.entries()) {
+      const recipe = recipeById[recipeId];
+      if (!recipe || runsPerMinute <= EPS) continue;
+      const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+      const actualMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
+      const heatPerSec = heatPerMachinePerSecond(recipe.machineId, fuelSettings);
+      const recipeHeat = fuelSettings.enabled && heatPerSec > EPS ? actualMachines * heatPerSec * 60 * heatConsumptionMultiplier : 0;
+      if (recipeHeat > EPS) {
+        heatRequiredPerMin += recipeHeat;
+        heatByRecipe.set(recipe.id, recipeHeat);
+      }
+      const recipeNutrients = fertilizerSettings.enabled && recipe.machineId === 'nursery'
+        ? actualMachines * fertilizerSettings.nurseryNutrientsPerSec * 60
+        : 0;
+      if (recipeNutrients > EPS) {
+        fertilizerNutrientsRequiredPerMin += recipeNutrients;
+        fertilizerNutrientsByRecipe.set(recipe.id, recipeNutrients);
+      }
+      for (const recipeInput of recipe.inputs) {
+        if (isNurserySeedInput(recipe, recipeInput.itemId)) continue;
+        addDemand({ itemId: recipeInput.itemId, rate: recipeInput.amount * runsPerMinute, consumerRecipeId: recipe.id, role: 'material' });
+      }
+      for (const output of recipe.outputs) {
+        const primary = output.itemId === recipe.primaryOutputId;
+        if (!primary) addToMap(byproductSupplyByItem, output.itemId, output.amount * (output.probability ?? 1) * runsPerMinute);
+      }
+    }
+
+    if (fuelSettings.enabled && injectedFuelRate > EPS && fuelSettings.fuelSourceMode === 'craft' && heatRequiredPerMin > EPS) {
+      for (const [recipeId, recipeHeat] of heatByRecipe.entries()) {
+        addDemand({ itemId: fuelSettings.fuelItemId, rate: injectedFuelRate * (recipeHeat / heatRequiredPerMin), consumerRecipeId: recipeId, role: 'fuel' });
+      }
+    }
+
+    let fertilizerRequiredPerMin = 0;
+    if (fertilizerSettings.enabled && fertilizerNutrientsRequiredPerMin > EPS) {
+      const nutrientValue = FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[fertilizerSettings.fertilizerItemId] ?? 0;
+      const effectiveNutrientValue = nutrientValue * fertilizerNutritionMultiplier;
+      if (effectiveNutrientValue > EPS) {
+        fertilizerRequiredPerMin = fertilizerNutrientsRequiredPerMin / effectiveNutrientValue;
+        if (fertilizerSettings.fertilizerSourceMode === 'craft') {
+          for (const [recipeId, nutrients] of fertilizerNutrientsByRecipe.entries()) {
+            addDemand({ itemId: fertilizerSettings.fertilizerItemId, rate: fertilizerRequiredPerMin * (nutrients / fertilizerNutrientsRequiredPerMin), consumerRecipeId: recipeId, role: 'fertilizer' });
+          }
+        }
+      }
+    }
+
+    return { demandLots, demandByItem, byproductSupplyByItem, heatByRecipe, fertilizerNutrientsByRecipe, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, fertilizerRequiredPerMin };
   }
 
-  function byproductPolicy(recipeId: string, itemId: string): string {
-    return input.surplusPolicies[recipeId + ':' + itemId] ?? input.settings.defaultSurplusPolicy;
+  function desiredRunsFromAnalysis(analysis: RunAnalysis): RunMap {
+    const desired = cloneRunMap(lockedRuns);
+    for (const [itemId, demandRate] of analysis.demandByItem.entries()) {
+      if (demandRate <= EPS) continue;
+      const sourceMode = input.itemSourceModes[itemId] ?? 'auto';
+      if (sourceMode === 'buy' || sourceMode === 'stock') continue;
+      const byproductSupply = input.settings.defaultSurplusPolicy === 'reuse' ? (analysis.byproductSupplyByItem.get(itemId) ?? 0) : 0;
+      const netRate = Math.max(0, demandRate - byproductSupply);
+      if (netRate <= EPS) continue;
+      const recipe = chooseRecipeForItem(itemId, input.recipePreferences);
+      if (!recipe) continue;
+      const outputRate = outputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
+      if (outputRate <= EPS) continue;
+      const theoreticalMachines = netRate / outputRate;
+      const actualMachines = shouldRound(input.settings.machineRounding, false) ? safeCeil(theoreticalMachines) : theoreticalMachines;
+      addRun(desired, recipe.id, actualMachines * runRatePerMachine(recipe, productionSpeedMultiplier));
+    }
+    return desired;
   }
 
-  function calculateOnce(injectedFuelRate: number): CalculationResult {
-    let seedCredits: CreditLot[] = [];
-    let built: BuildOutput | undefined;
+  function solveRuns(injectedFuelRate: number): { runs: RunMap; analysis: RunAnalysis; iterations: number; queueMax: number } {
+    let runs = cloneRunMap(lockedRuns);
+    let analysis = analyzeRuns(runs, injectedFuelRate);
+    let queueMax = runs.size;
     let iterations = 0;
-
-    for (let i = 0; i < MAX_BYPRODUCT_ITERATIONS; i += 1) {
+    for (let i = 0; i < MAX_SOLVE_ITERATIONS; i += 1) {
       iterations = i + 1;
-      built = buildPlan(injectedFuelRate, seedCredits);
-      if (!reuseByproducts) break;
-      const generatedSignature = creditSignature(built.generatedCredits);
-      const seedSignature = creditSignature(seedCredits);
-      if (generatedSignature === seedSignature) break;
-      seedCredits = cloneCredits(built.generatedCredits);
+      const desired = desiredRunsFromAnalysis(analysis);
+      queueMax = Math.max(queueMax, desired.size);
+      if (mapsAlmostEqual(runs, desired)) {
+        runs = desired;
+        analysis = analyzeRuns(runs, injectedFuelRate);
+        break;
+      }
+      runs = desired;
+      analysis = analyzeRuns(runs, injectedFuelRate);
     }
-
-    if (!built) built = buildPlan(injectedFuelRate, seedCredits);
-    (built.result.totals as Record<string, unknown>).byproductIterations = iterations;
-    (built.result.totals as Record<string, unknown>).queueSteps = built.queueSteps;
-    (built.result.totals as Record<string, unknown>).queueMax = built.queueMax;
-    return built.result;
+    return { runs, analysis, iterations, queueMax };
   }
 
-  function buildPlan(injectedFuelRate: number, seedCredits: CreditLot[]): BuildOutput {
+  function buildPlan(injectedFuelRate: number): CalculationResult {
+    const solved = solveRuns(injectedFuelRate);
+    const { runs, analysis } = solved;
     const itemStats: Record<string, ItemStat> = {};
     const recipeStats: Record<string, RecipeStat> = {};
-    const conveyorEdgesByKey: Record<string, ConveyorEdgeStat> = {};
-    const outputEdgesByKey: Record<string, OutputEdgeStat> = {};
+    const flows: CalculatedFlow[] = [];
     const warnings: PlanWarning[] = [];
-    const generatedCredits: CreditLot[] = [];
-    const creditLotsByItemId: Record<string, CreditLot[]> = {};
-    const queue: Demand[] = [];
-    let queueSteps = 0;
-    let queueMax = 0;
-
-    for (const lot of cloneCredits(seedCredits)) {
-      creditLotsByItemId[lot.itemId] ??= [];
-      creditLotsByItemId[lot.itemId].push(lot);
-    }
 
     function stat(itemId: string): ItemStat {
       itemStats[itemId] ??= createItemStat(itemId);
       return itemStats[itemId];
     }
 
-    function addConveyorEdge(itemId: string, recipeId: string, rate: number, fromRecipeId?: string): void {
+    function addFlow(from: CalculatedEndpoint, to: CalculatedEndpoint, itemId: string, rate: number, role: CalculatedFlowRole): void {
       if (rate <= EPS) return;
-      const sourceKey = fromRecipeId ? 'recipe:' + fromRecipeId : 'item:' + itemId;
-      const id = sourceKey + '->' + itemId + '->' + recipeId;
-      const current = conveyorEdgesByKey[id];
-      if (current) {
-        current.rate += rate;
-        current.belts = safeCeil(current.rate / conveyorItemsPerMinute);
+      const idBase = endpointKey(from) + '->' + endpointKey(to) + ':' + itemId + ':' + role;
+      const existing = flows.find((flow) => flow.id === idBase);
+      if (existing) {
+        existing.rate += rate;
+        existing.belts = safeCeil(existing.rate / conveyorItemsPerMinute);
         return;
       }
-      conveyorEdgesByKey[id] = {
-        id,
-        fromItemId: itemId,
-        toRecipeId: recipeId,
-        fromRecipeId,
-        sourceKind: fromRecipeId ? 'recipe' : 'item',
-        rate,
-        belts: safeCeil(rate / conveyorItemsPerMinute),
-      } as ConveyorEdgeStat;
+      flows.push({ id: idBase, from, to, itemId, rate, belts: safeCeil(rate / conveyorItemsPerMinute), role });
     }
 
-    function addOutputEdge(recipeId: string, itemId: string, rate: number, byproduct: boolean, discarded: boolean): void {
+    function addPurchase(itemId: string, rate: number): void {
       if (rate <= EPS) return;
-      const suffix = discarded ? ':discard' : '';
-      const id = recipeId + '->' + itemId + suffix;
-      const current = outputEdgesByKey[id];
-      if (current) {
-        current.rate += rate;
-        return;
-      }
-      outputEdgesByKey[id] = { id, fromRecipeId: recipeId, toItemId: itemId, rate, byproduct, discarded };
-    }
-
-    function recipeStat(recipe: Recipe): RecipeStat {
-      recipeStats[recipe.id] ??= {
-        recipeId: recipe.id,
-        machineId: recipe.machineId,
-        theoreticalMachines: 0,
-        actualMachines: 0,
-        runsPerMinute: 0,
-        inputRates: {},
-        outputRates: {},
-        surplusOutputRates: {},
-        discardedOutputRates: {},
-        targetIds: [],
-      };
-      return recipeStats[recipe.id];
-    }
-
-    function purchaseItem(itemId: string, rate: number): void {
-      if (rate <= EPS) return;
+      const rounded = roundQuantity(rate, input.settings);
       const s = stat(itemId);
-      s.purchased += rate;
+      s.purchased += rounded;
       const buyPrice = economyByItemId[itemId]?.buyPriceCopper;
-      if (buyPrice !== undefined) {
-        s.purchaseCostCopperPerMin += rate * buyPrice;
-        return;
-      }
-      warnings.push({
-        messageJa: itemId + ' は購入扱いですが購入価格が未定義です。',
-        messageEn: itemId + ' is purchased, but buy price is not defined.',
-      });
+      if (buyPrice !== undefined) s.purchaseCostCopperPerMin += rounded * buyPrice;
+      else warnings.push({ messageJa: itemId + ' は購入扱いですが購入価格が未定義です。', messageEn: itemId + ' is purchased, but buy price is not defined.' });
     }
 
     function addInitialPurchase(itemId: string, count: number): void {
@@ -479,202 +508,184 @@ export function calculate(input: CalculateInput): CalculationResult {
       const s = stat(itemId);
       s.initialPurchased += count;
       const buyPrice = economyByItemId[itemId]?.buyPriceCopper;
-      if (buyPrice !== undefined) {
-        s.initialCostCopper += count * buyPrice;
-        return;
+      if (buyPrice !== undefined) s.initialCostCopper += count * buyPrice;
+      else warnings.push({ messageJa: itemId + ' は初期投入扱いですが購入価格が未定義です。', messageEn: itemId + ' is a setup input, but buy price is not defined.' });
+    }
+
+    const primaryLotsByItem = new Map<string, SupplyLot[]>();
+    const byproductLotsByItem = new Map<string, SupplyLot[]>();
+    const targetReservedByItem = new Map<string, number>();
+
+    for (const [recipeId, runsPerMinute] of runs.entries()) {
+      const recipe = recipeById[recipeId];
+      if (!recipe || runsPerMinute <= EPS) continue;
+      const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+      const actualMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
+      recipeStats[recipe.id] = {
+        recipeId: recipe.id,
+        machineId: recipe.machineId,
+        theoreticalMachines: actualMachines,
+        actualMachines,
+        runsPerMinute,
+        inputRates: {},
+        outputRates: {},
+        surplusOutputRates: {},
+        discardedOutputRates: {},
+        targetIds: [],
+      };
+    }
+
+    for (const lock of locks) {
+      const s = stat(lock.itemId);
+      s.targetRequested += lock.requestedRate;
+      s.targetActual += lock.actualRate;
+      addToMap(targetReservedByItem, lock.itemId, lock.actualRate);
+      const rs = recipeStats[lock.recipeId];
+      if (rs && !rs.targetIds.includes(lock.targetId)) rs.targetIds.push(lock.targetId);
+      addFlow({ type: 'recipe', recipeId: lock.recipeId }, { type: 'itemSink', itemId: lock.itemId, sinkMode: 'final' }, lock.itemId, lock.actualRate, 'finalOutput');
+    }
+
+    for (const target of directTargetPurchases) {
+      const s = stat(target.itemId);
+      s.targetRequested += target.rate;
+      s.targetActual += target.rate;
+      addPurchase(target.itemId, target.rate);
+      addFlow({ type: 'itemSource', itemId: target.itemId, sourceMode: 'buy' }, { type: 'itemSink', itemId: target.itemId, sinkMode: 'final' }, target.itemId, target.rate, 'finalOutput');
+    }
+
+    for (const [recipeId, runsPerMinute] of runs.entries()) {
+      const recipe = recipeById[recipeId];
+      const rs = recipeStats[recipeId];
+      if (!recipe || !rs || runsPerMinute <= EPS) continue;
+      for (const recipeInput of recipe.inputs) {
+        if (isNurserySeedInput(recipe, recipeInput.itemId)) {
+          const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+          const actualMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
+          addInitialPurchase(recipeInput.itemId, recipeInput.amount * actualMachines);
+          continue;
+        }
+        addToRecord(rs.inputRates, recipeInput.itemId, recipeInput.amount * runsPerMinute);
       }
-      warnings.push({
-        messageJa: itemId + ' は初期投入扱いですが購入価格が未定義です。',
-        messageEn: itemId + ' is a setup input, but buy price is not defined.',
-      });
+      for (const output of recipe.outputs) {
+        const rate = output.amount * (output.probability ?? 1) * runsPerMinute;
+        const primary = output.itemId === recipe.primaryOutputId;
+        const lot: SupplyLot = { recipeId: recipe.id, itemId: output.itemId, rate, originalRate: rate, byproduct: !primary, primary };
+        const map = primary ? primaryLotsByItem : byproductLotsByItem;
+        const lots = map.get(output.itemId) ?? [];
+        lots.push(lot);
+        map.set(output.itemId, lots);
+        stat(output.itemId).produced += rate;
+        addToRecord(rs.outputRates, output.itemId, rate);
+      }
     }
 
-    function enqueue(demand: Demand): void {
-      if (demand.rate <= EPS) return;
-      queue.push(demand);
-      if (queue.length > queueMax) queueMax = queue.length;
+    // Final outputs consume the corresponding primary supply before ordinary demands do.
+    for (const [itemId, reserved] of targetReservedByItem.entries()) {
+      let remaining = reserved;
+      for (const lot of primaryLotsByItem.get(itemId) ?? []) {
+        if (remaining <= EPS) break;
+        const take = Math.min(lot.rate, remaining);
+        lot.rate -= take;
+        remaining -= take;
+      }
     }
 
-    function consumeCredits(itemId: string, rate: number, consumerRecipeId?: string): number {
-      if (!reuseByproducts || rate <= EPS) return 0;
-      const lots = creditLotsByItemId[itemId];
-      if (!lots?.length) return 0;
-      let remaining = rate;
-      let consumed = 0;
-      for (const lot of lots) {
+    for (const demand of analysis.demandLots) {
+      let remaining = demand.rate;
+      const s = stat(demand.itemId);
+      s.requested += demand.rate;
+      s.consumed += demand.rate;
+      const consumer = { type: 'recipe', recipeId: demand.consumerRecipeId } as const;
+      const demandRole: CalculatedFlowRole = demand.role === 'fuel' ? 'fuel' : demand.role === 'fertilizer' ? 'fertilizer' : 'material';
+
+      if (input.settings.defaultSurplusPolicy === 'reuse') {
+        for (const lot of byproductLotsByItem.get(demand.itemId) ?? []) {
+          if (remaining <= EPS) break;
+          if (lot.rate <= EPS) continue;
+          const take = Math.min(lot.rate, remaining);
+          lot.rate -= take;
+          remaining -= take;
+          s.reused += take;
+          addFlow({ type: 'recipe', recipeId: lot.recipeId }, consumer, demand.itemId, take, demand.role === 'material' ? 'byproductReuse' : demandRole);
+        }
+      }
+
+      for (const lot of primaryLotsByItem.get(demand.itemId) ?? []) {
         if (remaining <= EPS) break;
         if (lot.rate <= EPS) continue;
         const take = Math.min(lot.rate, remaining);
         lot.rate -= take;
         remaining -= take;
-        consumed += take;
-        if (consumerRecipeId) addConveyorEdge(itemId, consumerRecipeId, take, lot.recipeId);
-      }
-      creditLotsByItemId[itemId] = lots.filter((lot) => lot.rate > EPS);
-      if (consumed > EPS) stat(itemId).reused += consumed;
-      return consumed;
-    }
-
-    function fulfillDemand(demand: Demand): void {
-      const originalRate = demand.rate;
-      const s = stat(demand.itemId);
-      s.requested += originalRate;
-      let remaining = originalRate;
-
-      const reused = consumeCredits(demand.itemId, remaining, demand.consumerRecipeId);
-      remaining -= reused;
-      if (remaining <= EPS) return;
-
-      const sourceMode = input.itemSourceModes[demand.itemId] ?? 'auto';
-      if (sourceMode === 'buy' || sourceMode === 'stock') {
-        if (demand.consumerRecipeId) addConveyorEdge(demand.itemId, demand.consumerRecipeId, remaining);
-        if (sourceMode === 'buy') purchaseItem(demand.itemId, remaining);
-        return;
+        addFlow({ type: 'recipe', recipeId: lot.recipeId }, consumer, demand.itemId, take, demandRole);
       }
 
-      const recipe = demand.forcedRecipeId ? recipeById[demand.forcedRecipeId] : chooseRecipeForItem(demand.itemId, input.recipePreferences);
-      if (!recipe) {
-        if (demand.consumerRecipeId) addConveyorEdge(demand.itemId, demand.consumerRecipeId, remaining);
-        purchaseItem(demand.itemId, remaining);
-        return;
-      }
-
-      const outputRatePerMachine = getOutputRatePerMachine(recipe, demand.itemId, productionSpeedMultiplier);
-      if (outputRatePerMachine <= EPS) {
-        warnings.push({
-          messageJa: recipe.id + ' は ' + demand.itemId + ' を出力しません。',
-          messageEn: recipe.id + ' does not output ' + demand.itemId + '.',
-        });
-        if (demand.consumerRecipeId) addConveyorEdge(demand.itemId, demand.consumerRecipeId, remaining);
-        purchaseItem(demand.itemId, remaining);
-        return;
-      }
-
-      const theoreticalMachines = remaining / outputRatePerMachine;
-      const actualMachines = shouldRound(input.settings.machineRounding, demand.isFinal) ? safeCeil(theoreticalMachines) : theoreticalMachines;
-      const runsPerMinute = actualMachines * (60 / recipe.timeSec) * productionSpeedMultiplier;
-      const rs = recipeStat(recipe);
-      rs.theoreticalMachines += theoreticalMachines;
-      rs.actualMachines += actualMachines;
-      rs.runsPerMinute += runsPerMinute;
-      if (demand.targetId && !rs.targetIds.includes(demand.targetId)) rs.targetIds.push(demand.targetId);
-
-      if (demand.consumerRecipeId) addConveyorEdge(demand.itemId, demand.consumerRecipeId, remaining, recipe.id);
-
-      for (const recipeInput of recipe.inputs) {
-        if (isNurserySeedInput(recipe, recipeInput.itemId)) {
-          addInitialPurchase(recipeInput.itemId, recipeInput.amount * actualMachines);
-          continue;
-        }
-        const inputRate = recipeInput.amount * runsPerMinute;
-        addToRecord(rs.inputRates, recipeInput.itemId, inputRate);
-        stat(recipeInput.itemId).consumed += inputRate;
-        enqueue({ itemId: recipeInput.itemId, rate: inputRate, isFinal: false, consumerRecipeId: recipe.id });
-      }
-
-      for (const output of recipe.outputs) {
-        const outputRate = output.amount * (output.probability ?? 1) * runsPerMinute;
-        const byproduct = output.itemId !== demand.itemId;
-        addToRecord(rs.outputRates, output.itemId, outputRate);
-        addOutputEdge(recipe.id, output.itemId, outputRate, byproduct, false);
-        stat(output.itemId).produced += outputRate;
-
-        if (output.itemId === demand.itemId) {
-          const surplus = Math.max(0, outputRate - remaining);
-          if (surplus > EPS) {
-            addToRecord(rs.surplusOutputRates, output.itemId, surplus);
-            if (!demand.isFinal && reuseByproducts) addCredit(generatedCredits, recipe.id, output.itemId, surplus, false);
-            else stat(output.itemId).surplus += surplus;
-          }
-          continue;
-        }
-
-        const policy = byproductPolicy(recipe.id, output.itemId);
-        if (policy === 'reuse') {
-          addToRecord(rs.surplusOutputRates, output.itemId, outputRate);
-          addCredit(generatedCredits, recipe.id, output.itemId, outputRate, true);
-        } else {
-          stat(output.itemId).discarded += outputRate;
-          addToRecord(rs.discardedOutputRates, output.itemId, outputRate);
-          addOutputEdge(recipe.id, output.itemId, outputRate, true, true);
-        }
+      if (remaining > EPS) {
+        const mode = input.itemSourceModes[demand.itemId] === 'stock' ? 'stock' : 'buy';
+        if (mode === 'buy') addPurchase(demand.itemId, remaining);
+        addFlow({ type: 'itemSource', itemId: demand.itemId, sourceMode: mode }, consumer, demand.itemId, remaining, demandRole);
       }
     }
 
-    for (const target of input.targets) {
-      const outputItemId = target.outputItemId;
-      if (!outputItemId) continue;
-      const recipe = chooseRecipeForItem(outputItemId, input.recipePreferences);
-      let targetRate = Math.max(0, target.value);
-      let forcedRecipeId: string | undefined;
-      if (recipe) {
-        const outputRatePerMachine = getOutputRatePerMachine(recipe, outputItemId, productionSpeedMultiplier);
-        if (target.mode === 'machines') {
-          targetRate = Math.max(0, target.value) * outputRatePerMachine;
-          forcedRecipeId = recipe.id;
-        } else {
-          forcedRecipeId = recipe.id;
-        }
-      }
-      const s = stat(outputItemId);
-      s.targetRequested += targetRate;
-      enqueue({ itemId: outputItemId, rate: targetRate, isFinal: true, forcedRecipeId, targetId: target.id });
-    }
-
-    if (fuelSettings.enabled && injectedFuelRate > EPS) {
-      if (fuelSettings.fuelSourceMode === 'buy') {
-        purchaseItem(fuelSettings.fuelItemId, injectedFuelRate);
-      } else {
-        enqueue({ itemId: fuelSettings.fuelItemId, rate: injectedFuelRate, isFinal: false, targetId: 'fuel' });
+    if (fuelSettings.enabled && injectedFuelRate > EPS && fuelSettings.fuelSourceMode === 'buy' && analysis.heatRequiredPerMin > EPS) {
+      for (const [recipeId, heat] of analysis.heatByRecipe.entries()) {
+        const rate = injectedFuelRate * (heat / analysis.heatRequiredPerMin);
+        const s = stat(fuelSettings.fuelItemId);
+        s.requested += rate;
+        s.consumed += rate;
+        addPurchase(fuelSettings.fuelItemId, rate);
+        addFlow({ type: 'itemSource', itemId: fuelSettings.fuelItemId, sourceMode: 'buy' }, { type: 'recipe', recipeId }, fuelSettings.fuelItemId, rate, 'fuel');
       }
     }
 
-    while (queue.length > 0) {
-      queueSteps += 1;
-      if (queueSteps > MAX_QUEUE_STEPS) {
-        warnings.push({
-          messageJa: '計算ステップ数が上限を超えたため、途中で停止しました。レシピ循環の可能性があります。',
-          messageEn: 'Calculation stopped because the step limit was exceeded. There may be a recipe cycle.',
-        });
-        break;
+    if (fertilizerSettings.enabled && analysis.fertilizerRequiredPerMin > EPS && fertilizerSettings.fertilizerSourceMode === 'buy' && analysis.fertilizerNutrientsRequiredPerMin > EPS) {
+      for (const [recipeId, nutrients] of analysis.fertilizerNutrientsByRecipe.entries()) {
+        const rate = analysis.fertilizerRequiredPerMin * (nutrients / analysis.fertilizerNutrientsRequiredPerMin);
+        const s = stat(fertilizerSettings.fertilizerItemId);
+        s.requested += rate;
+        s.consumed += rate;
+        addPurchase(fertilizerSettings.fertilizerItemId, rate);
+        addFlow({ type: 'itemSource', itemId: fertilizerSettings.fertilizerItemId, sourceMode: 'buy' }, { type: 'recipe', recipeId }, fertilizerSettings.fertilizerItemId, rate, 'fertilizer');
       }
-      const demand = queue.shift();
-      if (demand) fulfillDemand(demand);
     }
 
-    for (const lots of Object.values(creditLotsByItemId)) {
+    for (const [itemId, lots] of primaryLotsByItem.entries()) {
       for (const lot of lots) {
         if (lot.rate <= EPS) continue;
-        const os = stat(lot.itemId);
-        os.surplus += lot.rate;
         const rs = recipeStats[lot.recipeId];
-        if (lot.byproduct) {
-          os.discarded += lot.rate;
-          if (rs) addToRecord(rs.discardedOutputRates, lot.itemId, lot.rate);
-          addOutputEdge(lot.recipeId, lot.itemId, lot.rate, true, true);
+        const s = stat(itemId);
+        s.surplus += lot.rate;
+        if (rs) addToRecord(rs.surplusOutputRates, itemId, lot.rate);
+        addFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'surplus' }, itemId, lot.rate, 'surplus');
+      }
+    }
+
+    for (const [itemId, lots] of byproductLotsByItem.entries()) {
+      for (const lot of lots) {
+        if (lot.rate <= EPS) continue;
+        const rs = recipeStats[lot.recipeId];
+        const s = stat(itemId);
+        s.surplus += lot.rate;
+        s.discarded += lot.rate;
+        if (rs) {
+          addToRecord(rs.surplusOutputRates, itemId, lot.rate);
+          addToRecord(rs.discardedOutputRates, itemId, lot.rate);
         }
+        addFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'discard' }, itemId, lot.rate, 'discard');
       }
     }
 
-    const finalItemIds = new Set(input.targets.map((target) => target.outputItemId).filter(Boolean));
-    for (const itemId of finalItemIds) {
+    for (const itemId of new Set(input.targets.map((target) => target.outputItemId).filter(Boolean))) {
       const s = stat(itemId as string);
-      s.targetActual = Math.max(s.targetActual, s.produced, s.targetRequested);
       const sellPrice = economyByItemId[itemId as string]?.sellPriceCopper;
-      if (sellPrice !== undefined) {
-        s.revenueCopperPerMin = s.targetActual * sellPrice * sellPriceMultiplier;
-      }
+      if (sellPrice !== undefined) s.revenueCopperPerMin = s.targetActual * sellPrice * sellPriceMultiplier;
     }
 
-    const heatRequiredPerMin = fuelSettings.enabled ? sumHeatRequiredPerMin(recipeStats, fuelSettings, heatConsumptionMultiplier) : 0;
-    const fuelHeatValue = FUEL_HEAT_VALUE_BY_ITEM_ID[fuelSettings.fuelItemId] ?? 0;
-    const effectiveFuelHeatValue = fuelHeatValue * fuelHeatValueMultiplier;
-    const fuelRequiredPerMin = fuelSettings.enabled && effectiveFuelHeatValue > 0 ? heatRequiredPerMin / effectiveFuelHeatValue : 0;
-    if (fuelSettings.enabled && fuelHeatValue <= 0) {
-      warnings.push({
-        messageJa: fuelSettings.fuelItemId + ' の燃料熱量が未定義です。',
-        messageEn: 'Fuel heat value is not defined for ' + fuelSettings.fuelItemId + '.',
-      });
+    if (fuelSettings.enabled && (FUEL_HEAT_VALUE_BY_ITEM_ID[fuelSettings.fuelItemId] ?? 0) <= EPS) {
+      warnings.push({ messageJa: fuelSettings.fuelItemId + ' の燃料熱量が未定義です。', messageEn: 'Fuel heat value is not defined for ' + fuelSettings.fuelItemId + '.' });
+    }
+    if (fertilizerSettings.enabled && analysis.fertilizerNutrientsRequiredPerMin > EPS) {
+      const nutrientValue = FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[fertilizerSettings.fertilizerItemId] ?? 0;
+      if (nutrientValue <= EPS) warnings.push({ messageJa: fertilizerSettings.fertilizerItemId + ' の肥料栄養値が未定義です。', messageEn: 'Fertilizer nutrient value is not defined for ' + fertilizerSettings.fertilizerItemId + '.' });
     }
 
     let initialCostCopper = 0;
@@ -686,11 +697,40 @@ export function calculate(input: CalculateInput): CalculationResult {
       revenueCopperPerMin += s.revenueCopperPerMin;
     }
 
-    const result = {
+    const fuelHeatValue = FUEL_HEAT_VALUE_BY_ITEM_ID[fuelSettings.fuelItemId] ?? 0;
+    const effectiveFuelHeatValue = fuelHeatValue * fuelHeatValueMultiplier;
+    const fuelRequiredPerMin = fuelSettings.enabled && effectiveFuelHeatValue > EPS ? analysis.heatRequiredPerMin / effectiveFuelHeatValue : 0;
+
+    const conveyorEdges = flows
+      .filter((flow) => flow.to.type === 'recipe' && (flow.role === 'material' || flow.role === 'byproductReuse' || flow.role === 'fuel' || flow.role === 'fertilizer'))
+      .map((flow): ConveyorEdgeStat => ({
+        id: flow.id,
+        fromItemId: flow.itemId,
+        toRecipeId: flow.to.type === 'recipe' ? flow.to.recipeId : '',
+        rate: flow.rate,
+        belts: flow.belts,
+        fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+        sourceKind: flow.from.type === 'recipe' ? 'recipe' : 'item',
+        role: flow.role === 'byproductReuse' ? 'byproduct' : flow.role === 'fuel' ? 'fuel' : flow.role === 'fertilizer' ? 'fertilizer' : 'material',
+      }));
+
+    const outputEdges = flows
+      .filter((flow) => flow.from.type === 'recipe' && flow.to.type === 'itemSink')
+      .map((flow): OutputEdgeStat => ({
+        id: flow.id,
+        fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : '',
+        toItemId: flow.itemId,
+        rate: flow.rate,
+        byproduct: flow.role === 'discard' || flow.role === 'byproductReuse',
+        discarded: flow.role === 'discard',
+      }));
+
+    return {
       itemStats,
       recipeStats,
-      conveyorEdges: Object.values(conveyorEdgesByKey),
-      outputEdges: Object.values(outputEdgesByKey),
+      flows,
+      conveyorEdges,
+      outputEdges,
       warnings,
       totals: {
         initialCostCopper,
@@ -703,30 +743,41 @@ export function calculate(input: CalculateInput): CalculationResult {
         heatConsumptionMultiplier,
         sellPriceMultiplier,
         fuelHeatValueMultiplier,
-        heatRequiredPerMin,
+        fertilizerNutritionMultiplier,
+        heatRequiredPerMin: analysis.heatRequiredPerMin,
         fuelRequiredPerMin,
         fuelItemId: fuelSettings.fuelItemId,
+        fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
+        fertilizerRequiredPerMin: analysis.fertilizerRequiredPerMin,
+        fertilizerItemId: fertilizerSettings.fertilizerItemId,
+        byproductIterations: solved.iterations,
+        queueSteps: solved.iterations,
+        queueMax: solved.queueMax,
       },
-    } as CalculationResult;
-
-    return { result, generatedCredits, queueSteps, queueMax };
+    };
   }
 
-  if (!fuelSettings.enabled) {
-    return attachCalculationDebugTotals(calculateOnce(0), 0, calculationStartedAtMs);
-  }
-
-  let injectedFuelRate = 0;
-  let result = calculateOnce(0);
+  let result = buildPlan(0);
   let fuelIterations = 0;
-  for (let i = 0; i < fuelSettings.maxIterations; i += 1) {
-    fuelIterations = i + 1;
-    const nextFuelRate = result.totals.fuelRequiredPerMin;
-    result = calculateOnce(nextFuelRate);
-    if (Math.abs(nextFuelRate - injectedFuelRate) < 0.0001) break;
-    injectedFuelRate = nextFuelRate;
+  if (fuelSettings.enabled) {
+    let injectedFuelRate = 0;
+    for (let i = 0; i < fuelSettings.maxIterations; i += 1) {
+      fuelIterations = i + 1;
+      const nextFuelRate = result.totals.fuelRequiredPerMin;
+      result = buildPlan(nextFuelRate);
+      if (Math.abs(nextFuelRate - injectedFuelRate) < 0.0001) break;
+      injectedFuelRate = nextFuelRate;
+    }
   }
-  return attachCalculationDebugTotals(result, fuelIterations, calculationStartedAtMs);
+
+  return {
+    ...result,
+    totals: {
+      ...result.totals,
+      fuelIterations,
+      calculationMs: Math.max(0, nowMs() - startedAt),
+    },
+  };
 }
 
 export function getByproductKeys(): Array<{ key: string; recipeId: string; itemId: string }> {
