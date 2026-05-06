@@ -97,7 +97,7 @@ function roleColor(role: CalculatedFlowRole, fallback: string): string {
 }
 
 function sourceSide(role: CalculatedFlowRole): PlannerHandleSide {
-  if (role === 'fertilizer') return 'bottom';
+  void role;
   return 'right';
 }
 
