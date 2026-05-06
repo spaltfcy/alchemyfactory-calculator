@@ -1141,3 +1141,116 @@ a {
 .planner-node.is-startup-warning .planner-node-title-line {
   padding-right: 9.6rem;
 }
+
+
+/* v0.5.6: target editor scrolling, bulk output, and live graph PNG */
+.target-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: 100%;
+  min-height: 0;
+}
+
+.target-editor-header {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.target-editor-toolbar {
+  display: grid;
+  grid-template-columns: minmax(4.8rem, var(--target-value-width)) minmax(5.8rem, var(--target-mode-width)) max-content;
+  gap: 0.45rem;
+  align-items: end;
+  justify-content: end;
+}
+
+.target-bulk-field {
+  display: grid;
+  gap: 0.22rem;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 0.84rem;
+}
+
+.target-bulk-field input,
+.target-bulk-field select {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.target-list {
+  max-height: calc(100dvh - 13rem);
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.target-card {
+  padding-top: 2.45rem;
+}
+
+.target-card-actions {
+  position: absolute;
+  top: 0.62rem;
+  right: var(--target-card-padding-x);
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.target-order-button,
+.target-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  min-height: 1.35rem;
+  padding: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #dbeafe;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.target-card-actions .target-remove {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+.target-order-button:disabled {
+  cursor: default;
+  opacity: 0.32;
+  transform: none;
+}
+
+.flow-live-png-panel {
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(12, 18, 28, 0.82);
+}
+
+.flow-live-png-button {
+  min-height: 2.2rem;
+  padding-inline: 0.7rem;
+  border-radius: 10px;
+}
+
+@media (max-width: 56rem) {
+  .target-editor-toolbar {
+    width: 100%;
+    grid-template-columns: 1fr 1fr auto;
+    justify-content: stretch;
+  }
+
+  .target-list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+}

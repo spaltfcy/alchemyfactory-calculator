@@ -25,6 +25,7 @@ export const ITEMS: Item[] = [
   { id: "coal_ore", name: { ja: "石炭鉱石", en: "Coal Ore" }, category: "raw" },
   { id: "coke", name: { ja: "コークス", en: "Coke" }, category: "fuel" },
   { id: "coke_powder", name: { ja: "コークス粉", en: "Coke Powder" }, category: "fuel" },
+  { id: "clockwork_bird", name: { ja: "ゼンマイ鳥", en: "Clockwork Bird" }, category: "raw" },
   { id: "copper_bearing", name: { ja: "銅ベアリング", en: "Copper Bearing" }, category: "raw" },
   { id: "copper_coin", name: { ja: "銅貨", en: "Copper Coin" }, category: "currency" },
   { id: "copper_ingot", name: { ja: "銅インゴット", en: "Copper Ingot" }, category: "material" },

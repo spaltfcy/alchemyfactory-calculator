@@ -1425,6 +1425,19 @@ export const RECIPES: Recipe[] = [
     primaryOutputId: "yeast_powder",
     sourceUrl: "https://alchemy-factory-codex.com/ja/recipe/yeast-powder/",
   },
+  {
+    id: "clockwork_bird",
+    name: { ja: "ゼンマイ鳥", en: "Clockwork Bird" },
+    machineId: "advanced_assembler",
+    timeSec: 12,
+    inputs: [
+      { itemId: "steel_ingot", amount: 6 },
+      { itemId: "steel_gear", amount: 2 },
+      { itemId: "malachite", amount: 2 },
+    ],
+    outputs: [{ itemId: "clockwork_bird", amount: 1 }],
+    primaryOutputId: "clockwork_bird",
+  },
 ];
 
 export const recipeById: Record<string, Recipe> = Object.fromEntries(RECIPES.map((recipe) => [recipe.id, recipe]));

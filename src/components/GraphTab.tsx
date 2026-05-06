@@ -244,6 +244,114 @@ function applyCompletedStateToNodes(nodes: Node[], completedGraphNodeIds: Record
   });
 }
 
+
+function collectLiveGraphStyleText(): string {
+  return Array.from(document.styleSheets)
+    .map((sheet) => {
+      try {
+        return Array.from(sheet.cssRules)
+          .map((rule) => rule.cssText)
+          .join('\n');
+      } catch {
+        return '';
+      }
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function graphPngTimestamp(): string {
+  const d = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return (
+    d.getFullYear().toString() +
+    pad(d.getMonth() + 1) +
+    pad(d.getDate()) +
+    '-' +
+    pad(d.getHours()) +
+    pad(d.getMinutes()) +
+    pad(d.getSeconds())
+  );
+}
+
+function escapeSvgText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function saveGraphElementAsPng(lang: Lang) {
+  const element = document.querySelector('.flow-wrap') as HTMLElement | null;
+  if (!element) return;
+
+  const rect = element.getBoundingClientRect();
+  const width = Math.max(1, Math.ceil(rect.width));
+  const height = Math.max(1, Math.ceil(rect.height));
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+  clone.style.width = width + 'px';
+  clone.style.height = height + 'px';
+  clone.style.margin = '0';
+
+  const xhtml = '<style>' + escapeSvgText(collectLiveGraphStyleText()) + '</style>' + clone.outerHTML;
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' +
+    width +
+    '" height="' +
+    height +
+    '" viewBox="0 0 ' +
+    width +
+    ' ' +
+    height +
+    '"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">' +
+    xhtml +
+    '</div></foreignObject></svg>';
+
+  const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  try {
+    const image = new Image();
+    const loaded = new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('Failed to render live graph image'));
+    });
+    image.src = svgUrl;
+    await loaded;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas is not available');
+    ctx.drawImage(image, 0, 0);
+
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Failed to create PNG'));
+      }, 'image/png');
+    });
+    downloadBlob(pngBlob, 'alchemy-factory-calculator-graph-live-' + graphPngTimestamp() + '.png');
+  } catch (error) {
+    console.warn(lang === 'ja' ? 'グラフPNG保存に失敗しました。' : 'Failed to save graph PNG.', error);
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
 function GraphControls({ lang, isInteractive, onToggleInteractive }: GraphControlsProps) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const labels =
@@ -362,6 +470,15 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
         >
           <Background color="#243047" gap={18} />
           <GraphControls lang={lang} isInteractive={isInteractive} onToggleInteractive={() => setIsInteractive((current) => !current)} />
+          <Panel position="top-right" className="flow-live-png-panel">
+            <button
+              type="button"
+              className="flow-live-png-button"
+              onClick={() => { void saveGraphElementAsPng(lang); }}
+            >
+              {lang === 'ja' ? 'PNG保存' : 'Save PNG'}
+            </button>
+          </Panel>
           <MiniMap
             nodeStrokeWidth={2}
             pannable

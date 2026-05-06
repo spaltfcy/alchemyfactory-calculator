@@ -23,6 +23,7 @@ export const ITEM_SORT_NAME_JA_BY_ID: Record<string, string> = {
   clay_powder: 'ねんどふんまつ',
   coal: 'せきたん',
   coal_ore: 'せきたんこうせき',
+  clockwork_bird: 'ぜんまいどり',
   coke: 'こーくす',
   coke_powder: 'こーくすふん',
   copper_bearing: 'どうべありんぐ',

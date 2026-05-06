@@ -14,6 +14,7 @@ export const ECONOMY: EconomyEntry[] = [
   { itemId: "chamomile_seeds", buyPriceCopper: 6000 },
   { itemId: "coal_ore", buyPriceCopper: 4800 },
   { itemId: "copper_bearing", sellPriceCopper: 300 },
+  { itemId: "clockwork_bird", sellPriceCopper: 5000 },
   { itemId: "crown", sellPriceCopper: 1600000 },
   { itemId: "diamond", sellPriceCopper: 100000 },
   { itemId: "emerald", sellPriceCopper: 700000 },
