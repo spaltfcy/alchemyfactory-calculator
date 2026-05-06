@@ -13,7 +13,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.5.9';
+const APP_VERSION = '0.5.10';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -314,7 +314,7 @@ export function App() {
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
-          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} />}
+          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} appVersion={APP_VERSION} gameVersion={GAME_VERSION} />}
         </section>
       </main>
     </div>

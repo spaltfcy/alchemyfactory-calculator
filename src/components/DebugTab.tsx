@@ -3,10 +3,7 @@ import type { AppState, Lang } from '../types';
 import { calculate, calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { buildFlowGraphSvg } from '../engine/graph';
 
-type DebugTabProps = {
-  lang: Lang;
-  state: AppState;
-};
+type DebugTabProps = { lang: Lang; state: AppState; appVersion: string; gameVersion: string; };
 
 type LastSummary = {
   itemCount: number;
@@ -99,7 +96,7 @@ function buildGraphSvg(): string {
   ].join('\n');
 }
 
-export function DebugTab({ lang, state }: DebugTabProps) {
+export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps) {
   const [lastSummary, setLastSummary] = useState<LastSummary | null>(null);
   const [status, setStatus] = useState('');
 
@@ -146,10 +143,29 @@ export function DebugTab({ lang, state }: DebugTabProps) {
   }
 
   function saveDebugLog(): void {
-    const { debugLog } = calculateWithDebug(buildInput());
+    const input = buildInput();
+    const result = calculate(input);
+    const { debugLog } = calculateWithDebug(input);
+    const resultWithDebugStatus = result as typeof result & {
+      calculationStatus?: 'ok' | 'invalid';
+      errorSummaries?: unknown[];
+    };
+    const debugLogWithOptionalStatus = debugLog as typeof debugLog & {
+      calculationStatus?: 'ok' | 'invalid';
+      errorSummaries?: unknown[];
+    };
+    const { calculationStatus: ignoredDebugCalculationStatus, errorSummaries: ignoredDebugErrorSummaries, ...debugLogBody } = debugLogWithOptionalStatus;
+    const enrichedDebugLog = {
+      appVersion,
+      gameVersion,
+      debugSchemaVersion: 2,
+      calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
+      errorSummaries: resultWithDebugStatus.errorSummaries ?? ignoredDebugErrorSummaries ?? [],
+      ...debugLogBody,
+    };
     downloadText(
       'alchemy-factory-calculator-debug-' + timestampForFile() + '.json',
-      JSON.stringify(debugLog, null, 2),
+      JSON.stringify(enrichedDebugLog, null, 2),
       'application/json;charset=utf-8',
     );
     setLastSummary({
