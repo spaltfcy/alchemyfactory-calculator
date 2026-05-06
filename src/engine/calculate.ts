@@ -31,6 +31,7 @@ import {
 } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
 import { safeCeil } from '../utils/format';
+import { buildInitialInvestment, type InitialInvestmentData } from './initialInvestment';
 
 export type ItemStat = {
   itemId: string;
@@ -122,6 +123,7 @@ export type CalculationResult = {
   conveyorEdges: ConveyorEdgeStat[];
   outputEdges: OutputEdgeStat[];
   warnings: PlanWarning[];
+  initialInvestment?: InitialInvestmentData;
   totals: {
     initialCostCopper: number;
     runningCostCopperPerMin: number;
@@ -188,6 +190,7 @@ export type CalculationDebugLog = {
     flowsByTransport: Record<string, number>;
     purchasedAutoCraftableCount: number;
   };
+  initialInvestment?: InitialInvestmentData;
   purchasedAutoCraftableFlows: Array<{
     itemId: string;
     rate: number;
@@ -1143,7 +1146,7 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
 
   const fuelHitMaxIterations = fuelSettings.enabled && !fuelConverged && fuelIterations >= fuelSettings.maxIterations;
 
-  return {
+  const finalResult: CalculationResult = {
     ...result,
     totals: {
       ...result.totals,
@@ -1155,6 +1158,7 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
       calculationMs: Math.max(0, nowMs() - startedAt),
     },
   };
+  return buildInitialInvestment(finalResult, input, productionSpeedMultiplier, conveyorItemsPerMinute);
 }
 
 export function calculateWithDebug(input: CalculateInput): CalculationDebugResult {
@@ -1297,6 +1301,7 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
       flowsByTransport,
       purchasedAutoCraftableCount: purchasedAutoCraftableFlows.length,
     },
+    initialInvestment: result.initialInvestment,
     purchasedAutoCraftableFlows,
     flows: result.flows,
     itemStats: Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId)),

@@ -13,7 +13,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.5.2';
+const APP_VERSION = '0.5.3';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -91,6 +91,7 @@ function mergeInitialState(safeMode: boolean): AppState {
   };
 
   if ((saved.version ?? 0) < 4) merged.settings.showSurplus = true;
+  if (merged.settings.showInitialInvestmentLines === undefined) merged.settings.showInitialInvestmentLines = DEFAULT_STATE.settings.showInitialInvestmentLines;
 
   merged.version = Math.max(DEFAULT_STATE.version, saved.version ?? 0);
   return merged;

@@ -2,7 +2,7 @@ import type { AppState } from './types';
 import { DEFAULT_ABILITIES } from './data/abilityTables';
 
 export const DEFAULT_STATE: AppState = {
-  version: 19,
+  version: 20,
   language: 'ja',
   activeTab: 'graph',
   targets: [
@@ -22,6 +22,7 @@ export const DEFAULT_STATE: AppState = {
     showSurplus: true,
     showDiscardedByproducts: true,
     showCompleted: true,
+    showInitialInvestmentLines: true,
     fuel: {
       enabled: true,
       fuelItemId: 'charcoal_powder',

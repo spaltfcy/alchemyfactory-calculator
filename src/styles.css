@@ -1107,3 +1107,22 @@ a {
 }
 .debug-status,
 .debug-status-line { margin: 0; }
+
+
+/* v0.5.3: startup investment / self-cycle warnings */
+.planner-node-badge-warning {
+  background: rgba(255, 212, 59, 0.22);
+  border: 1px solid rgba(255, 212, 59, 0.72);
+  color: #ffe58f;
+}
+
+.planner-node.is-initial-investment {
+  border-color: rgba(154, 164, 178, 0.86);
+  background: linear-gradient(180deg, rgba(41, 46, 55, 0.96), rgba(28, 32, 39, 0.96));
+  box-shadow: 0 0 0 1px rgba(154, 164, 178, 0.18), var(--shadow);
+}
+
+.planner-node.is-initial-investment .planner-node-title,
+.planner-node.is-initial-investment .planner-node-title-line {
+  color: #edf2f7;
+}

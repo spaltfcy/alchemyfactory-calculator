@@ -325,6 +325,21 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                   <span>{lang === 'ja' ? '表示' : 'Show'}</span>
                 </span>
               </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '自己循環初期投資' : 'Self-cycle startup'}</span>
+                <span className="checkbox-control">
+                  <input
+                    id="show-initial-investment-lines"
+                    name="show-initial-investment-lines"
+                    type="checkbox"
+                    checked={state.settings.showInitialInvestmentLines ?? true}
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchSettings({ showInitialInvestmentLines: event.target.checked })}
+                  />
+                  <span>{lang === 'ja' ? '表示' : 'Show'}</span>
+                </span>
+              </label>
+
 
               <div className="form-field">
                 <span>{lang === 'ja' ? '初期化' : 'Reset'}</span>

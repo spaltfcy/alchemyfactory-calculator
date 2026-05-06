@@ -103,6 +103,7 @@ export type AppSettings = {
   showSurplus: boolean;
   showDiscardedByproducts: boolean;
   showCompleted: boolean;
+  showInitialInvestmentLines: boolean;
   fuel: FuelSettings;
   fertilizer: FertilizerSettings;
 };

@@ -35,7 +35,8 @@ export function PlannerNode({ data }: NodeProps) {
     'planner-node planner-node-' +
     kind +
     (nodeData.completed ? ' is-completed' : '') +
-    (nodeData.isFuelSource ? ' is-fuel-source' : '');
+    (nodeData.isFuelSource ? ' is-fuel-source' : '') +
+    (nodeData.isInitialInvestment ? ' is-initial-investment' : '');
 
   return (
     <div className={className} title={nodeData.tooltip}>

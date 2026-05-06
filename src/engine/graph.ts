@@ -1,6 +1,7 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
 import type { AppSettings, Lang } from '../types';
 import type { CalculatedEndpoint, CalculatedFlow, CalculationResult, CalculatedFlowRole } from './calculate';
+import type { InitialInvestmentEndpoint, InitialInvestmentFlow } from './initialInvestment';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
@@ -24,7 +25,8 @@ export type PlannerNodeData = {
   tooltip?: string;
   sourceHandles?: PlannerHandleData[];
   targetHandles?: PlannerHandleData[];
-  badges?: Array<{ text: string; kind: 'heat' | 'info' }>;
+  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' }>;
+  isInitialInvestment?: boolean;
   isFuelSource?: boolean;
 };
 
@@ -42,6 +44,7 @@ const DISCARD_FLOW_COLOR = '#ffd43b'; const SURPLUS_FLOW_COLOR = '#ffd43b';
 const FUEL_FLOW_COLOR = '#ff9f43';
 const FERTILIZER_FLOW_COLOR = '#a9e34b';
 const STEAM_FLOW_COLOR = '#74c0fc';
+const INITIAL_INVESTMENT_FLOW_COLOR = '#9aa4b2';
 const PIPELINE_FLOW_COLOR = '#74c0fc';
 
 function itemName(itemId: string, lang: Lang): string {
@@ -63,12 +66,18 @@ function beltLabel(belts: number, lang: Lang): string {
   return (lang === 'ja' ? '⚙ ' : '⚙ ') + formatNumber(belts, 0) + (lang === 'ja' ? '本' : '');
 }
 
-function transportLabel(flow: CalculatedFlow, lang: Lang): string {
+function transportLabel(
+  flow: Pick<CalculatedFlow, 'belts'> & Partial<Pick<CalculatedFlow, 'transportKind' | 'transportUnits'>>,
+  lang: Lang,
+): string {
   if (flow.transportKind === 'pipeline') return lang === 'ja' ? 'パイプライン 1本' : 'pipeline x1';
   return beltLabel(flow.transportUnits ?? flow.belts, lang);
 }
 
-function rateLabel(flow: CalculatedFlow, lang: Lang): string {
+function rateLabel(
+  flow: Pick<CalculatedFlow, 'rate' | 'belts'> & Partial<Pick<CalculatedFlow, 'transportKind' | 'transportUnits'>>,
+  lang: Lang,
+): string {
   return formatNumber(flow.rate) + '/min ・ ' + transportLabel(flow, lang);
 }
 
@@ -108,6 +117,8 @@ function targetSide(role: CalculatedFlowRole): PlannerHandleSide {
 }
 
 function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
+  const isSelfLoop = flow.from.type === 'recipe' && flow.to.type === 'recipe' && flow.from.recipeId === flow.to.recipeId;
+  const edgeColor = isSelfLoop ? INITIAL_INVESTMENT_FLOW_COLOR : color;
   const labelName = flow.role === 'fuel'
     ? itemName(flow.itemId, lang) + (lang === 'ja' ? '（燃料）' : ' (fuel)')
     : flow.role === 'fertilizer'
@@ -119,22 +130,90 @@ function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
     source: endpointNodeId(flow.from),
     target: endpointNodeId(flow.to),
     animated: false,
-    style: edgeStyle(color, flow.role === 'byproductReuse'),
-    markerEnd: marker(color),
+    style: edgeStyle(edgeColor, flow.role === 'byproductReuse'),
+    markerEnd: marker(edgeColor),
     data: {
       itemId: flow.itemId,
       itemName: labelName,
       rateLabel: rateLabel(flow, lang),
-      color,
-      cycleSide: 0,
-      labelShiftY: 0,
+      color: edgeColor,
+      cycleSide: isSelfLoop ? 1 : 0,
+      labelShiftY: isSelfLoop ? -42 : 0,
       outputOrder: 9999,
-      sourceSide: sourceSide(flow.role),
-      targetSide: targetSide(flow.role),
+      sourceSide: isSelfLoop ? 'top' : sourceSide(flow.role),
+      targetSide: isSelfLoop ? 'top' : targetSide(flow.role),
     },
   };
 }
 
+
+function initialEndpointNodeId(groupId: string, endpoint: InitialInvestmentEndpoint): string {
+  if (endpoint.type === 'recipe') return 'initial:' + groupId + ':recipe:' + endpoint.recipeId;
+  if (endpoint.type === 'itemSource') return 'initial:' + groupId + ':source:' + endpoint.sourceMode + ':' + endpoint.itemId;
+  return 'initial:' + groupId + ':sink:' + endpoint.sinkMode + ':' + endpoint.itemId;
+}
+
+function endpointLabel(endpoint: InitialInvestmentEndpoint, lang: Lang): { label: string; kind: PlannerNodeData['kind']; subLabel?: string } {
+  if (endpoint.type === 'recipe') {
+    const recipe = recipeById[endpoint.recipeId];
+    return {
+      label: recipeName(endpoint.recipeId, lang),
+      kind: 'recipe',
+      subLabel: machineName(recipe?.machineId ?? '', lang),
+    };
+  }
+  if (endpoint.type === 'itemSource') {
+    return {
+      label: itemName(endpoint.itemId, lang),
+      kind: 'item',
+      subLabel: (lang === 'ja' ? '初期投資用 ' : 'Startup ') + (endpoint.sourceMode === 'stock' ? (lang === 'ja' ? '在庫' : 'Stock') : (lang === 'ja' ? '購入' : 'Buy')),
+    };
+  }
+  return {
+    label: (lang === 'ja' ? '初期投資: ' : 'Startup: ') + itemName(endpoint.itemId, lang),
+    kind: 'final',
+    subLabel: lang === 'ja' ? '本ラインには接続しません' : 'Not connected to the main line',
+  };
+}
+
+function buildInitialEndpointNode(groupId: string, endpoint: InitialInvestmentEndpoint, lang: Lang): Node {
+  const labeled = endpointLabel(endpoint, lang);
+  return {
+    id: initialEndpointNodeId(groupId, endpoint),
+    type: 'plannerNode',
+    position: { x: 0, y: 0 },
+    data: {
+      label: labeled.label,
+      kind: labeled.kind,
+      subLabel: labeled.subLabel,
+      isInitialInvestment: true,
+      badges: [{ text: lang === 'ja' ? '初期投資' : 'Startup', kind: 'info' }],
+    } satisfies PlannerNodeData,
+  };
+}
+
+function makeInitialEdge(groupId: string, flow: InitialInvestmentFlow, lang: Lang): Edge {
+  return {
+    id: flow.id,
+    type: 'flowEdge',
+    source: initialEndpointNodeId(groupId, flow.from),
+    target: initialEndpointNodeId(groupId, flow.to),
+    animated: false,
+    style: { stroke: INITIAL_INVESTMENT_FLOW_COLOR, strokeWidth: 2.05, strokeDasharray: '4 4' },
+    markerEnd: marker(INITIAL_INVESTMENT_FLOW_COLOR),
+    data: {
+      itemId: flow.itemId,
+      itemName: itemName(flow.itemId, lang),
+      rateLabel: rateLabel(flow, lang),
+      color: INITIAL_INVESTMENT_FLOW_COLOR,
+      cycleSide: 0,
+      labelShiftY: 0,
+      outputOrder: 9999,
+      sourceSide: 'right' as PlannerHandleSide,
+      targetSide: 'left' as PlannerHandleSide,
+    },
+  };
+}
 function addNode(nodes: Map<string, Node>, node: Node): void {
   if (!nodes.has(node.id)) nodes.set(node.id, node);
 }
@@ -154,6 +233,10 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     ];
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
+    const requiredStartupItemIds = result.initialInvestment?.requiredByRecipe?.[endpoint.recipeId] ?? [];
+    const badges: PlannerNodeData['badges'] = [];
+    if (hasHeat) badges.push({ text: lang === 'ja' ? '要:熱源' : 'Heat', kind: 'heat' });
+    for (const itemId of requiredStartupItemIds) badges.push({ text: (lang === 'ja' ? '⚠ 要:' : '⚠ Need:') + itemName(itemId, lang), kind: 'warning' });
     return {
       id,
       type: 'plannerNode',
@@ -162,7 +245,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
         label: recipeName(endpoint.recipeId, lang),
         kind: 'recipe',
         subLabel: nodeSubtitle(lines),
-        badges: hasHeat ? [{ text: lang === 'ja' ? '要:熱源' : 'Heat', kind: 'heat' }] : undefined,
+        badges: badges.length ? badges : undefined,
         isFuelSource,
       } satisfies PlannerNodeData,
     };
@@ -358,6 +441,20 @@ export function buildFlowGraph(
 
   const colorByFlowId = assignNormalColors(flows);
   const edges = flows.map((flow) => makeEdge(flow, colorByFlowId.get(flow.id) ?? DEFAULT_OUTPUT_COLOR, lang));
+
+  if (settings.showInitialInvestmentLines !== false) {
+    for (const group of result.initialInvestment?.groups ?? []) {
+      for (const flow of group.flows) {
+        addNode(nodes, buildInitialEndpointNode(group.id, flow.from, lang));
+        addNode(nodes, buildInitialEndpointNode(group.id, flow.to, lang));
+        edges.push(makeInitialEdge(group.id, flow, lang));
+      }
+      for (const rs of Object.values(group.recipeStats)) {
+        addNode(nodes, buildInitialEndpointNode(group.id, { type: 'recipe', recipeId: rs.recipeId }, lang));
+      }
+    }
+  }
+
   const nodeList = [...nodes.values()].map((node) => ({
     ...node,
     data: {
@@ -415,7 +512,7 @@ function nodeKindRank(kind: PlannerNodeData['kind']): number {
   return 4;
 }
 
-function nodeTheme(kind: PlannerNodeData['kind'], completed?: boolean): {
+function nodeTheme(kind: PlannerNodeData['kind'], completed?: boolean, data: PlannerNodeData = { label: '', kind }): {
   fill: string;
   stroke: string;
   title: string;
@@ -431,6 +528,7 @@ function nodeTheme(kind: PlannerNodeData['kind'], completed?: boolean): {
           : kind === 'discard'
             ? { fill: '#3a1d1d', stroke: '#ff8787', title: '#fff5f5', sub: '#ffc9c9' }
             : { fill: '#182233', stroke: '#4dabf7', title: '#eef6ff', sub: '#d0e4ff' };
+  if (data.isInitialInvestment) return { fill: '#20242b', stroke: '#9aa4b2', title: '#edf2f7', sub: '#c7ced8' };
   if (!completed) return theme;
   return { ...theme, stroke: '#63e6be' };
 }
@@ -450,6 +548,7 @@ function measureSvgNode(node: Node): { width: number; height: number } {
 }
 
 function initialNodeLayer(node: Node): number {
+  if (node.id.startsWith('initial:')) return 0;
   if (node.id.startsWith('source:')) return 0;
   const data = node.data as PlannerNodeData;
   if (data.kind === 'recipe') return 1;
@@ -616,7 +715,7 @@ function renderSvgNodeHandles(node: SvgGraphNode, handles: PlannerHandleData[] |
 
 function renderSvgNode(node: SvgGraphNode): string {
   const data = node.data;
-  const theme = nodeTheme(data.kind, data.completed);
+  const theme = nodeTheme(data.kind, data.completed, data);
   const subLines = splitNodeText(data.subLabel);
   const titleY = node.y + 22;
   let currentY = node.y + 40;
@@ -636,9 +735,9 @@ function renderSvgNode(node: SvgGraphNode): string {
     const badgeY = node.y + node.height - 24;
     for (const badge of data.badges ?? []) {
       const badgeWidth = Math.max(42, estimateSvgTextWidth(badge.text, 11, true) + 16);
-      const fill = badge.kind === 'heat' ? '#4a2a0a' : '#14314a';
-      const stroke = badge.kind === 'heat' ? '#ff922b' : '#4dabf7';
-      const textFill = badge.kind === 'heat' ? '#ffe8cc' : '#d0ebff';
+      const fill = badge.kind === 'heat' ? '#4a2a0a' : badge.kind === 'warning' ? '#4a3b0a' : '#14314a';
+      const stroke = badge.kind === 'heat' ? '#ff922b' : badge.kind === 'warning' ? '#ffd43b' : '#4dabf7';
+      const textFill = badge.kind === 'heat' ? '#ffe8cc' : badge.kind === 'warning' ? '#fff3bf' : '#d0ebff';
       lines.push('<rect x="' + badgeX.toFixed(1) + '" y="' + badgeY.toFixed(1) + '" width="' + badgeWidth.toFixed(1) + '" height="18" rx="9" ry="9" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>');
       lines.push('<text x="' + (badgeX + badgeWidth / 2).toFixed(1) + '" y="' + (badgeY + 12.5).toFixed(1) + '" fill="' + textFill + '" font-size="11" font-family="Segoe UI, Noto Sans JP, sans-serif" font-weight="700" text-anchor="middle">' + escapeSvgText(badge.text) + '</text>');
       badgeX += badgeWidth + 6;
