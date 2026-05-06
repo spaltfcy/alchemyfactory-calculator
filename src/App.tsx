@@ -13,7 +13,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.5.8';
+const APP_VERSION = '0.5.9';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -190,6 +190,11 @@ export function App() {
   const abilityButtonLabel = lang === 'ja' ? 'アビリティ' : 'Abilities';
   const siteVersionLabel = lang === 'ja' ? 'サイトバージョン' : 'Site version';
   const gameVersionLabel = lang === 'ja' ? 'ゲームバージョン' : 'Game version';
+  const calculationInvalidLabel = lang === 'ja' ? '\u8a08\u7b97\u4e0d\u80fd' : 'Invalid';
+  const isCalculationInvalid = result.calculationStatus === 'invalid';
+  function formatMoneyResult(value: number): string {
+    return isCalculationInvalid ? calculationInvalidLabel : formatCopper(value);
+  }
 
  const debugCalculationLine = runtimeFlags.debug
  ? (lang === 'ja' ? '計算' : 'Calc') + ': ' + formatNumber(result.totals.calculationMs ?? 0, 1) + 'ms / ' + (lang === 'ja' ? '燃料反復' : 'Fuel iterations') + ': ' + String(result.totals.fuelIterations ?? 0)
@@ -210,9 +215,9 @@ export function App() {
           </h1>
 
           <p className="summary-line">
-            {initialCostLabel}: {formatCopper(initialCost)} + {runningCostLabel}: {formatCopper(runningCost)} /{' '}
-            {t('revenue', lang)} {formatCopper(result.totals.revenueCopperPerMin)} / {t('profit', lang)}{' '}
-            {formatCopper(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
+            {initialCostLabel}: {formatMoneyResult(initialCost)} + {runningCostLabel}: {formatMoneyResult(runningCost)} /{' '}
+            {t('revenue', lang)} {formatMoneyResult(result.totals.revenueCopperPerMin)} / {t('profit', lang)}{' '}
+            {formatMoneyResult(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
             {formatNumber(result.totals.conveyorItemsPerMinute)}/min
   {runtimeFlags.debug && debugCalculationLine && <span className="debug-metric-inline"> / {debugCalculationLine}</span>}
           </p>

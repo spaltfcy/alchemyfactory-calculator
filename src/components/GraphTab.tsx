@@ -59,6 +59,35 @@ type GraphControlsProps = {
   onToggleInteractive: () => void;
 };
 
+
+function isFiniteGraphFlow(flow: CalculationResult['flows'][number]): boolean {
+  return (
+    typeof flow.rate === 'number' &&
+    Number.isFinite(flow.rate) &&
+    typeof flow.belts === 'number' &&
+    Number.isFinite(flow.belts) &&
+    typeof flow.transportUnits === 'number' &&
+    Number.isFinite(flow.transportUnits)
+  );
+}
+
+function graphInvalidTitle(lang: Lang): string {
+  return lang === 'ja' ? '\u8a08\u7b97\u4e0d\u80fd' : 'Calculation error';
+}
+
+function graphInvalidLines(result: CalculationResult, lang: Lang): string[] {
+  const summaries = result.errorSummaries ?? [];
+  const lines = summaries
+    .filter((summary) => summary.code === 'RECIPE_CYCLE_INVALID')
+    .map((summary) => {
+      const message = lang === 'ja' ? summary.messageJa : summary.messageEn;
+      const detail = lang === 'ja' ? summary.cycleTextJa : summary.cycleTextEn;
+      return detail ? message + ' ' + detail : message;
+    });
+  if (lines.length > 0) return lines.slice(0, 4);
+  return [lang === 'ja' ? '\u5faa\u74b0\u307e\u305f\u306f\u975e\u6570\u5024\u306e\u305f\u3081\u8a08\u7b97\u3067\u304d\u307e\u305b\u3093\u3002' : 'The graph contains a cycle or invalid numbers.'];
+}
+
 function readEdgeData(edge: Edge): EdgeData {
   return (edge.data ?? {}) as EdgeData;
 }
@@ -380,7 +409,15 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
   const [isUpdating, setIsUpdating] = useState(false);
   const completedRef = useRef(completedGraphNodeIds);
 
-  const raw = useMemo(() => buildFlowGraph(result, lang, settings, {}), [result, lang, settings]);
+  const graphResult = useMemo(
+    () =>
+      result.calculationStatus === 'invalid'
+        ? { ...result, flows: result.flows.filter(isFiniteGraphFlow) }
+        : result,
+    [result],
+  );
+  const graphErrorLines = useMemo(() => graphInvalidLines(result, lang), [result, lang]);
+  const raw = useMemo(() => buildFlowGraph(graphResult, lang, settings, {}), [graphResult, lang, settings]);
 
   useEffect(() => {
     completedRef.current = completedGraphNodeIds;
@@ -407,7 +444,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
       .then((layouted) => {
         if (disposed || latestLayoutId.current !== layoutId) return;
         const positionById = new Map(layouted.map((node) => [node.id, node.position]));
-        const fresh = buildFlowGraph(result, lang, settings, {});
+        const fresh = buildFlowGraph(graphResult, lang, settings, {});
         const positionedNodes = fresh.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position }));
         const realigned = realignIncomingHandlesBySourceY(positionedNodes, fresh.edges);
         const layoutMs = Math.round(performance.now() - startedAt);
@@ -436,7 +473,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
     return () => {
       disposed = true;
     };
-  }, [raw, result, lang, settings, debug]);
+  }, [raw, graphResult, lang, settings, debug]);
 
   const onNodeDoubleClick: NodeMouseHandler = (_, node) => {
     if (isInteractive) onToggleCompleted(node.id);
@@ -445,6 +482,14 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
   return (
     <div className="graph-tab">
       <div className="flow-wrap">
+        {result.calculationStatus === 'invalid' && (
+          <div className="graph-error-panel" role="alert">
+            <strong>{graphInvalidTitle(lang)}</strong>
+            {graphErrorLines.map((line, index) => (
+              <p key={index}>{line}</p>
+            ))}
+          </div>
+        )}
         <ReactFlow
           nodes={nodes}
           edges={edges}

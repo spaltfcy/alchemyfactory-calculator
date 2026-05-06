@@ -1304,3 +1304,50 @@ a {
   z-index: 1;
   isolation: isolate;
 }
+
+
+/* v0.5.9: invalid calculation display */
+.flow-wrap .react-flow__edges {
+  z-index: 1 !important;
+}
+
+.flow-wrap .react-flow__edgelabel-renderer,
+.flow-wrap .react-flow__edge-labels {
+  z-index: 2 !important;
+}
+
+.flow-wrap .react-flow__nodes,
+.flow-wrap .react-flow__node {
+  z-index: 20 !important;
+}
+
+.graph-error-panel {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  z-index: 60;
+  display: grid;
+  gap: 0.35rem;
+  max-width: min(54rem, calc(100% - 2rem));
+  padding: 0.75rem 0.95rem;
+  border: 1px solid rgba(255, 107, 107, 0.72);
+  border-radius: 14px;
+  background: rgba(63, 18, 28, 0.94);
+  color: #ffe3e3;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.graph-error-panel strong {
+  color: #fff5f5;
+  font-size: 1rem;
+}
+
+.graph-error-panel p {
+  margin: 0;
+  color: #ffd0d0;
+  font-size: 0.86rem;
+  font-weight: 750;
+  line-height: 1.35;
+}

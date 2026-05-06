@@ -115,6 +115,16 @@ export type OutputEdgeStat = {
 };
 
 export type PlanWarning = { messageJa: string; messageEn: string };
+export type CalculationStatus = 'ok' | 'invalid';
+export type CalculationErrorSummary = {
+  code: string;
+  messageJa: string;
+  messageEn: string;
+  cycleTextJa?: string;
+  cycleTextEn?: string;
+  itemIds?: string[];
+  recipeIds?: string[];
+};
 
 export type CalculationResult = {
   itemStats: Record<string, ItemStat>;
@@ -123,6 +133,8 @@ export type CalculationResult = {
   conveyorEdges: ConveyorEdgeStat[];
   outputEdges: OutputEdgeStat[];
   warnings: PlanWarning[];
+  calculationStatus?: CalculationStatus;
+  errorSummaries?: CalculationErrorSummary[];
   initialInvestment?: InitialInvestmentData;
   totals: {
     initialCostCopper: number;
@@ -399,6 +411,194 @@ function flowTransportForItem(
   if (isPipelineItem(itemId)) return { belts: 1, transportKind: 'pipeline', transportUnits: 1 };
   const belts = safeCeil(rate / conveyorItemsPerMinute);
   return { belts, transportKind: 'belt', transportUnits: belts };
+}
+
+
+function planItemNameJa(itemId: string): string {
+  return itemById[itemId]?.name.ja ?? itemId;
+}
+
+function planRecipeNameJa(recipeId: string): string {
+  return recipeById[recipeId]?.name.ja ?? recipeId;
+}
+
+function isFinitePlanNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function hasInvalidPlanNumber(value: unknown): boolean {
+  return typeof value !== 'number' || !Number.isFinite(value);
+}
+
+function isInvalidFlowForStatus(flow: CalculatedFlow): boolean {
+  return hasInvalidPlanNumber(flow.rate) || hasInvalidPlanNumber(flow.belts) || hasInvalidPlanNumber(flow.transportUnits);
+}
+
+function hasInvalidNumberRecord(record: Record<string, number> | undefined): boolean {
+  if (!record) return false;
+  return Object.values(record).some((value) => hasInvalidPlanNumber(value));
+}
+
+function collectInvalidNumericRecipeIds(result: CalculationResult): Set<string> {
+  const ids = new Set<string>();
+  for (const stat of Object.values(result.recipeStats)) {
+    if (
+      hasInvalidPlanNumber(stat.theoreticalMachines) ||
+      hasInvalidPlanNumber(stat.actualMachines) ||
+      hasInvalidPlanNumber(stat.runsPerMinute) ||
+      hasInvalidNumberRecord(stat.inputRates) ||
+      hasInvalidNumberRecord(stat.outputRates) ||
+      hasInvalidNumberRecord(stat.surplusOutputRates) ||
+      hasInvalidNumberRecord(stat.discardedOutputRates)
+    ) {
+      ids.add(stat.recipeId);
+    }
+  }
+  for (const flow of result.flows) {
+    if (!isInvalidFlowForStatus(flow)) continue;
+    if (flow.from.type === 'recipe') ids.add(flow.from.recipeId);
+    if (flow.to.type === 'recipe') ids.add(flow.to.recipeId);
+  }
+  return ids;
+}
+
+type InvalidCycleStep = {
+  fromRecipeId: string;
+  toRecipeId: string;
+  itemId: string;
+  role: CalculatedFlowRole;
+};
+
+function rotateCycleKey(recipeIds: string[]): string {
+  if (recipeIds.length === 0) return '';
+  let best = recipeIds.join('>');
+  for (let i = 1; i < recipeIds.length; i += 1) {
+    const candidate = recipeIds.slice(i).concat(recipeIds.slice(0, i)).join('>');
+    if (candidate < best) best = candidate;
+  }
+  const reversed = [...recipeIds].reverse();
+  for (let i = 0; i < reversed.length; i += 1) {
+    const candidate = reversed.slice(i).concat(reversed.slice(0, i)).join('>');
+    if (candidate < best) best = candidate;
+  }
+  return best;
+}
+
+function cycleToTextJa(steps: InvalidCycleStep[]): string {
+  if (steps.length === 0) return '';
+  const parts: string[] = [planRecipeNameJa(steps[0].fromRecipeId)];
+  for (const step of steps) {
+    parts.push(planItemNameJa(step.itemId) + ' -> ' + planRecipeNameJa(step.toRecipeId));
+  }
+  return parts.join(' -> ');
+}
+
+function cycleToMessageJa(steps: InvalidCycleStep[]): string {
+  const firstItem = steps[0]?.itemId;
+  if (firstItem) return planItemNameJa(firstItem) + '\u304c\u5faa\u74b0\u3057\u3066\u3044\u307e\u3059\u3002';
+  return '\u30ec\u30b7\u30d4\u304c\u5faa\u74b0\u3057\u3066\u3044\u307e\u3059\u3002';
+}
+
+function buildInvalidCycleSummaries(result: CalculationResult): CalculationErrorSummary[] {
+  const invalidEdges: InvalidCycleStep[] = [];
+  for (const flow of result.flows) {
+    if (!isInvalidFlowForStatus(flow)) continue;
+    if (flow.from.type !== 'recipe' || flow.to.type !== 'recipe') continue;
+    invalidEdges.push({
+      fromRecipeId: flow.from.recipeId,
+      toRecipeId: flow.to.recipeId,
+      itemId: flow.itemId,
+      role: flow.role,
+    });
+  }
+
+  const byFrom = new Map<string, InvalidCycleStep[]>();
+  for (const edge of invalidEdges) {
+    const group = byFrom.get(edge.fromRecipeId) ?? [];
+    group.push(edge);
+    byFrom.set(edge.fromRecipeId, group);
+  }
+
+  const summaries: CalculationErrorSummary[] = [];
+  const seen = new Set<string>();
+  const maxDepth = 8;
+
+  function dfs(startRecipeId: string, currentRecipeId: string, path: InvalidCycleStep[], visited: Set<string>) {
+    if (path.length >= maxDepth) return;
+    for (const edge of byFrom.get(currentRecipeId) ?? []) {
+      if (edge.toRecipeId === startRecipeId) {
+        const cycle = [...path, edge];
+        const recipeIds = cycle.map((step) => step.fromRecipeId);
+        const key = rotateCycleKey(recipeIds);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const itemIds = [...new Set(cycle.map((step) => step.itemId))];
+        const fullRecipeIds = [...new Set(cycle.flatMap((step) => [step.fromRecipeId, step.toRecipeId]))];
+        const cycleTextJa = cycleToTextJa(cycle).replace(/\u001a/g, ' -> ');
+        summaries.push({
+          code: 'RECIPE_CYCLE_INVALID',
+          messageJa: cycleToMessageJa(cycle),
+          messageEn: 'A recipe cycle was detected, so the calculation cannot be trusted.',
+          cycleTextJa,
+          cycleTextEn: fullRecipeIds.map((recipeId) => recipeById[recipeId]?.name.en ?? recipeId).join(' -> '),
+          itemIds,
+          recipeIds: fullRecipeIds,
+        });
+        continue;
+      }
+      if (visited.has(edge.toRecipeId)) continue;
+      const nextVisited = new Set(visited);
+      nextVisited.add(edge.toRecipeId);
+      dfs(startRecipeId, edge.toRecipeId, [...path, edge], nextVisited);
+    }
+  }
+
+  for (const recipeId of byFrom.keys()) {
+    dfs(recipeId, recipeId, [], new Set([recipeId]));
+  }
+
+  return summaries.slice(0, 8);
+}
+
+function buildInvalidNumericSummary(result: CalculationResult): CalculationErrorSummary | undefined {
+  const affectedItemIds = new Set<string>();
+  const affectedRecipeIds = collectInvalidNumericRecipeIds(result);
+
+  for (const flow of result.flows) {
+    if (!isInvalidFlowForStatus(flow)) continue;
+    affectedItemIds.add(flow.itemId);
+  }
+  for (const stat of Object.values(result.itemStats)) {
+    const values = [stat.requested, stat.consumed, stat.produced, stat.purchased, stat.initialPurchased, stat.reused, stat.surplus, stat.discarded, stat.targetRequested, stat.targetActual, stat.purchaseCostCopperPerMin, stat.initialCostCopper, stat.revenueCopperPerMin];
+    if (values.some((value) => hasInvalidPlanNumber(value))) affectedItemIds.add(stat.itemId);
+  }
+
+  if (affectedItemIds.size === 0 && affectedRecipeIds.size === 0) return undefined;
+
+  return {
+    code: 'INVALID_NUMERIC_RESULT',
+    messageJa: '\u6709\u9650\u6570\u3067\u306f\u306a\u3044\u8a08\u7b97\u7d50\u679c\u304c\u767a\u751f\u3057\u305f\u305f\u3081\u3001\u8a08\u7b97\u4e0d\u80fd\u3067\u3059\u3002',
+    messageEn: 'The result contains non-finite numbers, so the calculation is invalid.',
+    itemIds: [...affectedItemIds],
+    recipeIds: [...affectedRecipeIds],
+  };
+}
+
+function finalizeCalculationStatus(result: CalculationResult): CalculationResult {
+  const cycleSummaries = buildInvalidCycleSummaries(result);
+  const invalidNumericSummary = buildInvalidNumericSummary(result);
+  const errorSummaries = [...cycleSummaries];
+  if (invalidNumericSummary) errorSummaries.push(invalidNumericSummary);
+
+  if (errorSummaries.length <= 0) {
+    return { ...result, calculationStatus: 'ok', errorSummaries: [] };
+  }
+
+  return {
+    ...result,
+    calculationStatus: 'invalid',
+    errorSummaries,
+  };
 }
 
 export function calculate(input: CalculateInput): CalculationResult {
@@ -1158,7 +1358,7 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
       calculationMs: Math.max(0, nowMs() - startedAt),
     },
   };
-  return buildInitialInvestment(finalResult, input, productionSpeedMultiplier, conveyorItemsPerMinute);
+  return finalizeCalculationStatus(buildInitialInvestment(finalResult, input, productionSpeedMultiplier, conveyorItemsPerMinute));
 }
 
 export function calculateWithDebug(input: CalculateInput): CalculationDebugResult {
