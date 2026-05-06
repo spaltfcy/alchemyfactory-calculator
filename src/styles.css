@@ -1254,3 +1254,21 @@ a {
     padding-right: 0;
   }
 }
+
+
+/* v0.5.7: graph node foreground debug visibility */
+.flow-wrap .react-flow__edges {
+  z-index: 1;
+}
+
+.flow-wrap .react-flow__edge-labels {
+  z-index: 2;
+}
+
+.flow-wrap .react-flow__nodes {
+  z-index: 3;
+}
+
+.flow-wrap .react-flow__node {
+  z-index: 10 !important;
+}

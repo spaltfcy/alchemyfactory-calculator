@@ -1164,6 +1164,38 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
 export function calculateWithDebug(input: CalculateInput): CalculationDebugResult {
   const result = calculate(input);
   const issues: CalculationDebugIssue[] = [];
+  const debugItemNameJa = (itemId: string): string => itemById[itemId]?.name.ja ?? itemId;
+  const debugRecipeNameJa = (recipeId: string): string => recipeById[recipeId]?.name.ja ?? recipeId;
+  function isFiniteDebugNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+  function invalidNumberFields(record: Record<string, unknown>, fields: string[]): string[] {
+    return fields.filter((field) => !isFiniteDebugNumber(record[field]));
+  }
+  function debugEndpointJa(endpoint: CalculatedEndpoint): string {
+    if (endpoint.type === 'recipe') return '\u30ec\u30b7\u30d4:' + debugRecipeNameJa(endpoint.recipeId);
+    if (endpoint.type === 'itemSource') return (endpoint.sourceMode === 'buy' ? '\u8cfc\u5165:' : '\u5728\u5eab:') + debugItemNameJa(endpoint.itemId);
+    if (endpoint.type === 'itemSink') {
+      const sinkLabel = endpoint.sinkMode === 'final' ? '\u6700\u7d42\u51fa\u529b' : endpoint.sinkMode === 'surplus' ? '\u4f59\u5270' : '\u7834\u68c4';
+      return sinkLabel + ':' + debugItemNameJa(endpoint.itemId);
+    }
+    return '\u4e0d\u660e';
+  }
+  function compactDebugFlow(flow: CalculatedFlow) {
+    return {
+      id: flow.id,
+      itemId: flow.itemId,
+      itemNameJa: debugItemNameJa(flow.itemId),
+      role: flow.role,
+      from: debugEndpointJa(flow.from),
+      to: debugEndpointJa(flow.to),
+      rate: flow.rate,
+      belts: flow.belts,
+      transportKind: flow.transportKind,
+      transportUnits: flow.transportUnits,
+      invalidFields: invalidNumberFields(flow as unknown as Record<string, unknown>, ['rate', 'belts', 'transportUnits']),
+    };
+  }
   const flowsByRole: Record<string, number> = {};
   const flowsByTransport: Record<string, number> = {};
   const purchasedAutoCraftableFlows: CalculationDebugLog['purchasedAutoCraftableFlows'] = [];
@@ -1244,6 +1276,186 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
         },
       });
     }
+  }
+
+  const invalidNumericFlows = result.flows.filter((flow) =>
+    invalidNumberFields(flow as unknown as Record<string, unknown>, ['rate', 'belts', 'transportUnits']).length > 0,
+  );
+  if (invalidNumericFlows.length > 0) {
+    issues.push({
+      severity: 'error',
+      code: 'INVALID_NUMERIC_FLOW',
+      messageJa: '\u6709\u9650\u6570\u3067\u306f\u306a\u3044\u6d41\u91cf\u30fb\u642c\u9001\u672c\u6570\u306e\u30d5\u30ed\u30fc\u304c\u3042\u308a\u307e\u3059\u3002',
+      messageEn: 'Some flows have non-finite rate or transport numbers.',
+      data: invalidNumericFlows.map(compactDebugFlow),
+    });
+  }
+
+  const itemNumericFields: Array<keyof ItemStat> = [
+    'requested',
+    'consumed',
+    'produced',
+    'purchased',
+    'initialPurchased',
+    'reused',
+    'surplus',
+    'discarded',
+    'targetRequested',
+    'targetActual',
+    'purchaseCostCopperPerMin',
+    'initialCostCopper',
+    'revenueCopperPerMin',
+  ];
+  const invalidItemStats = Object.values(result.itemStats)
+    .map((stat) => ({
+      itemId: stat.itemId,
+      itemNameJa: debugItemNameJa(stat.itemId),
+      invalidFields: invalidNumberFields(stat as unknown as Record<string, unknown>, itemNumericFields as string[]),
+      stat,
+    }))
+    .filter((entry) => entry.invalidFields.length > 0);
+  if (invalidItemStats.length > 0) {
+    issues.push({
+      severity: 'error',
+      code: 'INVALID_NUMERIC_ITEM_STAT',
+      messageJa: '\u6709\u9650\u6570\u3067\u306f\u306a\u3044\u30a2\u30a4\u30c6\u30e0\u96c6\u8a08\u304c\u3042\u308a\u307e\u3059\u3002',
+      messageEn: 'Some item statistics contain non-finite numbers.',
+      data: invalidItemStats,
+    });
+  }
+
+  function invalidRateRecordEntries(record: Record<string, number>): Array<{ itemId: string; itemNameJa: string; value: number }> {
+    return Object.entries(record)
+      .filter(([, value]) => !isFiniteDebugNumber(value))
+      .map(([itemId, value]) => ({ itemId, itemNameJa: debugItemNameJa(itemId), value }));
+  }
+
+  const invalidRecipeStats = Object.values(result.recipeStats)
+    .map((stat) => {
+      const invalidFields = invalidNumberFields(stat as unknown as Record<string, unknown>, [
+        'theoreticalMachines',
+        'actualMachines',
+        'runsPerMinute',
+      ]);
+      const invalidRecords = {
+        inputRates: invalidRateRecordEntries(stat.inputRates),
+        outputRates: invalidRateRecordEntries(stat.outputRates),
+        surplusOutputRates: invalidRateRecordEntries(stat.surplusOutputRates),
+        discardedOutputRates: invalidRateRecordEntries(stat.discardedOutputRates),
+      };
+      const hasInvalidRecord = Object.values(invalidRecords).some((entries) => entries.length > 0);
+      return {
+        recipeId: stat.recipeId,
+        recipeNameJa: debugRecipeNameJa(stat.recipeId),
+        invalidFields,
+        invalidRecords,
+        stat,
+        hasInvalidRecord,
+      };
+    })
+    .filter((entry) => entry.invalidFields.length > 0 || entry.hasInvalidRecord);
+  if (invalidRecipeStats.length > 0) {
+    issues.push({
+      severity: 'error',
+      code: 'INVALID_NUMERIC_RECIPE_STAT',
+      messageJa: '\u6709\u9650\u6570\u3067\u306f\u306a\u3044\u30ec\u30b7\u30d4\u96c6\u8a08\u304c\u3042\u308a\u307e\u3059\u3002',
+      messageEn: 'Some recipe statistics contain non-finite numbers.',
+      data: invalidRecipeStats,
+    });
+  }
+
+  if (invalidNumericFlows.length > 0) {
+    const recipeEdges = result.flows.filter((flow) => flow.from.type === 'recipe' && flow.to.type === 'recipe');
+    const invalidRecipeIds = new Set<string>();
+    for (const flow of invalidNumericFlows) {
+      if (flow.from.type === 'recipe') invalidRecipeIds.add(flow.from.recipeId);
+      if (flow.to.type === 'recipe') invalidRecipeIds.add(flow.to.recipeId);
+    }
+    const adjacency = new Map<string, Array<{ toRecipeId: string; itemId: string; itemNameJa: string; role: CalculatedFlowRole; invalid: boolean }>>();
+    for (const flow of recipeEdges) {
+      if (flow.from.type !== 'recipe' || flow.to.type !== 'recipe') continue;
+      const list = adjacency.get(flow.from.recipeId) ?? [];
+      list.push({
+        toRecipeId: flow.to.recipeId,
+        itemId: flow.itemId,
+        itemNameJa: debugItemNameJa(flow.itemId),
+        role: flow.role,
+        invalid: invalidNumericFlows.some((invalidFlow) => invalidFlow.id === flow.id),
+      });
+      adjacency.set(flow.from.recipeId, list);
+    }
+    const cycles: unknown[] = [];
+    const seenCycles = new Set<string>();
+    function dfs(startRecipeId: string, currentRecipeId: string, path: Array<{ recipeId: string; recipeNameJa: string; viaItemId?: string; viaItemNameJa?: string; role?: CalculatedFlowRole; invalid?: boolean }>, depth: number): void {
+      if (cycles.length >= 12 || depth > 8) return;
+      for (const edge of adjacency.get(currentRecipeId) ?? []) {
+        if (edge.toRecipeId === startRecipeId) {
+          const cycle = [
+            ...path,
+            {
+              recipeId: startRecipeId,
+              recipeNameJa: debugRecipeNameJa(startRecipeId),
+              viaItemId: edge.itemId,
+              viaItemNameJa: edge.itemNameJa,
+              role: edge.role,
+              invalid: edge.invalid,
+            },
+          ];
+          const key = cycle.map((step) => step.recipeId).join('>');
+          if (!seenCycles.has(key)) {
+            seenCycles.add(key);
+            cycles.push(cycle);
+          }
+          continue;
+        }
+        if (path.some((step) => step.recipeId === edge.toRecipeId)) continue;
+        dfs(
+          startRecipeId,
+          edge.toRecipeId,
+          [
+            ...path,
+            {
+              recipeId: edge.toRecipeId,
+              recipeNameJa: debugRecipeNameJa(edge.toRecipeId),
+              viaItemId: edge.itemId,
+              viaItemNameJa: edge.itemNameJa,
+              role: edge.role,
+              invalid: edge.invalid,
+            },
+          ],
+          depth + 1,
+        );
+      }
+    }
+    for (const recipeId of invalidRecipeIds) {
+      dfs(recipeId, recipeId, [{ recipeId, recipeNameJa: debugRecipeNameJa(recipeId) }], 0);
+      if (cycles.length >= 12) break;
+    }
+    if (cycles.length > 0) {
+      issues.push({
+        severity: 'warning',
+        code: 'SUSPECT_RECIPE_CYCLE_WITH_INVALID_NUMBERS',
+        messageJa: '\u975e\u6570\u5024\u30d5\u30ed\u30fc\u306b\u95a2\u9023\u3059\u308b\u5faa\u74b0\u5019\u88dc\u304c\u3042\u308a\u307e\u3059\u3002',
+        messageEn: 'Recipe cycles related to invalid numeric flows were detected.',
+        data: cycles,
+      });
+    }
+  }
+
+  if (input.settings.fuel?.enabled && input.settings.fuel.fuelSourceMode === 'craft' && invalidNumericFlows.some((flow) => flow.itemId === input.settings.fuel?.fuelItemId || flow.role === 'fuel')) {
+    issues.push({
+      severity: 'warning',
+      code: 'FUEL_CRAFT_CHAIN_INVALID_NUMERIC',
+      messageJa: '\u81ea\u4f5c\u71c3\u6599\u30e9\u30a4\u30f3\u306e\u4e2d\u3067\u975e\u6570\u5024\u30d5\u30ed\u30fc\u304c\u767a\u751f\u3057\u3066\u3044\u307e\u3059\u3002',
+      messageEn: 'Invalid numeric flows were detected inside the crafted fuel chain.',
+      data: {
+        fuelItemId: input.settings.fuel.fuelItemId,
+        fuelItemNameJa: debugItemNameJa(input.settings.fuel.fuelItemId),
+        invalidFuelRelatedFlows: invalidNumericFlows
+          .filter((flow) => flow.itemId === input.settings.fuel?.fuelItemId || flow.role === 'fuel')
+          .map(compactDebugFlow),
+      },
+    });
   }
 
   const fertilizerFlowTotal = result.flows
