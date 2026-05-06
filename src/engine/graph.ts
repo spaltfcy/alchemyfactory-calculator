@@ -718,7 +718,7 @@ function buildSvgCyclePath(
   const length = Math.max(Math.hypot(dx, dy), 1);
   const nx = -dy / length;
   const ny = dx / length;
-  const offset = Math.min(132, Math.max(68, length * 0.24)) * side;
+  const offset = Math.min(260, Math.max(160, length * 0.36)) * side;
   const controlX = (source.x + target.x) / 2 + nx * offset;
   const controlY = (source.y + target.y) / 2 + ny * offset;
   return {
