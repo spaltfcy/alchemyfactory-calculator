@@ -1,5 +1,5 @@
 import type { Lang } from '../types';
-import type { CalculationResult } from '../engine/calculate';
+import type { CalculationResult, ConveyorEdgeStat } from '../engine/calculate';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
@@ -13,6 +13,11 @@ export type TableTabProps = {
 
 function fallbackName(id: string, lang: Lang): string {
   return text({ ja: id, en: id }, lang);
+}
+
+function transportCountLabel(edge: ConveyorEdgeStat, lang: Lang): string {
+  if (edge.transportKind === 'pipeline') return lang === 'ja' ? 'パイプライン 1本' : 'Pipeline x1';
+  return String(edge.transportUnits ?? edge.belts);
 }
 
 export function TableTab({ lang, result }: TableTabProps) {
@@ -152,7 +157,7 @@ export function TableTab({ lang, result }: TableTabProps) {
               <tr>
                 <th>{lang === 'ja' ? '経路' : 'Route'}</th>
                 <th>{t('flow', lang)}</th>
-                <th>{t('beltCount', lang)}</th>
+                <th>{lang === 'ja' ? '搬送' : 'Transport'}</th>
               </tr>
             </thead>
             <tbody>
@@ -166,7 +171,7 @@ export function TableTab({ lang, result }: TableTabProps) {
                       {item ? text(item.name, lang) : edge.fromItemId} → {recipe ? text(recipe.name, lang) : edge.toRecipeId}
                     </td>
                     <td>{formatNumber(edge.rate)}/min</td>
-                    <td>{edge.belts}</td>
+                    <td>{transportCountLabel(edge, lang)}</td>
                   </tr>
                 );
               })}

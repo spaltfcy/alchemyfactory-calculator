@@ -4,6 +4,7 @@ import type {
   FertilizerSettings,
   FuelSettings,
   MachineRoundingMode,
+  ItemPhysicalState,
   ProductionTarget,
   Recipe,
 } from '../types';
@@ -13,6 +14,7 @@ import {
   DEFAULT_RECIPE_BY_ITEM_ID,
   getRecipesProducing,
 } from '../data/recipes';
+import { itemById } from '../data/items';
 import { economyByItemId } from '../data/economy';
 import {
   getConveyorItemsPerMinute,
@@ -27,7 +29,7 @@ import {
   HEAT_CONSUMER_BY_MACHINE_ID,
   resolveHeatMachineId,
 } from '../data/heat';
-import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID } from '../data/fertilizer';
+import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
 import { safeCeil } from '../utils/format';
 
 export type ItemStat = {
@@ -65,6 +67,8 @@ export type CalculatedEndpoint =
   | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'stock' }
   | { type: 'itemSink'; itemId: string; sinkMode: 'final' | 'discard' | 'surplus' };
 
+export type FlowTransportKind = 'belt' | 'pipeline';
+
 export type CalculatedFlowRole =
   | 'material'
   | 'byproductReuse'
@@ -82,6 +86,8 @@ export type CalculatedFlow = {
   itemId: string;
   rate: number;
   belts: number;
+  transportKind: FlowTransportKind;
+  transportUnits: number;
   role: CalculatedFlowRole;
 };
 
@@ -91,6 +97,8 @@ export type ConveyorEdgeStat = {
   toRecipeId: string;
   rate: number;
   belts: number;
+  transportKind: FlowTransportKind;
+  transportUnits: number;
   fromRecipeId?: string;
   sourceKind?: 'recipe' | 'item';
   role?: 'material' | 'byproduct' | 'fuel' | 'fertilizer';
@@ -177,6 +185,7 @@ export type CalculationDebugLog = {
     recipeCount: number;
     flowCount: number;
     flowsByRole: Record<string, number>;
+    flowsByTransport: Record<string, number>;
     purchasedAutoCraftableCount: number;
   };
   purchasedAutoCraftableFlows: Array<{
@@ -369,6 +378,26 @@ function normalizeVisibleRate(rate: number): number {
   return Math.abs(rate) <= VISIBLE_RATE_EPS ? 0 : rate;
 }
 
+function getItemPhysicalState(itemId: string): ItemPhysicalState {
+  if (itemId === 'steam') return 'steam';
+  return itemById[itemId]?.physicalState ?? 'solid';
+}
+
+function isPipelineItem(itemId: string): boolean {
+  const state = getItemPhysicalState(itemId);
+  return state === 'liquid' || state === 'steam';
+}
+
+function flowTransportForItem(
+  itemId: string,
+  rate: number,
+  conveyorItemsPerMinute: number,
+): { belts: number; transportKind: FlowTransportKind; transportUnits: number } {
+  if (isPipelineItem(itemId)) return { belts: 1, transportKind: 'pipeline', transportUnits: 1 };
+  const belts = safeCeil(rate / conveyorItemsPerMinute);
+  return { belts, transportKind: 'belt', transportUnits: belts };
+}
+
 export function calculate(input: CalculateInput): CalculationResult {
   const startedAt = nowMs();
   const fuelSettings = normalizeFuelSettings(input.settings);
@@ -379,6 +408,28 @@ export function calculate(input: CalculateInput): CalculationResult {
   const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
   const fuelHeatValueMultiplier = getFuelHeatValueMultiplier(input.abilities);
   const fertilizerNutritionMultiplier = getFertilizerNutritionMultiplier(input.abilities);
+  const selectedFertilizerNutrientsPerSec = fertilizerSettings.enabled
+    ? Math.max(0, Number(FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[fertilizerSettings.fertilizerItemId] ?? fertilizerSettings.nurseryNutrientsPerSec))
+    : Math.max(0, Number(fertilizerSettings.nurseryNutrientsPerSec));
+
+  function nurseryNutrientsRequiredPerRun(recipe: Recipe): number {
+    if (recipe.machineId !== 'nursery') return 0;
+    return Math.max(0, recipe.timeSec * DEFAULT_FERTILIZER_SETTINGS.nurseryNutrientsPerSec);
+  }
+
+  function runRateForRecipe(recipe: Recipe): number {
+    if (recipe.machineId === 'nursery') {
+      const nutrientsRequired = nurseryNutrientsRequiredPerRun(recipe);
+      if (nutrientsRequired > EPS && selectedFertilizerNutrientsPerSec > EPS) {
+        return (60 * selectedFertilizerNutrientsPerSec * productionSpeedMultiplier) / nutrientsRequired;
+      }
+    }
+    return runRatePerMachine(recipe, productionSpeedMultiplier);
+  }
+
+  function outputRateForRecipe(recipe: Recipe, itemId: string): number {
+    return outputPerRun(recipe, itemId) * runRateForRecipe(recipe);
+  }
 
   const lockedRuns: RunMap = new Map();
   const locks: TargetLock[] = [];
@@ -392,12 +443,12 @@ export function calculate(input: CalculateInput): CalculationResult {
       directTargetPurchases.push({ itemId, rate: Math.max(0, target.value), targetId: target.id });
       continue;
     }
-    const outputRate = outputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
+    const outputRate = outputRateForRecipe(recipe, itemId);
     if (outputRate <= EPS) {
       directTargetPurchases.push({ itemId, rate: Math.max(0, target.value), targetId: target.id });
       continue;
     }
-    const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+    const machineRunRate = runRateForRecipe(recipe);
     let requestedRate: number;
     let actualMachines: number;
     if (target.mode === 'machines') {
@@ -432,7 +483,7 @@ export function calculate(input: CalculateInput): CalculationResult {
     for (const [recipeId, runsPerMinute] of runs.entries()) {
       const recipe = recipeById[recipeId];
       if (!recipe || runsPerMinute <= EPS) continue;
-      const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+      const machineRunRate = runRateForRecipe(recipe);
       const actualMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
       const heatPerSec = heatPerMachinePerSecond(recipe.machineId, fuelSettings);
       const recipeHeat = fuelSettings.enabled && heatPerSec > EPS ? actualMachines * heatPerSec * 60 * heatConsumptionMultiplier : 0;
@@ -441,7 +492,7 @@ export function calculate(input: CalculateInput): CalculationResult {
         heatByRecipe.set(recipe.id, recipeHeat);
       }
       const recipeNutrients = fertilizerSettings.enabled && recipe.machineId === 'nursery'
-        ? actualMachines * fertilizerSettings.nurseryNutrientsPerSec * 60
+        ? runsPerMinute * nurseryNutrientsRequiredPerRun(recipe)
         : 0;
       if (recipeNutrients > EPS) {
         fertilizerNutrientsRequiredPerMin += recipeNutrients;
@@ -491,11 +542,11 @@ export function calculate(input: CalculateInput): CalculationResult {
       if (netRate <= EPS) continue;
       const recipe = chooseRecipeForItem(itemId, input.recipePreferences);
       if (!recipe) continue;
-      const outputRate = outputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
+      const outputRate = outputRateForRecipe(recipe, itemId);
       if (outputRate <= EPS) continue;
       const theoreticalMachines = netRate / outputRate;
       const actualMachines = shouldRound(input.settings.machineRounding, false) ? safeCeil(theoreticalMachines) : theoreticalMachines;
-      addRun(desired, recipe.id, actualMachines * runRatePerMachine(recipe, productionSpeedMultiplier));
+      addRun(desired, recipe.id, actualMachines * runRateForRecipe(recipe));
     }
     return desired;
   }
@@ -620,11 +671,11 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
     if (sourceMode === 'buy' || sourceMode === 'stock') return;
     const recipe = chooseRecipeForItem(itemId, input.recipePreferences);
     if (!recipe) return;
-    const outputRate = outputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
+    const outputRate = outputRateForRecipe(recipe, itemId);
     if (outputRate <= EPS) return;
     const theoreticalMachines = missingRate / outputRate;
     const actualMachines = shouldRound(input.settings.machineRounding, false) ? safeCeil(theoreticalMachines) : theoreticalMachines;
-    addRun(map, recipe.id, actualMachines * runRatePerMachine(recipe, productionSpeedMultiplier));
+    addRun(map, recipe.id, actualMachines * runRateForRecipe(recipe));
   }
 
   function findUnresolvedAutoDemands(runs: RunMap, injectedFuelRate: number): { analysis: RunAnalysis; missingByItem: Map<string, number> } {
@@ -742,10 +793,24 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
           flows.splice(flows.indexOf(existing), 1);
           return;
         }
-        existing.belts = safeCeil(existing.rate / conveyorItemsPerMinute);
+        const transport = flowTransportForItem(itemId, existing.rate, conveyorItemsPerMinute);
+        existing.belts = transport.belts;
+        existing.transportKind = transport.transportKind;
+        existing.transportUnits = transport.transportUnits;
         return;
       }
-      flows.push({ id: idBase, from, to, itemId, rate: cleanRate, belts: safeCeil(cleanRate / conveyorItemsPerMinute), role });
+      const transport = flowTransportForItem(itemId, cleanRate, conveyorItemsPerMinute);
+      flows.push({
+        id: idBase,
+        from,
+        to,
+        itemId,
+        rate: cleanRate,
+        belts: transport.belts,
+        transportKind: transport.transportKind,
+        transportUnits: transport.transportUnits,
+        role,
+      });
     }
 
     function addPurchase(itemId: string, rate: number): void {
@@ -776,7 +841,7 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
     for (const [recipeId, runsPerMinute] of runs.entries()) {
       const recipe = recipeById[recipeId];
       if (!recipe || runsPerMinute <= EPS) continue;
-      const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+      const machineRunRate = runRateForRecipe(recipe);
       const actualMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
       recipeStats[recipe.id] = {
         recipeId: recipe.id,
@@ -816,7 +881,7 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
       if (!recipe || !rs || runsPerMinute <= EPS) continue;
       for (const recipeInput of recipe.inputs) {
         if (isNurserySeedInput(recipe, recipeInput.itemId)) {
-          const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+          const machineRunRate = runRateForRecipe(recipe);
           const actualMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
           addInitialPurchase(recipeInput.itemId, recipeInput.amount * actualMachines);
           continue;
@@ -940,7 +1005,9 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
     }
     if (fertilizerSettings.enabled && analysis.fertilizerNutrientsRequiredPerMin > EPS) {
       const nutrientValue = FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[fertilizerSettings.fertilizerItemId] ?? 0;
+      const nutrientsPerSec = FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[fertilizerSettings.fertilizerItemId] ?? 0;
       if (nutrientValue <= EPS) warnings.push({ messageJa: fertilizerSettings.fertilizerItemId + ' の肥料栄養値が未定義です。', messageEn: 'Fertilizer nutrient value is not defined for ' + fertilizerSettings.fertilizerItemId + '.' });
+      if (nutrientsPerSec <= EPS) warnings.push({ messageJa: fertilizerSettings.fertilizerItemId + ' の毎秒肥料栄養値が未定義です。', messageEn: 'Fertilizer nutrients/sec is not defined for ' + fertilizerSettings.fertilizerItemId + '.' });
     }
 
     let initialCostCopper = 0;
@@ -964,6 +1031,8 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
         toRecipeId: flow.to.type === 'recipe' ? flow.to.recipeId : '',
         rate: flow.rate,
         belts: flow.belts,
+        transportKind: flow.transportKind,
+        transportUnits: flow.transportUnits,
         fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
         sourceKind: flow.from.type === 'recipe' ? 'recipe' : 'item',
         role: flow.role === 'byproductReuse' ? 'byproduct' : flow.role === 'fuel' ? 'fuel' : flow.role === 'fertilizer' ? 'fertilizer' : 'material',
@@ -1092,10 +1161,12 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
   const result = calculate(input);
   const issues: CalculationDebugIssue[] = [];
   const flowsByRole: Record<string, number> = {};
+  const flowsByTransport: Record<string, number> = {};
   const purchasedAutoCraftableFlows: CalculationDebugLog['purchasedAutoCraftableFlows'] = [];
 
   for (const flow of result.flows) {
     flowsByRole[flow.role] = (flowsByRole[flow.role] ?? 0) + 1;
+    flowsByTransport[flow.transportKind] = (flowsByTransport[flow.transportKind] ?? 0) + 1;
 
     if (flow.from.type === 'itemSource' && flow.from.sourceMode === 'buy' && flow.to.type === 'recipe') {
       const sourceMode = input.itemSourceModes[flow.itemId] ?? 'auto';
@@ -1182,6 +1253,7 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
       recipeCount: Object.keys(result.recipeStats).length,
       flowCount: result.flows.length,
       flowsByRole,
+      flowsByTransport,
       purchasedAutoCraftableCount: purchasedAutoCraftableFlows.length,
     },
     purchasedAutoCraftableFlows,

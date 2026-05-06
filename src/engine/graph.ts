@@ -42,6 +42,7 @@ const DISCARD_FLOW_COLOR = '#ffd43b'; const SURPLUS_FLOW_COLOR = '#ffd43b';
 const FUEL_FLOW_COLOR = '#ff9f43';
 const FERTILIZER_FLOW_COLOR = '#a9e34b';
 const STEAM_FLOW_COLOR = '#74c0fc';
+const PIPELINE_FLOW_COLOR = '#74c0fc';
 
 function itemName(itemId: string, lang: Lang): string {
   const item = itemById[itemId];
@@ -62,8 +63,13 @@ function beltLabel(belts: number, lang: Lang): string {
   return (lang === 'ja' ? '⚙ ' : '⚙ ') + formatNumber(belts, 0) + (lang === 'ja' ? '本' : '');
 }
 
-function rateLabel(rate: number, belts: number, lang: Lang): string {
-  return formatNumber(rate) + '/min ・ ' + beltLabel(belts, lang);
+function transportLabel(flow: CalculatedFlow, lang: Lang): string {
+  if (flow.transportKind === 'pipeline') return lang === 'ja' ? 'パイプライン 1本' : 'pipeline x1';
+  return beltLabel(flow.transportUnits ?? flow.belts, lang);
+}
+
+function rateLabel(flow: CalculatedFlow, lang: Lang): string {
+  return formatNumber(flow.rate) + '/min ・ ' + transportLabel(flow, lang);
 }
 
 function marker(color: string) {
@@ -118,7 +124,7 @@ function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
     data: {
       itemId: flow.itemId,
       itemName: labelName,
-      rateLabel: rateLabel(flow.rate, flow.belts, lang),
+      rateLabel: rateLabel(flow, lang),
       color,
       cycleSide: 0,
       labelShiftY: 0,
@@ -216,12 +222,13 @@ function assignNormalColors(flows: CalculatedFlow[]): Map<string, string> {
     if (flow.role === 'discard') return false;
     if (flow.role === 'surplus') return false;
     if (flow.role === 'finalOutput') return false;
+    if (flow.transportKind === 'pipeline') return false;
     return true;
   });
 
   for (const flow of flows) {
     if (normalFlows.includes(flow)) continue;
-    colorByFlowId.set(flow.id, roleColor(flow.role, DEFAULT_OUTPUT_COLOR));
+    colorByFlowId.set(flow.id, flow.transportKind === 'pipeline' ? PIPELINE_FLOW_COLOR : roleColor(flow.role, DEFAULT_OUTPUT_COLOR));
   }
 
   for (const flow of normalFlows) {
@@ -716,8 +723,9 @@ export function buildFlowGraphSvg(
       const midY = (sourcePoint.y + targetPoint.y) / 2 + Number(edgeData?.labelShiftY ?? 0);
       const dash = style?.strokeDasharray ? ' stroke-dasharray="' + escapeSvgText(String(style.strokeDasharray)) + '"' : '';
       const strokeWidth = String(style?.strokeWidth ?? 2.15);
+      const opacity = edgeData?.itemName?.includes('(fuel)') || edgeData?.itemName?.includes('(fertilizer)') ? '0.78' : '0.97';
       return [
-        '<path d="' + path + '" fill="none" stroke="' + escapeSvgText(color) + '" stroke-width="' + escapeSvgText(strokeWidth) + '"' + dash + ' marker-end="url(#' + (markerIdByColor.get(color) ?? 'arrow-0') + ')" opacity="0.97"/>',
+        '<path d="' + path + '" fill="none" stroke="' + escapeSvgText(color) + '" stroke-width="' + escapeSvgText(strokeWidth) + '"' + dash + ' marker-end="url(#' + (markerIdByColor.get(color) ?? 'arrow-0') + ')" opacity="' + opacity + '"/>',
         renderSvgEdgeLabel(edgeData?.itemName ?? '', edgeData?.rateLabel ?? '', midX, midY, color),
       ].join('\n');
     })

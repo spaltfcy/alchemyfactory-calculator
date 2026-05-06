@@ -7,15 +7,19 @@ export type ItemCategory =
   | 'fuel'
   | 'component'
   | 'material'
+  | 'liquid'
   | 'herb'
   | 'catalyst'
   | 'currency'
   | 'other';
 
+export type ItemPhysicalState = 'solid' | 'liquid' | 'steam';
+
 export type Item = {
   id: string;
   name: LocalizedText;
   category: ItemCategory;
+  physicalState?: ItemPhysicalState;
 };
 
 export type Machine = {

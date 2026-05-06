@@ -17,3 +17,7 @@ export const FERTILIZER_ITEM_IDS = FERTILIZER_ITEMS.map((fertilizer) => fertiliz
 export const FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID: Record<string, number> = Object.fromEntries(
   FERTILIZER_ITEMS.map((fertilizer) => [fertilizer.itemId, fertilizer.nutrientValue]),
 );
+
+export const FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID: Record<string, number> = Object.fromEntries(
+  FERTILIZER_ITEMS.map((fertilizer) => [fertilizer.itemId, fertilizer.nutrientsPerSec]),
+);

@@ -2,6 +2,7 @@ import type { ChangeEvent } from 'react';
 import type { AppSettings, AppState, Lang, Recipe, SurplusPolicy } from '../types';
 import { DEFAULT_STATE } from '../defaultState';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, FUEL_ITEM_IDS } from '../data/heat';
+import { FERTILIZER_ITEM_IDS, FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
 import { ITEMS, itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { CODEX_RECIPE_ORDER, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
@@ -134,6 +135,7 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
 export function SettingsTab({ state, setState, safeMode = false }: SettingsTabProps) {
   const lang = state.language;
   const fuel = getFuelSettings(state);
+  const fertilizer = getFertilizerSettings(state);
 
   function patchSettings(patch: Partial<AppSettings>) {
     setState({ ...state, settings: { ...state.settings, ...patch } });
@@ -146,6 +148,19 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
         ...state.settings,
         fuel: {
           ...fuel,
+          ...patch,
+        },
+      },
+    });
+  }
+
+  function patchFertilizerSettings(patch: Partial<AppSettings['fertilizer']>) {
+    setState({
+      ...state,
+      settings: {
+        ...state.settings,
+        fertilizer: {
+          ...fertilizer,
           ...patch,
         },
       },
@@ -420,6 +435,62 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                     patchFuelSettings({ otherOverheadHeatPerSec: Number(event.target.value) })
                   }
                 />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel settings-panel fertilizer-settings-panel">
+          <h2>{lang === 'ja' ? '肥料' : 'Fertilizer'}</h2>
+
+          <div className="settings-panel-body">
+            <div className="settings-form-grid">
+              <label className="form-field">
+                <span>{lang === 'ja' ? '肥料計算' : 'Fertilizer calculation'}</span>
+                <span className="checkbox-control">
+                  <input
+                    id="fertilizer-enabled"
+                    name="fertilizer-enabled"
+                    type="checkbox"
+                    checked={fertilizer.enabled}
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchFertilizerSettings({ enabled: event.target.checked })}
+                  />
+                  <span>{lang === 'ja' ? '有効' : 'Enabled'}</span>
+                </span>
+              </label>
+
+              <label className="form-field">
+                <span>{lang === 'ja' ? '使用肥料' : 'Fertilizer'}</span>
+                <select
+                  id="fertilizer-item"
+                  name="fertilizer-item"
+                  value={fertilizer.fertilizerItemId}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) => patchFertilizerSettings({ fertilizerItemId: event.target.value })}
+                >
+                  {FERTILIZER_ITEM_IDS.map((itemId) => (
+                    <option key={itemId} value={itemId}>
+                      {recipeItemName(itemId, lang)} ({FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[itemId]} / {FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[itemId]}/s)
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-field">
+                <span>{lang === 'ja' ? '肥料の扱い' : 'Fertilizer source'}</span>
+                <select
+                  id="fertilizer-source-mode"
+                  name="fertilizer-source-mode"
+                  value={fertilizer.fertilizerSourceMode}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchFertilizerSettings({ fertilizerSourceMode: event.target.value as AppSettings['fertilizer']['fertilizerSourceMode'] })
+                  }
+                >
+                  <option value="craft">{lang === 'ja' ? '内部生産' : 'Craft internally'}</option>
+                  <option value="buy">{lang === 'ja' ? '購入扱い' : 'Buy'}</option>
+                </select>
               </label>
             </div>
           </div>
