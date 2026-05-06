@@ -1364,6 +1364,33 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
     });
   }
 
+
+  if (invalidNumericFlows.length > 0) {
+    const affectedItemIds = [...new Set(invalidNumericFlows.map((flow) => flow.itemId))].sort();
+    const affectedRecipeIds = [
+      ...new Set(
+        invalidNumericFlows.flatMap((flow) => [
+          flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+          flow.to.type === 'recipe' ? flow.to.recipeId : undefined,
+        ]).filter((value): value is string => typeof value === 'string'),
+      ),
+    ].sort();
+
+    issues.push({
+      severity: 'warning',
+      code: 'INVALID_NUMERIC_CONTEXT',
+      messageJa: '非数値が発生しているアイテム・レシピの概要です。',
+      messageEn: 'Summary of items and recipes affected by invalid numeric values.',
+      data: {
+        affectedItems: affectedItemIds.map((itemId) => ({ itemId, itemNameJa: debugItemNameJa(itemId) })),
+        affectedRecipes: affectedRecipeIds.map((recipeId) => ({ recipeId, recipeNameJa: debugRecipeNameJa(recipeId) })),
+        invalidFlowCount: invalidNumericFlows.length,
+        invalidItemStatCount: invalidItemStats.length,
+        invalidRecipeStatCount: invalidRecipeStats.length,
+      },
+    });
+  }
+
   if (invalidNumericFlows.length > 0) {
     const recipeEdges = result.flows.filter((flow) => flow.from.type === 'recipe' && flow.to.type === 'recipe');
     const invalidRecipeIds = new Set<string>();
@@ -1402,9 +1429,18 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
             },
           ];
           const key = cycle.map((step) => step.recipeId).join('>');
-          if (!seenCycles.has(key)) {
+          const hasInvalidStep = cycle.some((step) => step.invalid === true);
+          if (!seenCycles.has(key) && hasInvalidStep) {
             seenCycles.add(key);
-            cycles.push(cycle);
+            cycles.push({
+              cycleTextJa: cycle
+                .map((step) =>
+                  step.viaItemNameJa ? step.viaItemNameJa + '→' + step.recipeNameJa : step.recipeNameJa,
+                )
+                .join(' → '),
+              invalidStepCount: cycle.filter((step) => step.invalid === true).length,
+              steps: cycle,
+            });
           }
           continue;
         }
@@ -1477,7 +1513,10 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
     });
   }
 
+  const invalidNumericFlowIds = new Set(invalidNumericFlows.map((flow) => flow.id));
   const invalidTransportFlows = result.flows.filter((flow) => {
+    if (invalidNumericFlowIds.has(flow.id)) return false;
+    if (!isFiniteDebugNumber(flow.rate) || !isFiniteDebugNumber(flow.belts) || !isFiniteDebugNumber(flow.transportUnits)) return false;
     if (flow.transportKind === 'pipeline') return flow.transportUnits !== 1 || flow.belts !== 1;
     return flow.transportKind === 'belt' && flow.transportUnits !== flow.belts;
   });

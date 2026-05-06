@@ -1272,3 +1272,35 @@ a {
 .flow-wrap .react-flow__node {
   z-index: 10 !important;
 }
+
+
+/* v0.5.8: force graph nodes above edges and edge labels */
+.flow-wrap .react-flow__edges {
+  z-index: 1 !important;
+}
+
+.flow-wrap .react-flow__edgelabel-renderer,
+.flow-wrap .react-flow__edge-labels {
+  z-index: 2 !important;
+  pointer-events: none;
+}
+
+.flow-wrap .react-flow__nodes {
+  z-index: 20 !important;
+}
+
+.flow-wrap .react-flow__node {
+  z-index: 20 !important;
+}
+
+.flow-wrap .react-flow__node.selected,
+.flow-wrap .react-flow__node:focus,
+.flow-wrap .react-flow__node:focus-visible {
+  z-index: 25 !important;
+}
+
+.flow-wrap .planner-node {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+}
