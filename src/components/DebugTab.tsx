@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import JSZip from 'jszip';
 import type { AppState, Lang } from '../types';
 import { calculate, calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { buildFlowGraphSvg } from '../engine/graph';
@@ -39,6 +40,63 @@ function downloadText(filename: string, text: string, mimeType: string): void {
   link.download = filename;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+
+function downloadBlob(filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function safeFilePart(value: string): string {
+  const cleaned = value
+    .replace(/\.[^.\\/]+$/u, '')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return cleaned || 'debug-input';
+}
+
+function getImportedJsonBaseName(): string {
+  try {
+    const name = sessionStorage.getItem('alchemyfactory:last-import-json-name');
+    if (name) return safeFilePart(name);
+  } catch {
+    // Session storage is optional.
+  }
+  return 'current-state';
+}
+
+function getImportedJsonText(): string | undefined {
+  try {
+    return sessionStorage.getItem('alchemyfactory:last-import-json-text') ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function captureLiveGraphFile(): Promise<{ extension: string; blob: Blob }> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error('Timed out while capturing live graph')), 4500);
+    window.dispatchEvent(
+      new CustomEvent('alchemyfactory:capture-live-graph', {
+        detail: {
+          resolve: (file: { extension: string; blob: Blob }) => {
+            window.clearTimeout(timeout);
+            resolve(file);
+          },
+          reject: (error: unknown) => {
+            window.clearTimeout(timeout);
+            reject(error instanceof Error ? error : new Error(String(error)));
+          },
+        },
+      }),
+    );
+  });
 }
 
 function escapeXml(value: string): string {
@@ -270,6 +328,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
           autoBuy: 'auto→buy',
           saveLog: 'ログ保存',
           saveGraph: 'グラフSVG保存',
+      saveZip: '検証ZIP保存',
           notYet: '未生成',
           logSaved: 'ログを保存しました。',
           graphSaved: 'グラフSVGを保存しました。',
@@ -284,6 +343,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
           autoBuy: 'auto→buy',
           saveLog: 'Save log',
           saveGraph: 'Save graph SVG',
+      saveZip: 'Save verification ZIP',
           notYet: 'Not generated',
           logSaved: 'Saved log.',
           graphSaved: 'Saved graph SVG.',
@@ -304,7 +364,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
     };
   }
 
-  function saveDebugLog(): void {
+  function buildDebugArtifact() {
     const input = buildInput();
     const result = calculate(input);
     const { debugLog } = calculateWithDebug(input);
@@ -334,17 +394,33 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
       ...debugLogBody,
       issues: normalizedIssues,
     };
+    const resultForSvg = {
+      ...result,
+      errorSummaries: normalizedErrorSummaries,
+    };
+    return {
+      input,
+      result,
+      resultForSvg,
+      debugLog,
+      normalizedIssues,
+      enrichedDebugLog,
+    };
+  }
+
+  function saveDebugLog(): void {
+    const artifact = buildDebugArtifact();
     downloadText(
       'alchemy-factory-calculator-debug-' + timestampForFile() + '.json',
-      JSON.stringify(enrichedDebugLog, null, 2),
+      JSON.stringify(artifact.enrichedDebugLog, null, 2),
       'application/json;charset=utf-8',
     );
     setLastSummary({
-      itemCount: debugLog.summary.itemCount,
-      recipeCount: debugLog.summary.recipeCount,
-      flowCount: debugLog.summary.flowCount,
-      issueCount: normalizedIssues.length,
-      purchasedAutoCraftableCount: debugLog.summary.purchasedAutoCraftableCount,
+      itemCount: artifact.debugLog.summary.itemCount,
+      recipeCount: artifact.debugLog.summary.recipeCount,
+      flowCount: artifact.debugLog.summary.flowCount,
+      issueCount: artifact.normalizedIssues.length,
+      purchasedAutoCraftableCount: artifact.debugLog.summary.purchasedAutoCraftableCount,
       savedAt: new Date().toLocaleTimeString(),
     });
     setStatus(labels.logSaved);
@@ -352,18 +428,65 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
 
   function saveGraphSvg(): void {
     try {
-      const result = calculate(buildInput());
-      const resultForSvg = {
-        ...result,
-        errorSummaries: normalizeCycleErrorSummaries(
-          (result as typeof result & { errorSummaries?: unknown[] }).errorSummaries ?? [],
-        ),
-      };
-      const svg = buildFlowGraphSvg(resultForSvg as typeof result, lang, state.settings, state.completedGraphNodeIds);
+      const artifact = buildDebugArtifact();
+      const svg = buildFlowGraphSvg(
+        artifact.resultForSvg as typeof artifact.result,
+        lang,
+        state.settings,
+        state.completedGraphNodeIds,
+      );
       downloadText('alchemy-factory-calculator-graph-' + timestampForFile() + '.svg', svg, 'image/svg+xml;charset=utf-8');
       setStatus(labels.graphSaved);
     } catch (error) {
       setStatus(labels.graphFailed + ' ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  async function saveVerificationZip(): Promise<void> {
+    try {
+      const artifact = buildDebugArtifact();
+      const baseName = getImportedJsonBaseName();
+      const timestamp = timestampForFile();
+      const zip = new JSZip();
+      const rawImportedJson = getImportedJsonText();
+
+      if (rawImportedJson) {
+        zip.file(baseName + '__source.json', rawImportedJson);
+      }
+      zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
+      zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
+      zip.file(
+        baseName + '__graph.svg',
+        buildFlowGraphSvg(artifact.resultForSvg as typeof artifact.result, lang, state.settings, state.completedGraphNodeIds),
+      );
+
+      try {
+        const liveGraph = await captureLiveGraphFile();
+        zip.file(baseName + '__graph-live.' + liveGraph.extension, liveGraph.blob);
+      } catch (error) {
+        zip.file(
+          baseName + '__graph-live-error.txt',
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      downloadBlob(baseName + '__verification-' + timestamp + '.zip', blob);
+      setLastSummary({
+        itemCount: artifact.debugLog.summary.itemCount,
+        recipeCount: artifact.debugLog.summary.recipeCount,
+        flowCount: artifact.debugLog.summary.flowCount,
+        issueCount: artifact.normalizedIssues.length,
+        purchasedAutoCraftableCount: artifact.debugLog.summary.purchasedAutoCraftableCount,
+        savedAt: new Date().toLocaleTimeString(),
+      });
+      setStatus(lang === 'ja' ? '検証ZIPを保存しました。' : 'Saved verification ZIP.');
+    } catch (error) {
+      setStatus(
+        (lang === 'ja' ? '検証ZIP保存に失敗しました。' : 'Failed to save verification ZIP.') +
+          ' ' +
+          (error instanceof Error ? error.message : String(error)),
+      );
     }
   }
 
@@ -389,6 +512,9 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
           <button type="button" onClick={saveGraphSvg}>
             {labels.saveGraph}
           </button>
+        <button type="button" onClick={() => void saveVerificationZip()}>
+          {labels.saveZip}
+        </button>
         </div>
       </div>
 

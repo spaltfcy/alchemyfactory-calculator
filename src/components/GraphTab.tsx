@@ -431,9 +431,9 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function saveGraphElementAsPng(lang: Lang) {
+async function buildGraphElementFile(lang: Lang): Promise<{ extension: 'png' | 'svg'; blob: Blob }> {
   const element = document.querySelector('.flow-wrap') as HTMLElement | null;
-  if (!element) return;
+  if (!element) throw new Error('Graph element was not found.');
 
   if (document.fonts?.ready) {
     try {
@@ -446,6 +446,8 @@ async function saveGraphElementAsPng(lang: Lang) {
   const rect = element.getBoundingClientRect();
   const width = Math.max(1, Math.ceil(rect.width));
   const height = Math.max(1, Math.ceil(rect.height));
+  if (width <= 1 || height <= 1) throw new Error('Graph element is not visible.');
+
   const clone = element.cloneNode(true) as HTMLElement;
   clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   clone.style.width = width + 'px';
@@ -472,7 +474,6 @@ async function saveGraphElementAsPng(lang: Lang) {
     xhtml +
     '</div></foreignObject></svg>';
 
-  const timestamp = graphPngTimestamp();
   const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const svgUrl = URL.createObjectURL(svgBlob);
 
@@ -501,18 +502,24 @@ async function saveGraphElementAsPng(lang: Lang) {
       }, 'image/png');
     });
 
-    downloadBlob(pngBlob, 'alchemy-factory-calculator-graph-live-' + timestamp + '.png');
+    return { extension: 'png', blob: pngBlob };
   } catch (error) {
     console.warn(
       lang === 'ja'
-        ? 'グラフ保存のPNG生成に失敗したためSVGを保存します。'
-        : 'Failed to create graph PNG. Saving SVG instead.',
+        ? 'グラフ保存のPNG生成に失敗したためSVGを使用します。'
+        : 'Failed to create graph PNG. Using SVG instead.',
       error,
     );
-    downloadBlob(svgBlob, 'alchemy-factory-calculator-graph-live-' + timestamp + '.svg');
+    return { extension: 'svg', blob: svgBlob };
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
+}
+
+async function saveGraphElementAsPng(lang: Lang) {
+  const timestamp = graphPngTimestamp();
+  const file = await buildGraphElementFile(lang);
+  downloadBlob(file.blob, 'alchemy-factory-calculator-graph-live-' + timestamp + '.' + file.extension);
 }
 
 function GraphControls({ lang, isInteractive, onToggleInteractive }: GraphControlsProps) {
@@ -557,6 +564,19 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
     };
     window.addEventListener('alchemyfactory:save-live-graph', onSaveGraph);
     return () => window.removeEventListener('alchemyfactory:save-live-graph', onSaveGraph);
+  }, [lang]);
+
+  useEffect(() => {
+    const onCaptureGraph = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        resolve?: (file: { extension: 'png' | 'svg'; blob: Blob }) => void;
+        reject?: (error: unknown) => void;
+      }>).detail;
+      if (!detail?.resolve) return;
+      void buildGraphElementFile(lang).then(detail.resolve, detail.reject);
+    };
+    window.addEventListener('alchemyfactory:capture-live-graph', onCaptureGraph);
+    return () => window.removeEventListener('alchemyfactory:capture-live-graph', onCaptureGraph);
   }, [lang]);
   const raw = useMemo(() => buildFlowGraph(graphResult, lang, settings, {}), [graphResult, lang, settings]);
 

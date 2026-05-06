@@ -13,7 +13,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.5.13';
+const APP_VERSION = '0.5.14';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -145,20 +145,44 @@ export function App() {
     setState((current) => (current.activeTab === 'debug' ? { ...current, activeTab: 'graph' } : current));
   }, [runtimeFlags.debug, state.activeTab]);
 
+  const targetCalculationKey = useMemo(
+    () =>
+      JSON.stringify(
+        state.targets
+          .map((target) => ({
+            id: target.id,
+            recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
+            outputItemId: target.outputItemId,
+            mode: target.mode,
+            value: target.value,
+          }))
+          .sort((a, b) => a.id.localeCompare(b.id)),
+      ),
+    [state.targets, state.recipePreferences],
+  );
+
+  const calculationTargets = useMemo(
+    () =>
+      state.targets
+        .map((target) => ({
+          ...target,
+          recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    [targetCalculationKey],
+  );
+
   const result = useMemo(
     () =>
       calculate({
-        targets: state.targets.map((target) => ({
-        ...target,
-        recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
-      })),
+        targets: calculationTargets,
         settings: state.settings,
         abilities: state.abilities,
         recipePreferences: state.recipePreferences,
         surplusPolicies: state.surplusPolicies,
         itemSourceModes: state.itemSourceModes,
       }),
-    [state.targets, state.settings, state.abilities, state.recipePreferences, state.surplusPolicies, state.itemSourceModes],
+    [calculationTargets, state.settings, state.abilities, state.recipePreferences, state.surplusPolicies, state.itemSourceModes],
   );
 
   function setActiveTab(activeTab: AppState['activeTab']) {

@@ -169,8 +169,13 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
 
   async function importJson(file: File | undefined) {
     if (!file) return;
-
     const raw = await file.text();
+    try {
+      sessionStorage.setItem('alchemyfactory:last-import-json-name', file.name);
+      sessionStorage.setItem('alchemyfactory:last-import-json-text', raw);
+    } catch {
+      // The imported file name is only used for debug artifact naming.
+    }
     const parsed = JSON.parse(raw) as Partial<AppState>;
     setState(mergeState(state, parsed));
   }
