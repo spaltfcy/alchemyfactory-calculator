@@ -27,6 +27,7 @@ export type PlannerNodeData = {
   targetHandles?: PlannerHandleData[];
   badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' }>;
   isInitialInvestment?: boolean;
+  hasStartupWarning?: boolean;
   isFuelSource?: boolean;
 };
 
@@ -140,8 +141,9 @@ function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
       cycleSide: isSelfLoop ? 1 : 0,
       labelShiftY: isSelfLoop ? -42 : 0,
       outputOrder: 9999,
-      sourceSide: isSelfLoop ? 'top' : sourceSide(flow.role),
-      targetSide: isSelfLoop ? 'top' : targetSide(flow.role),
+      sourceSide: isSelfLoop ? 'right' : sourceSide(flow.role),
+      targetSide: isSelfLoop ? 'left' : targetSide(flow.role),
+      isSelfLoop,
     },
   };
 }
@@ -172,7 +174,7 @@ function endpointLabel(endpoint: InitialInvestmentEndpoint, lang: Lang): { label
   return {
     label: (lang === 'ja' ? '初期投資: ' : 'Startup: ') + itemName(endpoint.itemId, lang),
     kind: 'final',
-    subLabel: lang === 'ja' ? '本ラインには接続しません' : 'Not connected to the main line',
+    subLabel: undefined,
   };
 }
 
@@ -246,6 +248,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
         kind: 'recipe',
         subLabel: nodeSubtitle(lines),
         badges: badges.length ? badges : undefined,
+        hasStartupWarning: requiredStartupItemIds.length > 0,
         isFuelSource,
       } satisfies PlannerNodeData,
     };
@@ -539,11 +542,13 @@ function measureSvgNode(node: Node): { width: number; height: number } {
   const badgeWidths = (data.badges ?? []).map((badge) => estimateSvgTextWidth(badge.text, 11, true) + 22);
   const titleWidth = estimateSvgTextWidth(data.label, 15, true) + 28;
   const subWidth = subLines.reduce((max, line) => Math.max(max, estimateSvgTextWidth(line, 12) + 24), 0);
-  const badgeWidth = badgeWidths.length ? badgeWidths.reduce((sum, value) => sum + value, 0) + Math.max(0, badgeWidths.length - 1) * 6 + 18 : 0;
-  let width = Math.max(180, Math.ceil(Math.max(titleWidth, subWidth, badgeWidth)));
+  const stackedBadgeWidth = badgeWidths.length ? Math.max(...badgeWidths) + 18 : 0;
+  let width = Math.max(180, Math.ceil(Math.max(titleWidth + stackedBadgeWidth, subWidth)));
   if (data.kind === 'recipe') width = Math.max(width, 228);
   if (data.kind === 'final') width = Math.max(width, 210);
-  const height = 48 + subLines.length * 16 + ((data.badges?.length ?? 0) > 0 ? 24 : 0);
+  if (data.hasStartupWarning) width = Math.ceil(width * 1.2);
+  const stackedBadgeExtraHeight = Math.max(0, ((data.badges?.length ?? 0) - 1) * 20);
+  const height = 48 + subLines.length * 16 + stackedBadgeExtraHeight;
   return { width, height: Math.max(56, height) };
 }
 
@@ -703,6 +708,38 @@ function buildSvgEdgePath(
   return 'M ' + source.x.toFixed(1) + ' ' + source.y.toFixed(1) + ' C ' + c1.x.toFixed(1) + ' ' + c1.y.toFixed(1) + ', ' + c2.x.toFixed(1) + ' ' + c2.y.toFixed(1) + ', ' + target.x.toFixed(1) + ' ' + target.y.toFixed(1);
 }
 
+function buildSvgCyclePath(
+  source: { x: number; y: number; side: PlannerHandleSide },
+  target: { x: number; y: number; side: PlannerHandleSide },
+  side: number,
+): { path: string; labelX: number; labelY: number } {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const length = Math.max(Math.hypot(dx, dy), 1);
+  const nx = -dy / length;
+  const ny = dx / length;
+  const offset = Math.min(132, Math.max(68, length * 0.24)) * side;
+  const controlX = (source.x + target.x) / 2 + nx * offset;
+  const controlY = (source.y + target.y) / 2 + ny * offset;
+  return {
+    path:
+      'M ' +
+      source.x.toFixed(1) +
+      ' ' +
+      source.y.toFixed(1) +
+      ' Q ' +
+      controlX.toFixed(1) +
+      ' ' +
+      controlY.toFixed(1) +
+      ' ' +
+      target.x.toFixed(1) +
+      ' ' +
+      target.y.toFixed(1),
+    labelX: source.x * 0.25 + controlX * 0.5 + target.x * 0.25,
+    labelY: source.y * 0.25 + controlY * 0.5 + target.y * 0.25,
+  };
+}
+
 function renderSvgNodeHandles(node: SvgGraphNode, handles: PlannerHandleData[] | undefined, kind: 'source' | 'target'): string {
   const list = handles ?? [];
   return list
@@ -731,16 +768,17 @@ function renderSvgNode(node: SvgGraphNode): string {
   }
 
   if ((data.badges?.length ?? 0) > 0) {
-    let badgeX = node.x + 12;
-    const badgeY = node.y + node.height - 24;
+    const badgeRight = node.x + node.width - 10;
+    let badgeY = node.y + 8;
     for (const badge of data.badges ?? []) {
       const badgeWidth = Math.max(42, estimateSvgTextWidth(badge.text, 11, true) + 16);
+      const badgeX = badgeRight - badgeWidth;
       const fill = badge.kind === 'heat' ? '#4a2a0a' : badge.kind === 'warning' ? '#4a3b0a' : '#14314a';
       const stroke = badge.kind === 'heat' ? '#ff922b' : badge.kind === 'warning' ? '#ffd43b' : '#4dabf7';
       const textFill = badge.kind === 'heat' ? '#ffe8cc' : badge.kind === 'warning' ? '#fff3bf' : '#d0ebff';
       lines.push('<rect x="' + badgeX.toFixed(1) + '" y="' + badgeY.toFixed(1) + '" width="' + badgeWidth.toFixed(1) + '" height="18" rx="9" ry="9" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>');
       lines.push('<text x="' + (badgeX + badgeWidth / 2).toFixed(1) + '" y="' + (badgeY + 12.5).toFixed(1) + '" fill="' + textFill + '" font-size="11" font-family="Segoe UI, Noto Sans JP, sans-serif" font-weight="700" text-anchor="middle">' + escapeSvgText(badge.text) + '</text>');
-      badgeX += badgeWidth + 6;
+      badgeY += 20;
     }
   }
 
@@ -811,15 +849,24 @@ export function buildFlowGraphSvg(
         itemName?: string;
         rateLabel?: string;
         color?: string;
+        cycleSide?: number;
         labelShiftY?: number;
       } | undefined;
       const style = edge.style as { stroke?: string; strokeWidth?: number | string; strokeDasharray?: string } | undefined;
       const color = String(edgeData?.color ?? style?.stroke ?? DEFAULT_OUTPUT_COLOR);
       const sourcePoint = svgHandlePoint(sourceNode, edge.sourceHandle, 'source');
       const targetPoint = svgHandlePoint(targetNode, edge.targetHandle, 'target');
-      const path = buildSvgEdgePath(sourcePoint, targetPoint);
-      const midX = (sourcePoint.x + targetPoint.x) / 2;
-      const midY = (sourcePoint.y + targetPoint.y) / 2 + Number(edgeData?.labelShiftY ?? 0);
+      const cycleSide = Number(edgeData?.cycleSide ?? 0);
+      const pathData = cycleSide !== 0
+        ? buildSvgCyclePath(sourcePoint, targetPoint, cycleSide)
+        : {
+            path: buildSvgEdgePath(sourcePoint, targetPoint),
+            labelX: (sourcePoint.x + targetPoint.x) / 2,
+            labelY: (sourcePoint.y + targetPoint.y) / 2,
+          };
+      const path = pathData.path;
+      const midX = pathData.labelX;
+      const midY = pathData.labelY + Number(edgeData?.labelShiftY ?? 0);
       const dash = style?.strokeDasharray ? ' stroke-dasharray="' + escapeSvgText(String(style.strokeDasharray)) + '"' : '';
       const strokeWidth = String(style?.strokeWidth ?? 2.15);
       const opacity = edgeData?.itemName?.includes('(fuel)') || edgeData?.itemName?.includes('(fertilizer)') ? '0.78' : '0.97';

@@ -834,17 +834,21 @@ a {
 
 /* v0.3.14: heat/fuel graph badges and side handles */
 .planner-node-title-line {
- display: flex;
- align-items: center;
- justify-content: space-between;
- gap: 8px;
+  position: relative;
+  display: block;
+  min-height: 1.35rem;
+  padding-right: 8.8rem;
 }
 
 .planner-node-badges {
- display: inline-flex;
- align-items: center;
- gap: 4px;
- flex-shrink: 0;
+  position: absolute;
+  top: -0.1rem;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  z-index: 2;
 }
 
 .planner-node-badge {
@@ -1125,4 +1129,15 @@ a {
 .planner-node.is-initial-investment .planner-node-title,
 .planner-node.is-initial-investment .planner-node-title-line {
   color: #edf2f7;
+}
+
+
+/* v0.5.4: stacked badges and self-cycle node width */
+.planner-node.is-startup-warning {
+  min-width: 12.6rem;
+  max-width: 21.6rem;
+}
+
+.planner-node.is-startup-warning .planner-node-title-line {
+  padding-right: 9.6rem;
 }

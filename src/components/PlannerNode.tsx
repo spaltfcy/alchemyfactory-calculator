@@ -36,7 +36,8 @@ export function PlannerNode({ data }: NodeProps) {
     kind +
     (nodeData.completed ? ' is-completed' : '') +
     (nodeData.isFuelSource ? ' is-fuel-source' : '') +
-    (nodeData.isInitialInvestment ? ' is-initial-investment' : '');
+    (nodeData.isInitialInvestment ? ' is-initial-investment' : '') +
+    (nodeData.hasStartupWarning ? ' is-startup-warning' : '');
 
   return (
     <div className={className} title={nodeData.tooltip}>
@@ -47,6 +48,7 @@ export function PlannerNode({ data }: NodeProps) {
           type="target"
           position={handlePosition(handle.side, 'left')}
           style={handleStyle(handle.topPct, handle.color, handle.side, 'left')}
+          isConnectable={false}
         />
       ))}
 
@@ -55,18 +57,14 @@ export function PlannerNode({ data }: NodeProps) {
           {nodeData.completed ? '✓ ' : ''}
           {nodeData.label}
         </div>
-
         {nodeData.badges && nodeData.badges.length > 0 && (
-          <span className="planner-node-badges">
-            {nodeData.badges.map((badge) => (
-              <span
-                key={badge.kind + ':' + badge.text}
-                className={'planner-node-badge planner-node-badge-' + badge.kind}
-              >
+          <div className="planner-node-badges">
+            {nodeData.badges.map((badge, index) => (
+              <span key={index} className={'planner-node-badge planner-node-badge-' + badge.kind}>
                 {badge.text}
               </span>
             ))}
-          </span>
+          </div>
         )}
       </div>
 
@@ -79,6 +77,7 @@ export function PlannerNode({ data }: NodeProps) {
           type="source"
           position={handlePosition(handle.side, 'right')}
           style={handleStyle(handle.topPct, handle.color, handle.side, 'right')}
+          isConnectable={false}
         />
       ))}
     </div>

@@ -1,6 +1,7 @@
 import type { AppSettings, Recipe } from '../types';
 import { DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing, recipeById } from '../data/recipes';
 import { economyByItemId } from '../data/economy';
+import { itemById } from '../data/items';
 import { safeCeil } from '../utils/format';
 import type { CalculateInput, CalculationResult, RecipeStat } from './calculate';
 
@@ -9,6 +10,8 @@ export type InitialInvestmentEndpoint =
   | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'stock' }
   | { type: 'itemSink'; itemId: string; sinkMode: 'initial' };
 
+export type InitialInvestmentTransportKind = 'belt' | 'pipeline';
+
 export type InitialInvestmentFlow = {
   id: string;
   from: InitialInvestmentEndpoint;
@@ -16,6 +19,8 @@ export type InitialInvestmentFlow = {
   itemId: string;
   rate: number;
   belts: number;
+  transportKind: InitialInvestmentTransportKind;
+  transportUnits: number;
   role: 'material';
 };
 
@@ -84,6 +89,12 @@ function flowBelts(rate: number, conveyorItemsPerMinute: number): number {
   return Math.max(1, safeCeil(rate / capacity));
 }
 
+function transportKindForItem(itemId: string): InitialInvestmentTransportKind {
+  const physicalState = itemId === 'steam' ? 'steam' : (itemById[itemId]?.physicalState ?? 'solid');
+  return physicalState === 'liquid' || physicalState === 'steam' ? 'pipeline' : 'belt';
+}
+
+
 function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMinute: number, productionSpeedMultiplier: number): void {
   const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
@@ -134,7 +145,19 @@ function addFlow(
     endpointKey(to) +
     ':' +
     itemId;
-  group.flows.push({ id, from, to, itemId, rate, belts: flowBelts(rate, conveyorItemsPerMinute), role: 'material' });
+  const belts = flowBelts(rate, conveyorItemsPerMinute);
+  const transportKind = transportKindForItem(itemId);
+  group.flows.push({
+    id,
+    from,
+    to,
+    itemId,
+    rate,
+    belts,
+    transportKind,
+    transportUnits: transportKind === 'pipeline' ? 1 : belts,
+    role: 'material',
+  });
 }
 
 function endpointKey(endpoint: InitialInvestmentEndpoint): string {
