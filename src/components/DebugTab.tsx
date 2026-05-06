@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AppState, Lang } from '../types';
-import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
+import { calculate, calculateWithDebug, type CalculateInput } from '../engine/calculate';
+import { buildFlowGraphSvg } from '../engine/graph';
 
 type DebugTabProps = {
   lang: Lang;
@@ -164,7 +165,8 @@ export function DebugTab({ lang, state }: DebugTabProps) {
 
   function saveGraphSvg(): void {
     try {
-      const svg = buildGraphSvg();
+      const result = calculate(buildInput());
+      const svg = buildFlowGraphSvg(result, lang, state.settings, state.completedGraphNodeIds);
       downloadText('alchemy-factory-calculator-graph-' + timestampForFile() + '.svg', svg, 'image/svg+xml;charset=utf-8');
       setStatus(labels.graphSaved);
     } catch (error) {
