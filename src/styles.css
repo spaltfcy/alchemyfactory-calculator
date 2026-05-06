@@ -1371,13 +1371,14 @@ a {
 .target-card-actions {
   position: static;
   display: flex;
-  gap: 0.25rem;
-  align-items: end;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 0.18rem;
+  align-items: stretch;
+  justify-content: flex-start;
   align-self: end;
   right: auto;
   top: auto;
-  min-height: 2.25rem;
+  min-height: auto;
 }
 
 .target-card-actions .target-order-button,
@@ -1386,13 +1387,13 @@ a {
   place-items: center;
   width: 1.8rem;
   min-width: 1.8rem;
-  height: 2.25rem;
-  min-height: 2.25rem;
+  height: 1.25rem;
+  min-height: 1.25rem;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   background: rgba(255, 255, 255, 0.04);
   color: #dbeafe;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   line-height: 1;
 }
 

@@ -242,7 +242,16 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
               </select>
             </label>
 
-            <div className="target-card-actions" aria-label={lang === 'ja' ? '並び替えと削除' : 'Sort and remove'}>
+            <div className="target-card-actions" aria-label={lang === 'ja' ? '削除と並び替え' : 'Remove and sort'}>
+              <button
+                type="button"
+                className="target-remove danger"
+                aria-label={removeLabel}
+                title={removeLabel}
+                onClick={() => commitTargets(draftTargets.filter((x) => x.id !== target.id))}
+              >
+                ×
+              </button>
               <button
                 type="button"
                 className="target-order-button"
@@ -262,15 +271,6 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
                 onClick={() => reorderTarget(index, 1)}
               >
                 ↓
-              </button>
-              <button
-                type="button"
-                className="target-remove danger"
-                aria-label={removeLabel}
-                title={removeLabel}
-                onClick={() => commitTargets(draftTargets.filter((x) => x.id !== target.id))}
-              >
-                ×
               </button>
             </div>
           </div>

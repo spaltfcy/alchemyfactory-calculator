@@ -292,7 +292,10 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
 
   function buildInput(): CalculateInput {
     return {
-      targets: state.targets,
+      targets: state.targets.map((target) => ({
+        ...target,
+        recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
+      })),
       settings: state.settings,
       abilities: state.abilities,
       recipePreferences: state.recipePreferences,
