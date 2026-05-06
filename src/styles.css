@@ -1418,3 +1418,112 @@ a {
     grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width) max-content;
   }
 }
+
+
+/* v0.5.16: debug panel layout cleanup */
+.debug-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "debug-header debug-actions"
+    "debug-summary debug-summary"
+    "debug-status debug-status";
+  gap: 0.9rem 1.25rem;
+  align-items: start;
+}
+
+.debug-panel .debug-header {
+  grid-area: debug-header;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+}
+
+.debug-panel .debug-header h2 {
+  margin: 0;
+}
+
+.debug-panel .debug-header span {
+  color: var(--muted-text);
+  font-weight: 700;
+}
+
+.debug-panel .debug-actions {
+  grid-area: debug-actions;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: min(100%, 28rem);
+}
+
+.debug-panel .debug-actions button {
+  min-height: 2.35rem;
+  padding: 0.55rem 1rem;
+  white-space: nowrap;
+}
+
+.debug-panel .debug-summary {
+  grid-area: debug-summary;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(6.5rem, 1fr));
+  gap: 0.65rem;
+  align-items: stretch;
+  width: 100%;
+}
+
+.debug-panel .debug-summary > div {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 0.18rem;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.debug-panel .debug-summary span {
+  color: var(--muted-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: none;
+}
+
+.debug-panel .debug-summary strong {
+  color: var(--text);
+  font-size: 1.08rem;
+  line-height: 1.15;
+}
+
+.debug-panel .debug-status {
+  grid-area: debug-status;
+  margin: 0;
+  color: var(--muted-text);
+  font-weight: 700;
+}
+
+@media (max-width: 58rem) {
+  .debug-panel {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "debug-header"
+      "debug-actions"
+      "debug-summary"
+      "debug-status";
+  }
+
+  .debug-panel .debug-actions {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .debug-panel .debug-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
