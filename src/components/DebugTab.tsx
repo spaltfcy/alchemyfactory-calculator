@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import JSZip from 'jszip';
 import type { AppState, Lang } from '../types';
 import { calculate, calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { buildFlowGraphSvg } from '../engine/graph';
 
-type DebugTabProps = { lang: Lang; state: AppState; appVersion: string; gameVersion: string; };
+type DebugTabProps = {
+  lang: Lang;
+  state: AppState;
+  setState: (next: AppState) => void;
+  appVersion: string;
+  gameVersion: string;
+};
 
 type LastSummary = {
   itemCount: number;
@@ -14,6 +20,38 @@ type LastSummary = {
   purchasedAutoCraftableCount: number;
   savedAt: string;
 };
+
+type CycleErrorSummaryLike = {
+  code?: string;
+  messageJa?: string;
+  messageEn?: string;
+  cycleTextJa?: string;
+  cycleTextEn?: string;
+  itemIds?: string[];
+  recipeIds?: string[];
+  [key: string]: unknown;
+};
+
+type DebugIssueLike = {
+  code?: string;
+  data?: unknown;
+  [key: string]: unknown;
+};
+
+type DebugCycleCandidateLike = {
+  cycleTextJa?: string;
+  cycleTextEn?: string;
+  steps?: Array<{
+    recipeId?: string;
+    recipeNameJa?: string;
+    viaItemId?: string;
+    viaItemNameJa?: string;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+};
+
+type LiveGraphFile = { extension: 'png' | 'svg'; blob: Blob };
 
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
@@ -34,14 +72,8 @@ function timestampForFile(): string {
 
 function downloadText(filename: string, text: string, mimeType: string): void {
   const blob = new Blob([text], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadBlob(filename, blob);
 }
-
 
 function downloadBlob(filename: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);
@@ -60,110 +92,6 @@ function safeFilePart(value: string): string {
     .replace(/^_+|_+$/g, '');
   return cleaned || 'debug-input';
 }
-
-function getImportedJsonBaseName(): string {
-  try {
-    const name = sessionStorage.getItem('alchemyfactory:last-import-json-name');
-    if (name) return safeFilePart(name);
-  } catch {
-    // Session storage is optional.
-  }
-  return 'current-state';
-}
-
-function getImportedJsonText(): string | undefined {
-  try {
-    return sessionStorage.getItem('alchemyfactory:last-import-json-text') ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function captureLiveGraphFile(): Promise<{ extension: string; blob: Blob }> {
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => reject(new Error('Timed out while capturing live graph')), 4500);
-    window.dispatchEvent(
-      new CustomEvent('alchemyfactory:capture-live-graph', {
-        detail: {
-          resolve: (file: { extension: string; blob: Blob }) => {
-            window.clearTimeout(timeout);
-            resolve(file);
-          },
-          reject: (error: unknown) => {
-            window.clearTimeout(timeout);
-            reject(error instanceof Error ? error : new Error(String(error)));
-          },
-        },
-      }),
-    );
-  });
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-function shortenText(value: string, limit: number): string {
-  const text = value.replace(/\s+/g, ' ').trim();
-  return text.length > limit ? text.slice(0, limit - 1) + '…' : text;
-}
-
-function buildGraphSvg(): string {
-  const root = document.querySelector('.react-flow') as HTMLElement | null;
-  if (!root) throw new Error('React Flow graph was not found. Open the graph once, then try again.');
-
-  const rootRect = root.getBoundingClientRect();
-  const width = Math.max(1, Math.ceil(rootRect.width));
-  const height = Math.max(1, Math.ceil(rootRect.height));
-  const edgeSvg = root.querySelector('.react-flow__edges svg') as SVGSVGElement | null;
-  const edgeLayer = edgeSvg ? edgeSvg.innerHTML : '';
-
-  const nodeLayer = Array.from(root.querySelectorAll('.react-flow__node'))
-    .map((element) => {
-      const node = element as HTMLElement;
-      const rect = node.getBoundingClientRect();
-      const x = rect.left - rootRect.left;
-      const y = rect.top - rootRect.top;
-      const w = Math.max(1, rect.width);
-      const h = Math.max(1, rect.height);
-      const title = shortenText(node.innerText || node.textContent || '', 54);
-      return [
-        '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="10" ry="10" fill="#172131" stroke="#7864bb" stroke-width="1.2"/>',
-        '<text x="' + (x + 10).toFixed(1) + '" y="' + (y + 22).toFixed(1) + '" fill="#eef5ff" font-size="12" font-family="Segoe UI, Noto Sans JP, sans-serif" font-weight="700">' + escapeXml(title) + '</text>',
-      ].join('\n');
-    })
-    .join('\n');
-
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">',
-    '<rect width="100%" height="100%" fill="#080d15"/>',
-    '<g class="edges">',
-    edgeLayer,
-    '</g>',
-    '<g class="nodes">',
-    nodeLayer,
-    '</g>',
-    '</svg>',
-    '',
-  ].join('\n');
-}
-
-type CycleErrorSummaryLike = {
-  code?: string;
-  messageJa?: string;
-  messageEn?: string;
-  cycleTextJa?: string;
-  cycleTextEn?: string;
-  itemIds?: string[];
-  recipeIds?: string[];
-  [key: string]: unknown;
-};
 
 function splitCycleText(value: unknown): string[] {
   if (typeof value !== 'string') return [];
@@ -257,20 +185,6 @@ function normalizeCycleErrorSummaries(errorSummaries: unknown): CycleErrorSummar
   return normalized;
 }
 
-
-type DebugIssueLike = {
-  code?: string;
-  data?: unknown;
-  [key: string]: unknown;
-};
-
-type DebugCycleCandidateLike = {
-  cycleTextJa?: string;
-  cycleTextEn?: string;
-  steps?: Array<{ recipeId?: string; recipeNameJa?: string; viaItemId?: string; viaItemNameJa?: string; [key: string]: unknown }>;
-  [key: string]: unknown;
-};
-
 function cycleCandidateKey(candidate: DebugCycleCandidateLike): string {
   if (Array.isArray(candidate.steps) && candidate.steps.length > 0) {
     const recipeIds = candidate.steps.map((step) => step.recipeId).filter(Boolean).sort().join(',');
@@ -313,7 +227,131 @@ function normalizeDebugIssues(issues: unknown): unknown[] {
   });
 }
 
-export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps) {
+function mergeImportedState(current: AppState, imported: Partial<AppState>): AppState {
+  return {
+    ...current,
+    ...imported,
+    activeTab: 'graph',
+    settings: {
+      ...current.settings,
+      ...(imported.settings ?? {}),
+      fuel: {
+        ...(current.settings.fuel ?? {}),
+        ...(imported.settings?.fuel ?? {}),
+      },
+      fertilizer: {
+        ...(current.settings.fertilizer ?? {}),
+        ...(imported.settings?.fertilizer ?? {}),
+      },
+    },
+    abilities: {
+      ...current.abilities,
+      ...(imported.abilities ?? {}),
+    },
+    recipePreferences: {
+      ...current.recipePreferences,
+      ...(imported.recipePreferences ?? {}),
+    },
+    surplusPolicies: {
+      ...current.surplusPolicies,
+      ...(imported.surplusPolicies ?? {}),
+    },
+    itemSourceModes: {
+      ...current.itemSourceModes,
+      ...(imported.itemSourceModes ?? {}),
+    },
+    completedGraphNodeIds: {
+      ...current.completedGraphNodeIds,
+      ...(imported.completedGraphNodeIds ?? {}),
+    },
+    nodeNotes: {
+      ...current.nodeNotes,
+      ...(imported.nodeNotes ?? {}),
+    },
+  };
+}
+
+function buildInputFromState(sourceState: AppState): CalculateInput {
+  return {
+    targets: sourceState.targets.map((target) => ({
+      ...target,
+      recipeId: sourceState.recipePreferences[target.outputItemId] ?? target.recipeId,
+    })),
+    settings: sourceState.settings,
+    abilities: sourceState.abilities,
+    recipePreferences: sourceState.recipePreferences,
+    surplusPolicies: sourceState.surplusPolicies,
+    itemSourceModes: sourceState.itemSourceModes,
+  };
+}
+
+function waitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function waitAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+async function waitForGraphRender(timeoutMs = 15000): Promise<void> {
+  const startedAt = performance.now();
+  let stableCount = 0;
+  let lastSignature = '';
+
+  while (performance.now() - startedAt < timeoutMs) {
+    await waitAnimationFrame();
+    await waitAnimationFrame();
+
+    const root = document.querySelector('.flow-wrap') as HTMLElement | null;
+    const nodes = Array.from(document.querySelectorAll('.flow-wrap .react-flow__node')) as HTMLElement[];
+    const edges = Array.from(document.querySelectorAll('.flow-wrap .react-flow__edge')) as HTMLElement[];
+    const errorPanel = document.querySelector('.graph-error-panel');
+    const updatingText = root?.textContent?.includes('更新中') || root?.textContent?.includes('Updating');
+
+    if (!root || updatingText) {
+      stableCount = 0;
+      continue;
+    }
+
+    const signature = nodes.length + ':' + edges.length + ':' + (errorPanel ? 'error' : 'ok');
+    if (signature === lastSignature && (nodes.length > 0 || errorPanel)) {
+      stableCount += 1;
+    } else {
+      stableCount = 0;
+      lastSignature = signature;
+    }
+
+    if (stableCount >= 3) {
+      await waitMs(150);
+      return;
+    }
+  }
+
+  throw new Error('Timed out while waiting for the graph to finish rendering.');
+}
+
+function captureLiveGraphFile(): Promise<LiveGraphFile> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error('Timed out while capturing live graph')), 8000);
+    window.dispatchEvent(
+      new CustomEvent('alchemyfactory:capture-live-graph', {
+        detail: {
+          resolve: (file: LiveGraphFile) => {
+            window.clearTimeout(timeout);
+            resolve(file);
+          },
+          reject: (error: unknown) => {
+            window.clearTimeout(timeout);
+            reject(error instanceof Error ? error : new Error(String(error)));
+          },
+        },
+      }),
+    );
+  });
+}
+
+export function DebugTab({ lang, state, setState, appVersion, gameVersion }: DebugTabProps) {
+  const zipInputRef = useRef<HTMLInputElement | null>(null);
   const [lastSummary, setLastSummary] = useState<LastSummary | null>(null);
   const [status, setStatus] = useState('');
 
@@ -328,11 +366,14 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
           autoBuy: 'auto→buy',
           saveLog: 'ログ保存',
           saveGraph: 'グラフSVG保存',
-      saveZip: '検証ZIP保存',
+          saveZip: '検証ZIP保存',
           notYet: '未生成',
           logSaved: 'ログを保存しました。',
           graphSaved: 'グラフSVGを保存しました。',
           graphFailed: 'グラフSVG保存に失敗しました。',
+          zipSelectFailed: '検証JSONの読込に失敗しました。',
+          zipSaved: '検証ZIPを保存しました。',
+          zipFailed: '検証ZIP保存に失敗しました。',
         }
       : {
           title: 'DEBUG',
@@ -343,29 +384,18 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
           autoBuy: 'auto→buy',
           saveLog: 'Save log',
           saveGraph: 'Save graph SVG',
-      saveZip: 'Save verification ZIP',
+          saveZip: 'Save verification ZIP',
           notYet: 'Not generated',
           logSaved: 'Saved log.',
           graphSaved: 'Saved graph SVG.',
           graphFailed: 'Failed to save graph SVG.',
+          zipSelectFailed: 'Failed to read verification JSON.',
+          zipSaved: 'Saved verification ZIP.',
+          zipFailed: 'Failed to save verification ZIP.',
         };
 
-  function buildInput(): CalculateInput {
-    return {
-      targets: state.targets.map((target) => ({
-        ...target,
-        recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
-      })),
-      settings: state.settings,
-      abilities: state.abilities,
-      recipePreferences: state.recipePreferences,
-      surplusPolicies: state.surplusPolicies,
-      itemSourceModes: state.itemSourceModes,
-    };
-  }
-
-  function buildDebugArtifact() {
-    const input = buildInput();
+  function buildDebugArtifact(sourceState: AppState) {
+    const input = buildInputFromState(sourceState);
     const result = calculate(input);
     const { debugLog } = calculateWithDebug(input);
     const resultWithDebugStatus = result as typeof result & {
@@ -388,7 +418,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 3,
+      debugSchemaVersion: 4,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -398,6 +428,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
       ...result,
       errorSummaries: normalizedErrorSummaries,
     };
+
     return {
       input,
       result,
@@ -408,13 +439,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
     };
   }
 
-  function saveDebugLog(): void {
-    const artifact = buildDebugArtifact();
-    downloadText(
-      'alchemy-factory-calculator-debug-' + timestampForFile() + '.json',
-      JSON.stringify(artifact.enrichedDebugLog, null, 2),
-      'application/json;charset=utf-8',
-    );
+  function refreshSummary(artifact: ReturnType<typeof buildDebugArtifact>) {
     setLastSummary({
       itemCount: artifact.debugLog.summary.itemCount,
       recipeCount: artifact.debugLog.summary.recipeCount,
@@ -423,12 +448,22 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
       purchasedAutoCraftableCount: artifact.debugLog.summary.purchasedAutoCraftableCount,
       savedAt: new Date().toLocaleTimeString(),
     });
+  }
+
+  function saveDebugLog(): void {
+    const artifact = buildDebugArtifact(state);
+    downloadText(
+      'alchemy-factory-calculator-debug-' + timestampForFile() + '.json',
+      JSON.stringify(artifact.enrichedDebugLog, null, 2),
+      'application/json;charset=utf-8',
+    );
+    refreshSummary(artifact);
     setStatus(labels.logSaved);
   }
 
   function saveGraphSvg(): void {
     try {
-      const artifact = buildDebugArtifact();
+      const artifact = buildDebugArtifact(state);
       const svg = buildFlowGraphSvg(
         artifact.resultForSvg as typeof artifact.result,
         lang,
@@ -442,51 +477,48 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
     }
   }
 
-  async function saveVerificationZip(): Promise<void> {
+  async function saveVerificationZipFromFile(file: File): Promise<void> {
+    const baseName = safeFilePart(file.name);
+    const raw = await file.text();
+    const imported = JSON.parse(raw) as Partial<AppState>;
+    const importedState = mergeImportedState(state, imported);
+    const artifact = buildDebugArtifact(importedState);
+    const timestamp = timestampForFile();
+
+    setStatus(lang === 'ja' ? '検証JSONを反映してグラフ描画を待っています。' : 'Applied verification JSON. Waiting for graph render.');
+    setState(importedState);
+
+    const zip = new JSZip();
+    zip.file(baseName + '__source.json', raw);
+    zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
+    zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
+    zip.file(
+      baseName + '__graph.svg',
+      buildFlowGraphSvg(artifact.resultForSvg as typeof artifact.result, lang, importedState.settings, importedState.completedGraphNodeIds),
+    );
+
     try {
-      const artifact = buildDebugArtifact();
-      const baseName = getImportedJsonBaseName();
-      const timestamp = timestampForFile();
-      const zip = new JSZip();
-      const rawImportedJson = getImportedJsonText();
-
-      if (rawImportedJson) {
-        zip.file(baseName + '__source.json', rawImportedJson);
-      }
-      zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
-      zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
-      zip.file(
-        baseName + '__graph.svg',
-        buildFlowGraphSvg(artifact.resultForSvg as typeof artifact.result, lang, state.settings, state.completedGraphNodeIds),
-      );
-
-      try {
-        const liveGraph = await captureLiveGraphFile();
-        zip.file(baseName + '__graph-live.' + liveGraph.extension, liveGraph.blob);
-      } catch (error) {
-        zip.file(
-          baseName + '__graph-live-error.txt',
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-
-      const blob = await zip.generateAsync({ type: 'blob' });
-      downloadBlob(baseName + '__verification-' + timestamp + '.zip', blob);
-      setLastSummary({
-        itemCount: artifact.debugLog.summary.itemCount,
-        recipeCount: artifact.debugLog.summary.recipeCount,
-        flowCount: artifact.debugLog.summary.flowCount,
-        issueCount: artifact.normalizedIssues.length,
-        purchasedAutoCraftableCount: artifact.debugLog.summary.purchasedAutoCraftableCount,
-        savedAt: new Date().toLocaleTimeString(),
-      });
-      setStatus(lang === 'ja' ? '検証ZIPを保存しました。' : 'Saved verification ZIP.');
+      await waitForGraphRender();
+      const liveGraph = await captureLiveGraphFile();
+      zip.file(baseName + '__graph-live.' + liveGraph.extension, liveGraph.blob);
     } catch (error) {
-      setStatus(
-        (lang === 'ja' ? '検証ZIP保存に失敗しました。' : 'Failed to save verification ZIP.') +
-          ' ' +
-          (error instanceof Error ? error.message : String(error)),
-      );
+      zip.file(baseName + '__graph-live-error.txt', error instanceof Error ? error.message : String(error));
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob' });
+    downloadBlob(baseName + '__verification-' + timestamp + '.zip', blob);
+    refreshSummary(artifact);
+    setStatus(labels.zipSaved);
+  }
+
+  async function onVerificationZipFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      await saveVerificationZipFromFile(file);
+    } catch (error) {
+      setStatus(labels.zipFailed + ' ' + (error instanceof Error ? error.message : String(error)));
     }
   }
 
@@ -499,35 +531,40 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
   ];
 
   return (
-    <div className="debug-tab panel">
-      <div className="debug-tab-header">
-        <div>
-          <h2>{labels.title}</h2>
-          <p className="debug-status">{lastSummary ? lastSummary.savedAt : labels.notYet}</p>
-        </div>
-        <div className="debug-actions">
-          <button type="button" onClick={saveDebugLog}>
-            {labels.saveLog}
-          </button>
-          <button type="button" onClick={saveGraphSvg}>
-            {labels.saveGraph}
-          </button>
-        <button type="button" onClick={() => void saveVerificationZip()}>
+    <section className="debug-panel panel">
+      <div className="debug-header">
+        <h2>{labels.title}</h2>
+        <span>{lastSummary ? lastSummary.savedAt : labels.notYet}</span>
+      </div>
+      <div className="debug-actions">
+        <button type="button" onClick={saveDebugLog}>
+          {labels.saveLog}
+        </button>
+        <button type="button" onClick={saveGraphSvg}>
+          {labels.saveGraph}
+        </button>
+        <button type="button" onClick={() => zipInputRef.current?.click()}>
           {labels.saveZip}
         </button>
-        </div>
+        <input
+          ref={zipInputRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(event) => {
+            void onVerificationZipFileChange(event);
+          }}
+        />
       </div>
-
-      <section className="debug-summary compact-debug-summary">
+      <div className="debug-summary">
         {summaryItems.map(([label, value]) => (
-          <div key={label} className="debug-summary-card">
+          <div key={label}>
             <span>{label}</span>
             <strong>{value}</strong>
           </div>
         ))}
-      </section>
-
-      {status && <p className="debug-status-line">{status}</p>}
-    </div>
+      </div>
+      {status && <p className="debug-status">{status}</p>}
+    </section>
   );
 }
