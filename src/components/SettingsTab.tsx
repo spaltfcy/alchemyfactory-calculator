@@ -26,7 +26,7 @@ const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
 };
 
 const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
-  enabled: false,
+  enabled: true,
   fertilizerItemId: 'basic_fertilizer',
   fertilizerSourceMode: 'craft',
   nurseryNutrientsPerSec: 12,

@@ -239,7 +239,7 @@ const DEFAULT_FUEL_SETTINGS: FuelSettings = {
 };
 
 const DEFAULT_FERTILIZER_SETTINGS: FertilizerSettings = {
-  enabled: false,
+  enabled: true,
   fertilizerItemId: 'basic_fertilizer',
   fertilizerSourceMode: 'craft',
   nurseryNutrientsPerSec: 12,
@@ -1240,6 +1240,47 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
         },
       });
     }
+  }
+
+  const fertilizerFlowTotal = result.flows
+    .filter((flow) => flow.role === 'fertilizer')
+    .reduce((sum, flow) => sum + flow.rate, 0);
+  const fertilizerDelta = Math.abs(fertilizerFlowTotal - result.totals.fertilizerRequiredPerMin);
+  if (fertilizerDelta > 0.001) {
+    issues.push({
+      severity: 'warning',
+      code: 'FERTILIZER_FLOW_TOTAL_MISMATCH',
+      messageJa: '肥料の必要量と肥料フロー合計が一致していません。',
+      messageEn: 'Fertilizer required rate does not match the total fertilizer flow rate.',
+      data: {
+        fertilizerItemId: result.totals.fertilizerItemId,
+        fertilizerRequiredPerMin: result.totals.fertilizerRequiredPerMin,
+        fertilizerFlowTotal,
+        delta: fertilizerDelta,
+      },
+    });
+  }
+
+  const invalidTransportFlows = result.flows.filter((flow) => {
+    if (flow.transportKind === 'pipeline') return flow.transportUnits !== 1 || flow.belts !== 1;
+    return flow.transportKind === 'belt' && flow.transportUnits !== flow.belts;
+  });
+  if (invalidTransportFlows.length > 0) {
+    issues.push({
+      severity: 'warning',
+      code: 'FLOW_TRANSPORT_UNITS_MISMATCH',
+      messageJa: '搬送種別と搬送本数の整合が取れていないフローがあります。',
+      messageEn: 'Some flows have inconsistent transport kind and transport unit counts.',
+      data: invalidTransportFlows.map((flow) => ({
+        id: flow.id,
+        itemId: flow.itemId,
+        role: flow.role,
+        rate: flow.rate,
+        belts: flow.belts,
+        transportKind: flow.transportKind,
+        transportUnits: flow.transportUnits,
+      })),
+    });
   }
 
   const debugLog: CalculationDebugLog = {

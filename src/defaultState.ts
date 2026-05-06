@@ -32,7 +32,7 @@ export const DEFAULT_STATE: AppState = {
       maxIterations: 16,
     },
     fertilizer: {
-      enabled: false,
+      enabled: true,
       fertilizerItemId: 'basic_fertilizer',
       fertilizerSourceMode: 'craft',
       nurseryNutrientsPerSec: 12,
