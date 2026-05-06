@@ -215,7 +215,8 @@ type RunAnalysis = {
 
 const EPS = 1e-9;
 const VISIBLE_RATE_EPS = 0.000001;
-const FUEL_CONVERGENCE_EPS = 0.0001;
+const FUEL_CONVERGENCE_EPS = 0.001;
+const FUEL_ESTIMATION_RATIO_LIMIT = 0.999999;
 const MAX_SOLVE_ITERATIONS = 120;
 
 const DEFAULT_FUEL_SETTINGS: FuelSettings = {
@@ -1017,24 +1018,57 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
   let fuelConvergenceDelta = 0;
   const fuelIterationTrace: NonNullable<CalculationResult['totals']['fuelIterationTrace']> = [];
 
+  function appendFuelTrace(injectedFuelRate: number, nextFuelRate: number): void {
+    fuelIterations = fuelIterationTrace.length + 1;
+    fuelConvergenceDelta = Math.abs(nextFuelRate - injectedFuelRate);
+    fuelIterationTrace.push({
+      iteration: fuelIterations,
+      injectedFuelRate,
+      nextFuelRate,
+      delta: fuelConvergenceDelta,
+    });
+  }
+
+  function isFuelConverged(delta: number): boolean {
+    return delta <= FUEL_CONVERGENCE_EPS;
+  }
+
   if (fuelSettings.enabled) {
-    let injectedFuelRate = 0;
-    for (let i = 0; i < fuelSettings.maxIterations; i += 1) {
-      fuelIterations = i + 1;
-      const nextFuelRate = result.totals.fuelRequiredPerMin;
-      fuelConvergenceDelta = Math.abs(nextFuelRate - injectedFuelRate);
-      fuelIterationTrace.push({
-        iteration: fuelIterations,
-        injectedFuelRate,
-        nextFuelRate,
-        delta: fuelConvergenceDelta,
-      });
-      result = buildPlan(nextFuelRate);
-      if (fuelConvergenceDelta < FUEL_CONVERGENCE_EPS) {
-        fuelConverged = true;
-        break;
+    const baseFuelRate = result.totals.fuelRequiredPerMin;
+    appendFuelTrace(0, baseFuelRate);
+
+    if (isFuelConverged(fuelConvergenceDelta)) {
+      fuelConverged = true;
+    } else {
+      const firstInjectedFuelRate = baseFuelRate;
+      const firstResult = buildPlan(firstInjectedFuelRate);
+      const firstNextFuelRate = firstResult.totals.fuelRequiredPerMin;
+      appendFuelTrace(firstInjectedFuelRate, firstNextFuelRate);
+
+      const fuelExpansionRatio =
+        Math.abs(firstInjectedFuelRate) > EPS ? (firstNextFuelRate - baseFuelRate) / firstInjectedFuelRate : Number.NaN;
+      const estimatedFuelRate =
+        Number.isFinite(fuelExpansionRatio) &&
+        fuelExpansionRatio > -FUEL_ESTIMATION_RATIO_LIMIT &&
+        fuelExpansionRatio < FUEL_ESTIMATION_RATIO_LIMIT
+          ? baseFuelRate / (1 - fuelExpansionRatio)
+          : Number.NaN;
+
+      if (Number.isFinite(estimatedFuelRate) && estimatedFuelRate >= 0) {
+        result = buildPlan(estimatedFuelRate);
+        appendFuelTrace(estimatedFuelRate, result.totals.fuelRequiredPerMin);
+        fuelConverged = isFuelConverged(fuelConvergenceDelta);
+      } else {
+        result = firstResult;
+        fuelConverged = isFuelConverged(fuelConvergenceDelta);
       }
-      injectedFuelRate = nextFuelRate;
+
+      while (!fuelConverged && fuelIterations < fuelSettings.maxIterations) {
+        const injectedFuelRate = result.totals.fuelRequiredPerMin;
+        result = buildPlan(injectedFuelRate);
+        appendFuelTrace(injectedFuelRate, result.totals.fuelRequiredPerMin);
+        fuelConverged = isFuelConverged(fuelConvergenceDelta);
+      }
     }
   }
 
