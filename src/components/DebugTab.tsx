@@ -96,6 +96,109 @@ function buildGraphSvg(): string {
   ].join('\n');
 }
 
+type CycleErrorSummaryLike = {
+  code?: string;
+  messageJa?: string;
+  messageEn?: string;
+  cycleTextJa?: string;
+  cycleTextEn?: string;
+  itemIds?: string[];
+  recipeIds?: string[];
+  [key: string]: unknown;
+};
+
+function splitCycleText(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return value
+    .split(/\s*(?:->|→)\s*/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function compactAdjacentCycleParts(parts: string[]): string[] {
+  const compacted: string[] = [];
+  for (const part of parts) {
+    if (compacted[compacted.length - 1] !== part) compacted.push(part);
+  }
+  return compacted;
+}
+
+function rotateClosedCycleParts(parts: string[], preferredStart: string): string[] {
+  if (parts.length <= 1) return parts;
+  const closed = parts[0] === parts[parts.length - 1];
+  const body = closed ? parts.slice(0, -1) : [...parts];
+  const index = body.indexOf(preferredStart);
+  if (index <= 0) return closed ? [...body, body[0]] : body;
+  const rotated = [...body.slice(index), ...body.slice(0, index)];
+  return closed ? [...rotated, rotated[0]] : rotated;
+}
+
+function choosePreferredCycleStartJa(parts: string[]): string | undefined {
+  if (parts.includes('火薬') && parts.includes('生石灰') && parts.includes('石灰水')) return '火薬';
+  if (parts.includes('木炭の粉末') && parts.includes('木炭')) return '木炭の粉末';
+  return parts[0];
+}
+
+function choosePreferredCycleStartEn(parts: string[]): string | undefined {
+  if (parts.includes('Black Powder') && parts.includes('Quicklime') && parts.includes('Limewater')) return 'Black Powder';
+  if (parts.includes('Charcoal Powder') && parts.includes('Charcoal')) return 'Charcoal Powder';
+  return parts[0];
+}
+
+function formatCycleText(value: unknown, lang: 'ja' | 'en'): string | undefined {
+  const parts = compactAdjacentCycleParts(splitCycleText(value));
+  if (parts.length === 0) return undefined;
+  const preferred = lang === 'ja' ? choosePreferredCycleStartJa(parts) : choosePreferredCycleStartEn(parts);
+  const rotated = preferred ? rotateClosedCycleParts(parts, preferred) : parts;
+  return rotated.join(lang === 'ja' ? ' → ' : ' -> ');
+}
+
+function cycleHeadFromText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.split(/\s*(?:->|→)\s*/g).map((part) => part.trim()).find(Boolean);
+}
+
+function normalizeCycleErrorSummary(summary: CycleErrorSummaryLike): CycleErrorSummaryLike {
+  if (summary.code !== 'RECIPE_CYCLE_INVALID') return summary;
+
+  const cycleTextJa = formatCycleText(summary.cycleTextJa, 'ja');
+  const cycleTextEn = formatCycleText(summary.cycleTextEn, 'en');
+  const headJa = cycleHeadFromText(cycleTextJa);
+  const headEn = cycleHeadFromText(cycleTextEn);
+
+  return {
+    ...summary,
+    messageJa: headJa ? headJa + 'が循環しています。' : summary.messageJa,
+    messageEn: headEn ? headEn + ' is in a recipe cycle.' : summary.messageEn,
+    cycleTextJa: cycleTextJa ?? summary.cycleTextJa,
+    cycleTextEn: cycleTextEn ?? summary.cycleTextEn,
+  };
+}
+
+function cycleCanonicalKey(summary: CycleErrorSummaryLike): string {
+  if (summary.code !== 'RECIPE_CYCLE_INVALID') return String(summary.code ?? '') + ':' + String(summary.messageJa ?? '');
+  const itemIds = Array.isArray(summary.itemIds) ? [...summary.itemIds].sort().join(',') : '';
+  const recipeIds = Array.isArray(summary.recipeIds) ? [...summary.recipeIds].sort().join(',') : '';
+  return summary.code + ':' + itemIds + ':' + recipeIds;
+}
+
+function normalizeCycleErrorSummaries(errorSummaries: unknown): CycleErrorSummaryLike[] {
+  if (!Array.isArray(errorSummaries)) return [];
+  const normalized: CycleErrorSummaryLike[] = [];
+  const seen = new Set<string>();
+
+  for (const rawSummary of errorSummaries) {
+    if (!rawSummary || typeof rawSummary !== 'object') continue;
+    const summary = normalizeCycleErrorSummary(rawSummary as CycleErrorSummaryLike);
+    const key = cycleCanonicalKey(summary);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(summary);
+  }
+
+  return normalized;
+}
+
 export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps) {
   const [lastSummary, setLastSummary] = useState<LastSummary | null>(null);
   const [status, setStatus] = useState('');
@@ -154,13 +257,20 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
       calculationStatus?: 'ok' | 'invalid';
       errorSummaries?: unknown[];
     };
-    const { calculationStatus: ignoredDebugCalculationStatus, errorSummaries: ignoredDebugErrorSummaries, ...debugLogBody } = debugLogWithOptionalStatus;
+    const {
+      calculationStatus: ignoredDebugCalculationStatus,
+      errorSummaries: ignoredDebugErrorSummaries,
+      ...debugLogBody
+    } = debugLogWithOptionalStatus;
+    const normalizedErrorSummaries = normalizeCycleErrorSummaries(
+      resultWithDebugStatus.errorSummaries ?? ignoredDebugErrorSummaries ?? [],
+    );
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 2,
+      debugSchemaVersion: 3,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
-      errorSummaries: resultWithDebugStatus.errorSummaries ?? ignoredDebugErrorSummaries ?? [],
+      errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
     };
     downloadText(
@@ -182,7 +292,13 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
   function saveGraphSvg(): void {
     try {
       const result = calculate(buildInput());
-      const svg = buildFlowGraphSvg(result, lang, state.settings, state.completedGraphNodeIds);
+      const resultForSvg = {
+        ...result,
+        errorSummaries: normalizeCycleErrorSummaries(
+          (result as typeof result & { errorSummaries?: unknown[] }).errorSummaries ?? [],
+        ),
+      };
+      const svg = buildFlowGraphSvg(resultForSvg as typeof result, lang, state.settings, state.completedGraphNodeIds);
       downloadText('alchemy-factory-calculator-graph-' + timestampForFile() + '.svg', svg, 'image/svg+xml;charset=utf-8');
       setStatus(labels.graphSaved);
     } catch (error) {
