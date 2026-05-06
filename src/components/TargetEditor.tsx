@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import type { Lang, ProductionTarget } from '../types';
 import { ITEMS, itemById } from '../data/items';
 import { DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing, recipeById } from '../data/recipes';
@@ -10,6 +10,8 @@ export type TargetEditorProps = {
   targets: ProductionTarget[];
   onChange: (targets: ProductionTarget[]) => void;
 };
+
+type BulkModeValue = '' | ProductionTarget['mode'];
 
 validateItemSortNames(ITEMS);
 
@@ -67,29 +69,76 @@ function moveTarget(targets: ProductionTarget[], index: number, delta: number): 
   return next;
 }
 
+function sameTargetOrder(a: ProductionTarget[], b: ProductionTarget[]): boolean {
+  return a.length === b.length && a.every((target, index) => target.id === b[index]?.id);
+}
+
 export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
   const selectableItems = getSelectableOutputItems(lang);
   const [bulkValue, setBulkValue] = useState('');
-  const [bulkMode, setBulkMode] = useState<ProductionTarget['mode']>('rate');
+  const [bulkMode, setBulkMode] = useState<BulkModeValue>('');
+  const [draftTargets, setDraftTargets] = useState(targets);
+  const syncedTargetsRef = useRef(targets);
+  const orderCommitTimerRef = useRef<number | null>(null);
 
-  function updateTarget(id: string, patch: Partial<ProductionTarget>) {
-    onChange(
-      targets.map((target) => {
-        if (target.id !== id) return target;
-        const next = { ...target, ...patch };
-        if (patch.outputItemId) next.recipeId = getDefaultRecipeId(patch.outputItemId);
-        return next;
-      }),
-    );
+  useEffect(() => {
+    if (targets === syncedTargetsRef.current) return;
+    syncedTargetsRef.current = targets;
+    setDraftTargets(targets);
+  }, [targets]);
+
+  useEffect(() => {
+    return () => {
+      if (orderCommitTimerRef.current !== null) window.clearTimeout(orderCommitTimerRef.current);
+    };
+  }, []);
+
+  function commitTargets(nextTargets: ProductionTarget[]) {
+    if (orderCommitTimerRef.current !== null) {
+      window.clearTimeout(orderCommitTimerRef.current);
+      orderCommitTimerRef.current = null;
+    }
+    syncedTargetsRef.current = nextTargets;
+    setDraftTargets(nextTargets);
+    onChange(nextTargets);
   }
 
-  function applyBulkOutput() {
+  function scheduleOrderCommit(nextTargets: ProductionTarget[]) {
+    if (orderCommitTimerRef.current !== null) window.clearTimeout(orderCommitTimerRef.current);
+    orderCommitTimerRef.current = window.setTimeout(() => {
+      orderCommitTimerRef.current = null;
+      commitTargets(nextTargets);
+    }, 650);
+  }
+
+  function updateTarget(id: string, patch: Partial<ProductionTarget>) {
+    const nextTargets = draftTargets.map((target) => {
+      if (target.id !== id) return target;
+      const next = { ...target, ...patch };
+      if (patch.outputItemId) next.recipeId = getDefaultRecipeId(patch.outputItemId);
+      return next;
+    });
+    commitTargets(nextTargets);
+  }
+
+  function applyBulkOutput(modeOverride?: BulkModeValue) {
     const trimmed = bulkValue.trim();
-    if (trimmed === '') return;
+    const hasValue = trimmed !== '';
+    const nextMode = modeOverride !== undefined ? modeOverride : bulkMode;
+    if (!hasValue && nextMode === '') return;
+
     const value = Number(trimmed);
-    if (!Number.isFinite(value)) return;
-    onChange(targets.map((target) => ({ ...target, value, mode: bulkMode })));
-    setBulkValue('');
+    if (hasValue && !Number.isFinite(value)) return;
+
+    const nextTargets = draftTargets.map((target) => ({
+      ...target,
+      ...(hasValue ? { value } : {}),
+      ...(nextMode !== '' ? { mode: nextMode } : {}),
+    }));
+
+    commitTargets(nextTargets);
+    if (hasValue) setBulkValue('');
+    if (nextMode !== '') setBulkMode('');
   }
 
   function onBulkKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -98,9 +147,24 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
     applyBulkOutput();
   }
 
+  function onBulkModeChange(event: ChangeEvent<HTMLSelectElement>) {
+    const nextMode = event.target.value as BulkModeValue;
+    setBulkMode(nextMode);
+    if (nextMode !== '') applyBulkOutput(nextMode);
+  }
+
+  function reorderTarget(index: number, delta: number) {
+    const nextTargets = moveTarget(draftTargets, index, delta);
+    if (sameTargetOrder(nextTargets, draftTargets)) return;
+    setDraftTargets(nextTargets);
+    scheduleOrderCommit(nextTargets);
+  }
+
   const itemLabel = lang === 'ja' ? 'アイテム' : 'Item';
   const outputLabel = lang === 'ja' ? '出力' : 'Output';
   const bulkOutputLabel = lang === 'ja' ? '全出力' : 'All output';
+  const bulkModeLabel = lang === 'ja' ? '全指定方法' : 'All methods';
+  const noBulkModeLabel = lang === 'ja' ? '変更なし' : 'No change';
   const moveUpLabel = lang === 'ja' ? '上へ移動' : 'Move up';
   const moveDownLabel = lang === 'ja' ? '下へ移動' : 'Move down';
   const removeLabel = lang === 'ja' ? '削除' : 'Remove';
@@ -117,63 +181,27 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
               value={bulkValue}
               onChange={(event: ChangeEvent<HTMLInputElement>) => setBulkValue(event.target.value)}
               onKeyDown={onBulkKeyDown}
-              onBlur={applyBulkOutput}
+              onBlur={() => applyBulkOutput()}
               placeholder=""
             />
           </label>
           <label className="target-bulk-field target-bulk-mode">
-            <span>{t('mode', lang)}</span>
-            <select
-              value={bulkMode}
-              onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                setBulkMode(event.target.value as ProductionTarget['mode'])
-              }
-            >
+            <span>{bulkModeLabel}</span>
+            <select value={bulkMode} onChange={onBulkModeChange}>
+              <option value="">{noBulkModeLabel}</option>
               <option value="rate">{t('rateShort', lang)}</option>
               <option value="machines">{t('machinesShort', lang)}</option>
             </select>
           </label>
-          <button type="button" onClick={() => onChange([...targets, makeTarget(lang)])}>
+          <button type="button" onClick={() => commitTargets([...draftTargets, makeTarget(lang)])}>
             {t('addTarget', lang)}
           </button>
         </div>
       </div>
 
       <div className="target-list" aria-label={t('targets', lang)}>
-        {targets.map((target, index) => (
+        {draftTargets.map((target, index) => (
           <div className="target-card" key={target.id}>
-            <div className="target-card-actions" aria-label={lang === 'ja' ? '並び替えと削除' : 'Sort and remove'}>
-              <button
-                type="button"
-                className="target-order-button"
-                disabled={index === 0}
-                aria-label={moveUpLabel}
-                title={moveUpLabel}
-                onClick={() => onChange(moveTarget(targets, index, -1))}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className="target-order-button"
-                disabled={index === targets.length - 1}
-                aria-label={moveDownLabel}
-                title={moveDownLabel}
-                onClick={() => onChange(moveTarget(targets, index, 1))}
-              >
-                ↓
-              </button>
-              <button
-                type="button"
-                className="target-remove danger"
-                aria-label={removeLabel}
-                title={removeLabel}
-                onClick={() => onChange(targets.filter((x) => x.id !== target.id))}
-              >
-                ×
-              </button>
-            </div>
-
             <label className="target-field">
               <span>{itemLabel}</span>
               <select
@@ -213,6 +241,38 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
                 <option value="machines">{t('machinesShort', lang)}</option>
               </select>
             </label>
+
+            <div className="target-card-actions" aria-label={lang === 'ja' ? '並び替えと削除' : 'Sort and remove'}>
+              <button
+                type="button"
+                className="target-order-button"
+                disabled={index === 0}
+                aria-label={moveUpLabel}
+                title={moveUpLabel}
+                onClick={() => reorderTarget(index, -1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="target-order-button"
+                disabled={index === draftTargets.length - 1}
+                aria-label={moveDownLabel}
+                title={moveDownLabel}
+                onClick={() => reorderTarget(index, 1)}
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                className="target-remove danger"
+                aria-label={removeLabel}
+                title={removeLabel}
+                onClick={() => commitTargets(draftTargets.filter((x) => x.id !== target.id))}
+              >
+                ×
+              </button>
+            </div>
           </div>
         ))}
       </div>

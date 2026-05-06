@@ -13,7 +13,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.5.11';
+const APP_VERSION = '0.5.12';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -148,7 +148,10 @@ export function App() {
   const result = useMemo(
     () =>
       calculate({
-        targets: state.targets,
+        targets: state.targets.map((target) => ({
+        ...target,
+        recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
+      })),
         settings: state.settings,
         abilities: state.abilities,
         recipePreferences: state.recipePreferences,
@@ -203,6 +206,10 @@ export function App() {
   const visibleTabs: AppState['activeTab'][] = runtimeFlags.debug
     ? ['graph', 'table', 'settings', 'about', 'debug']
     : ['graph', 'table', 'settings', 'about'];
+
+  function requestGraphSave() {
+    window.dispatchEvent(new CustomEvent('alchemyfactory:save-live-graph'));
+  }
 
   return (
     <div className={runtimeFlags.safeMode ? 'app-shell is-safe-mode' : 'app-shell'}>
@@ -286,6 +293,11 @@ export function App() {
               <option value="en">English</option>
             </select>
           </div>
+          {state.activeTab === 'graph' && (
+            <button type="button" className="header-graph-save-button" onClick={requestGraphSave}>
+              {lang === 'ja' ? 'グラフ保存' : 'Save graph'}
+            </button>
+          )}
         </div>
       </header>
 

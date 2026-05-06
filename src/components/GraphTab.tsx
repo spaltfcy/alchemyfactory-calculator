@@ -435,6 +435,14 @@ async function saveGraphElementAsPng(lang: Lang) {
   const element = document.querySelector('.flow-wrap') as HTMLElement | null;
   if (!element) return;
 
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Font readiness is a visual improvement only.
+    }
+  }
+
   const rect = element.getBoundingClientRect();
   const width = Math.max(1, Math.ceil(rect.width));
   const height = Math.max(1, Math.ceil(rect.height));
@@ -443,8 +451,12 @@ async function saveGraphElementAsPng(lang: Lang) {
   clone.style.width = width + 'px';
   clone.style.height = height + 'px';
   clone.style.margin = '0';
+  clone.style.position = 'relative';
+  clone.querySelectorAll('.react-flow__panel').forEach((panel) => panel.remove());
 
-  const xhtml = '<style>' + escapeSvgText(collectLiveGraphStyleText()) + '</style>' + clone.outerHTML;
+  const styleText = collectLiveGraphStyleText().replace(/\]\]>/g, ']]\\>');
+  const serializedClone = new XMLSerializer().serializeToString(clone);
+  const xhtml = '<style><![CDATA[' + styleText + ']]></style>' + serializedClone;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' +
     width +
@@ -454,12 +466,16 @@ async function saveGraphElementAsPng(lang: Lang) {
     width +
     ' ' +
     height +
+    '" aria-label="' +
+    escapeSvgText(lang === 'ja' ? 'グラフ' : 'Graph') +
     '"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">' +
     xhtml +
     '</div></foreignObject></svg>';
 
+  const timestamp = graphPngTimestamp();
   const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const svgUrl = URL.createObjectURL(svgBlob);
+
   try {
     const image = new Image();
     const loaded = new Promise<void>((resolve, reject) => {
@@ -474,6 +490,8 @@ async function saveGraphElementAsPng(lang: Lang) {
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas is not available');
+    ctx.fillStyle = '#080d15';
+    ctx.fillRect(0, 0, width, height);
     ctx.drawImage(image, 0, 0);
 
     const pngBlob = await new Promise<Blob>((resolve, reject) => {
@@ -482,9 +500,16 @@ async function saveGraphElementAsPng(lang: Lang) {
         else reject(new Error('Failed to create PNG'));
       }, 'image/png');
     });
-    downloadBlob(pngBlob, 'alchemy-factory-calculator-graph-live-' + graphPngTimestamp() + '.png');
+
+    downloadBlob(pngBlob, 'alchemy-factory-calculator-graph-live-' + timestamp + '.png');
   } catch (error) {
-    console.warn(lang === 'ja' ? 'グラフPNG保存に失敗しました。' : 'Failed to save graph PNG.', error);
+    console.warn(
+      lang === 'ja'
+        ? 'グラフ保存のPNG生成に失敗したためSVGを保存します。'
+        : 'Failed to create graph PNG. Saving SVG instead.',
+      error,
+    );
+    downloadBlob(svgBlob, 'alchemy-factory-calculator-graph-live-' + timestamp + '.svg');
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
@@ -526,6 +551,13 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
     [result],
   );
   const graphErrorLines = useMemo(() => graphInvalidLines(result, lang), [result, lang]);
+  useEffect(() => {
+    const onSaveGraph = () => {
+      void saveGraphElementAsPng(lang);
+    };
+    window.addEventListener('alchemyfactory:save-live-graph', onSaveGraph);
+    return () => window.removeEventListener('alchemyfactory:save-live-graph', onSaveGraph);
+  }, [lang]);
   const raw = useMemo(() => buildFlowGraph(graphResult, lang, settings, {}), [graphResult, lang, settings]);
 
   useEffect(() => {
@@ -624,15 +656,6 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
         >
           <Background color="#243047" gap={18} />
           <GraphControls lang={lang} isInteractive={isInteractive} onToggleInteractive={() => setIsInteractive((current) => !current)} />
-          <Panel position="top-right" className="flow-live-png-panel">
-            <button
-              type="button"
-              className="flow-live-png-button"
-              onClick={() => { void saveGraphElementAsPng(lang); }}
-            >
-              {lang === 'ja' ? 'PNG保存' : 'Save PNG'}
-            </button>
-          </Panel>
           <MiniMap
             nodeStrokeWidth={2}
             pannable

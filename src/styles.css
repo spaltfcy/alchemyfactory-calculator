@@ -1351,3 +1351,69 @@ a {
   font-weight: 750;
   line-height: 1.35;
 }
+
+
+/* v0.5.12: pending UI fixes */
+.header-graph-save-button {
+  justify-self: end;
+  width: 100%;
+  min-height: 2.25rem;
+  padding-inline: 0.85rem;
+  border-radius: 10px;
+}
+
+.target-card {
+  grid-template-columns: var(--target-item-width) var(--target-value-width) var(--target-mode-width) max-content;
+  align-items: end;
+  padding-top: var(--target-card-padding-y);
+}
+
+.target-card-actions {
+  position: static;
+  display: flex;
+  gap: 0.25rem;
+  align-items: end;
+  justify-content: flex-end;
+  align-self: end;
+  right: auto;
+  top: auto;
+  min-height: 2.25rem;
+}
+
+.target-card-actions .target-order-button,
+.target-card-actions .target-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 1.8rem;
+  min-width: 1.8rem;
+  height: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #dbeafe;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.target-card-actions .target-remove {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+.target-card-actions .target-order-button:disabled {
+  cursor: default;
+  opacity: 0.32;
+  transform: none;
+}
+
+@media (max-width: 56rem) {
+  .header-graph-save-button {
+    justify-self: stretch;
+  }
+
+  .target-card {
+    grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width) max-content;
+  }
+}

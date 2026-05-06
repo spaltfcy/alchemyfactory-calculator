@@ -199,6 +199,62 @@ function normalizeCycleErrorSummaries(errorSummaries: unknown): CycleErrorSummar
   return normalized;
 }
 
+
+type DebugIssueLike = {
+  code?: string;
+  data?: unknown;
+  [key: string]: unknown;
+};
+
+type DebugCycleCandidateLike = {
+  cycleTextJa?: string;
+  cycleTextEn?: string;
+  steps?: Array<{ recipeId?: string; recipeNameJa?: string; viaItemId?: string; viaItemNameJa?: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
+
+function cycleCandidateKey(candidate: DebugCycleCandidateLike): string {
+  if (Array.isArray(candidate.steps) && candidate.steps.length > 0) {
+    const recipeIds = candidate.steps.map((step) => step.recipeId).filter(Boolean).sort().join(',');
+    const itemIds = candidate.steps.map((step) => step.viaItemId).filter(Boolean).sort().join(',');
+    return recipeIds + ':' + itemIds;
+  }
+  return String(candidate.cycleTextJa ?? candidate.cycleTextEn ?? '');
+}
+
+function normalizeDebugCycleCandidate(candidate: DebugCycleCandidateLike): DebugCycleCandidateLike {
+  return {
+    ...candidate,
+    cycleTextJa: formatCycleText(candidate.cycleTextJa, 'ja') ?? candidate.cycleTextJa,
+    cycleTextEn: formatCycleText(candidate.cycleTextEn, 'en') ?? candidate.cycleTextEn,
+  };
+}
+
+function normalizeDebugIssues(issues: unknown): unknown[] {
+  if (!Array.isArray(issues)) return [];
+  return issues.map((rawIssue) => {
+    if (!rawIssue || typeof rawIssue !== 'object') return rawIssue;
+    const issue = rawIssue as DebugIssueLike;
+    if (issue.code !== 'SUSPECT_RECIPE_CYCLE_WITH_INVALID_NUMBERS' || !Array.isArray(issue.data)) return issue;
+
+    const normalizedData: DebugCycleCandidateLike[] = [];
+    const seen = new Set<string>();
+    for (const rawCandidate of issue.data) {
+      if (!rawCandidate || typeof rawCandidate !== 'object') continue;
+      const candidate = normalizeDebugCycleCandidate(rawCandidate as DebugCycleCandidateLike);
+      const key = cycleCandidateKey(candidate);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalizedData.push(candidate);
+    }
+
+    return {
+      ...issue,
+      data: normalizedData,
+    };
+  });
+}
+
 export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps) {
   const [lastSummary, setLastSummary] = useState<LastSummary | null>(null);
   const [status, setStatus] = useState('');
@@ -262,6 +318,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
       errorSummaries: ignoredDebugErrorSummaries,
       ...debugLogBody
     } = debugLogWithOptionalStatus;
+    const normalizedIssues = normalizeDebugIssues(debugLog.issues);
     const normalizedErrorSummaries = normalizeCycleErrorSummaries(
       resultWithDebugStatus.errorSummaries ?? ignoredDebugErrorSummaries ?? [],
     );
@@ -272,6 +329,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
+      issues: normalizedIssues,
     };
     downloadText(
       'alchemy-factory-calculator-debug-' + timestampForFile() + '.json',
@@ -282,7 +340,7 @@ export function DebugTab({ lang, state, appVersion, gameVersion }: DebugTabProps
       itemCount: debugLog.summary.itemCount,
       recipeCount: debugLog.summary.recipeCount,
       flowCount: debugLog.summary.flowCount,
-      issueCount: debugLog.issues.length,
+      issueCount: normalizedIssues.length,
       purchasedAutoCraftableCount: debugLog.summary.purchasedAutoCraftableCount,
       savedAt: new Date().toLocaleTimeString(),
     });
