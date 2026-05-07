@@ -248,26 +248,11 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
       ...current.abilities,
       ...(imported.abilities ?? {}),
     },
-    recipePreferences: {
-      ...current.recipePreferences,
-      ...(imported.recipePreferences ?? {}),
-    },
-    surplusPolicies: {
-      ...current.surplusPolicies,
-      ...(imported.surplusPolicies ?? {}),
-    },
-    itemSourceModes: {
-      ...current.itemSourceModes,
-      ...(imported.itemSourceModes ?? {}),
-    },
-    completedGraphNodeIds: {
-      ...current.completedGraphNodeIds,
-      ...(imported.completedGraphNodeIds ?? {}),
-    },
-    nodeNotes: {
-      ...current.nodeNotes,
-      ...(imported.nodeNotes ?? {}),
-    },
+    recipePreferences: imported.recipePreferences ?? {},
+    surplusPolicies: imported.surplusPolicies ?? {},
+    itemSourceModes: imported.itemSourceModes ?? {},
+    completedGraphNodeIds: imported.completedGraphNodeIds ?? {},
+    nodeNotes: imported.nodeNotes ?? {},
   };
 }
 
@@ -418,7 +403,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion }: Deb
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 4,
+      debugSchemaVersion: 5,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,

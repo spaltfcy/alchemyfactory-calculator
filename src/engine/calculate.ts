@@ -1511,6 +1511,41 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
     });
   }
 
+
+  const debugFuelSettings = input.settings.fuel;
+  if (debugFuelSettings?.enabled && debugFuelSettings.fuelSourceMode === 'craft') {
+    const forcedFuelSourceMode = input.itemSourceModes[debugFuelSettings.fuelItemId];
+    if (forcedFuelSourceMode === 'buy') {
+      issues.push({
+        severity: 'warning',
+        code: 'FUEL_ITEM_FORCED_TO_BUY',
+        messageJa: '燃料供給が内部生産ですが、燃料アイテムが購入固定になっています。検証JSONまたはアイテム入手設定を確認してください。',
+        messageEn: 'Fuel supply is set to craft, but the fuel item is forced to buy. Check the verification JSON or item source settings.',
+        data: {
+          fuelItemId: debugFuelSettings.fuelItemId,
+          fuelSourceMode: debugFuelSettings.fuelSourceMode,
+          itemSourceMode: forcedFuelSourceMode,
+        },
+      });
+    } else {
+      const fuelStat = result.itemStats[debugFuelSettings.fuelItemId];
+      if ((fuelStat?.purchased ?? 0) > EPS) {
+        issues.push({
+          severity: 'warning',
+          code: 'FUEL_CRAFT_FELL_BACK_TO_PURCHASE',
+          messageJa: '燃料供給が内部生産ですが、燃料アイテムの一部または全部が購入扱いに落ちています。燃料レシピ解決または循環を確認してください。',
+          messageEn: 'Fuel supply is set to craft, but some or all of the fuel item fell back to purchase. Check fuel recipe resolution or cycles.',
+          data: {
+            fuelItemId: debugFuelSettings.fuelItemId,
+            purchased: fuelStat?.purchased ?? 0,
+            produced: fuelStat?.produced ?? 0,
+            itemSourceMode: forcedFuelSourceMode ?? 'auto',
+          },
+        });
+      }
+    }
+  }
+
   if (result.totals.fuelHitMaxIterations) {
     issues.push({
       severity: 'info',
