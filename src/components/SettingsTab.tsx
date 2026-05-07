@@ -406,8 +406,8 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                     patchFuelSettings({ fuelSourceMode: event.target.value as AppSettings['fuel']['fuelSourceMode'] })
                   }
                 >
-                  <option value="craft">{lang === 'ja' ? '内部生産' : 'Craft internally'}</option>
-                  <option value="buy">{lang === 'ja' ? '購入扱い' : 'Buy'}</option>
+                  <option value="craft">{lang === 'ja' ? '内部生産' : 'Internal production'}</option>
+                  <option value="buy">{lang === 'ja' ? '外部生産' : 'External production'}</option>
                 </select>
               </label>
 
@@ -543,8 +543,8 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                     patchFertilizerSettings({ fertilizerSourceMode: event.target.value as AppSettings['fertilizer']['fertilizerSourceMode'] })
                   }
                 >
-                  <option value="craft">{lang === 'ja' ? '内部生産' : 'Craft internally'}</option>
-                  <option value="buy">{lang === 'ja' ? '購入扱い' : 'Buy'}</option>
+                  <option value="craft">{lang === 'ja' ? '内部生産' : 'Internal production'}</option>
+                  <option value="buy">{lang === 'ja' ? '外部生産' : 'External production'}</option>
                 </select>
               </label>
             </div>

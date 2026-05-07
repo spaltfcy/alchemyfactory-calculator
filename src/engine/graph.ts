@@ -268,7 +268,11 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       .reduce((sum, flow) => sum + flow.rate, 0);
     const rate = endpoint.sourceMode === 'stock' ? 0 : flowRate;
     const label = itemName(endpoint.itemId, lang);
-    const modeLabel = endpoint.sourceMode === 'stock' ? (lang === 'ja' ? '在庫' : 'Stock') : (lang === 'ja' ? '購入' : 'Buy');
+    const modeLabel = endpoint.sourceMode === 'stock'
+      ? (lang === 'ja' ? '在庫' : 'Stock')
+      : endpoint.sourceMode === 'external'
+        ? (lang === 'ja' ? '外部生産' : 'External')
+        : (lang === 'ja' ? '購入' : 'Buy');
     return {
       id,
       type: 'plannerNode',

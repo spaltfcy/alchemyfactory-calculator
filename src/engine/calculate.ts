@@ -65,7 +65,7 @@ export type RecipeStat = {
 
 export type CalculatedEndpoint =
   | { type: 'recipe'; recipeId: string }
-  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'stock' }
+  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'stock' | 'external' }
   | { type: 'itemSink'; itemId: string; sinkMode: 'final' | 'discard' | 'surplus' };
 
 export type FlowTransportKind = 'belt' | 'pipeline';
@@ -1239,8 +1239,7 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
         const s = stat(fuelSettings.fuelItemId);
         s.requested += rate;
         s.consumed += rate;
-        addPurchase(fuelSettings.fuelItemId, rate);
-        addFlow({ type: 'itemSource', itemId: fuelSettings.fuelItemId, sourceMode: 'buy' }, { type: 'recipe', recipeId }, fuelSettings.fuelItemId, rate, 'fuel');
+        addFlow({ type: 'itemSource', itemId: fuelSettings.fuelItemId, sourceMode: 'external' }, { type: 'recipe', recipeId }, fuelSettings.fuelItemId, rate, 'fuel');
       }
     }
 
@@ -1250,8 +1249,7 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
         const s = stat(fertilizerSettings.fertilizerItemId);
         s.requested += rate;
         s.consumed += rate;
-        addPurchase(fertilizerSettings.fertilizerItemId, rate);
-        addFlow({ type: 'itemSource', itemId: fertilizerSettings.fertilizerItemId, sourceMode: 'buy' }, { type: 'recipe', recipeId }, fertilizerSettings.fertilizerItemId, rate, 'fertilizer');
+        addFlow({ type: 'itemSource', itemId: fertilizerSettings.fertilizerItemId, sourceMode: 'external' }, { type: 'recipe', recipeId }, fertilizerSettings.fertilizerItemId, rate, 'fertilizer');
       }
     }
 
@@ -1456,7 +1454,14 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
   }
   function debugEndpointJa(endpoint: CalculatedEndpoint): string {
     if (endpoint.type === 'recipe') return '\u30ec\u30b7\u30d4:' + debugRecipeNameJa(endpoint.recipeId);
-    if (endpoint.type === 'itemSource') return (endpoint.sourceMode === 'buy' ? '\u8cfc\u5165:' : '\u5728\u5eab:') + debugItemNameJa(endpoint.itemId);
+    if (endpoint.type === 'itemSource') {
+      const sourceLabel = endpoint.sourceMode === 'external'
+        ? '外部生産:'
+        : endpoint.sourceMode === 'buy'
+          ? '購入:'
+          : '在庫:';
+      return sourceLabel + debugItemNameJa(endpoint.itemId);
+    }
     if (endpoint.type === 'itemSink') {
       const sinkLabel = endpoint.sinkMode === 'final' ? '\u6700\u7d42\u51fa\u529b' : endpoint.sinkMode === 'surplus' ? '\u4f59\u5270' : '\u7834\u68c4';
       return sinkLabel + ':' + debugItemNameJa(endpoint.itemId);
