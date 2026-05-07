@@ -79,7 +79,6 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
   const [bulkMode, setBulkMode] = useState<BulkModeValue>('');
   const [draftTargets, setDraftTargets] = useState(targets);
   const syncedTargetsRef = useRef(targets);
-  const orderCommitTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (targets === syncedTargetsRef.current) return;
@@ -87,29 +86,7 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
     setDraftTargets(targets);
   }, [targets]);
 
-  useEffect(() => {
-    return () => {
-      if (orderCommitTimerRef.current !== null) window.clearTimeout(orderCommitTimerRef.current);
-    };
-  }, []);
-
-  function commitTargets(nextTargets: ProductionTarget[]) {
-    if (orderCommitTimerRef.current !== null) {
-      window.clearTimeout(orderCommitTimerRef.current);
-      orderCommitTimerRef.current = null;
-    }
-    syncedTargetsRef.current = nextTargets;
-    setDraftTargets(nextTargets);
-    onChange(nextTargets);
-  }
-
-  function scheduleOrderCommit(nextTargets: ProductionTarget[]) {
-    if (orderCommitTimerRef.current !== null) window.clearTimeout(orderCommitTimerRef.current);
-    orderCommitTimerRef.current = window.setTimeout(() => {
-      orderCommitTimerRef.current = null;
-      commitTargets(nextTargets);
-    }, 650);
-  }
+  function commitTargets(nextTargets: ProductionTarget[]) { syncedTargetsRef.current = nextTargets; setDraftTargets(nextTargets); onChange(nextTargets); }
 
   function updateTarget(id: string, patch: Partial<ProductionTarget>) {
     const nextTargets = draftTargets.map((target) => {
@@ -153,12 +130,7 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
     if (nextMode !== '') applyBulkOutput(nextMode);
   }
 
-  function reorderTarget(index: number, delta: number) {
-    const nextTargets = moveTarget(draftTargets, index, delta);
-    if (sameTargetOrder(nextTargets, draftTargets)) return;
-    setDraftTargets(nextTargets);
-    scheduleOrderCommit(nextTargets);
-  }
+  function reorderTarget(index: number, delta: number) { const nextTargets = moveTarget(draftTargets, index, delta); if (sameTargetOrder(nextTargets, draftTargets)) return; setDraftTargets(nextTargets); }
 
   const itemLabel = lang === 'ja' ? 'アイテム' : 'Item';
   const outputLabel = lang === 'ja' ? '出力' : 'Output';
