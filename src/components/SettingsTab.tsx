@@ -19,6 +19,8 @@ const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
   enabled: true,
   fuelItemId: 'charcoal_powder',
   fuelSourceMode: 'craft',
+  heatingMode: 'direct',
+  steamBoilerMode: 'low',
   crucibleVariant: 'crucible',
   crucibleOverheadHeatPerSec: 0.4,
   otherOverheadHeatPerSec: 1,
@@ -406,6 +408,39 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                 >
                   <option value="craft">{lang === 'ja' ? '内部生産' : 'Craft internally'}</option>
                   <option value="buy">{lang === 'ja' ? '購入扱い' : 'Buy'}</option>
+                </select>
+              </label>
+
+              <label className="form-field">
+                <span>{lang === 'ja' ? '加熱方式' : 'Heating mode'}</span>
+                <select
+                  id="heating-mode"
+                  name="heating-mode"
+                  value={fuel.heatingMode}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchFuelSettings({ heatingMode: event.target.value === 'steam' ? 'steam' : 'direct' })
+                  }
+                >
+                  <option value="direct">{lang === 'ja' ? '直接加熱' : 'Direct heating'}</option>
+                  <option value="steam">{lang === 'ja' ? '蒸気加熱' : 'Steam heating'}</option>
+                </select>
+              </label>
+
+              <label className="form-field">
+                <span>{lang === 'ja' ? '蒸気ボイラー出力' : 'Steam boiler output'}</span>
+                <select
+                  id="steam-boiler-mode"
+                  name="steam-boiler-mode"
+                  value={fuel.steamBoilerMode}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchFuelSettings({ steamBoilerMode: event.target.value === 'medium' || event.target.value === 'high' ? event.target.value : 'low' })
+                  }
+                >
+                  <option value="low">{lang === 'ja' ? '低（675/min）' : 'Low (675/min)'}</option>
+                  <option value="medium">{lang === 'ja' ? '中（3375/min）' : 'Medium (3375/min)'}</option>
+                  <option value="high">{lang === 'ja' ? '高（20250/min）' : 'High (20250/min)'}</option>
                 </select>
               </label>
 

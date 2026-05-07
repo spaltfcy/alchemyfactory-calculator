@@ -1,6 +1,7 @@
 import type { Machine } from '../types';
 
 export const MACHINES: Machine[] = [
+  { id: 'steam_boiler', name: { ja: '蒸気ボイラー', en: 'Steam Boiler' } },
   { id: "advanced_alembic", name: { ja: "上級アランビック", en: "Advanced Alembic" } },
   { id: "advanced_assembler", name: { ja: "上級アセンブラー", en: "Advanced Assembler" } },
   { id: "advanced_athanor", name: { ja: "上級アタノール", en: "Advanced Athanor" } },

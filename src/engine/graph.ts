@@ -49,6 +49,7 @@ const INITIAL_INVESTMENT_FLOW_COLOR = '#9aa4b2';
 const PIPELINE_FLOW_COLOR = '#74c0fc';
 
 function itemName(itemId: string, lang: Lang): string {
+  if (itemId === 'steam') return lang === 'ja' ? '蒸気' : 'Steam';
   const item = itemById[itemId];
   return item ? text(item.name, lang) : itemId;
 }
@@ -59,6 +60,13 @@ function machineName(machineId: string, lang: Lang): string {
 }
 
 function recipeName(recipeId: string, lang: Lang): string {
+  const steamLabels: Record<string, { ja: string; en: string }> = {
+    steam_boiler_low: { ja: '蒸気ボイラー（低）', en: 'Steam Boiler (Low)' },
+    steam_boiler_medium: { ja: '蒸気ボイラー（中）', en: 'Steam Boiler (Medium)' },
+    steam_boiler_high: { ja: '蒸気ボイラー（高）', en: 'Steam Boiler (High)' },
+  };
+  const steamLabel = steamLabels[recipeId];
+  if (steamLabel) return text(steamLabel, lang);
   const recipe = recipeById[recipeId];
   return recipe ? text(recipe.name, lang) : recipeId;
 }
@@ -112,7 +120,7 @@ function sourceSide(role: CalculatedFlowRole): PlannerHandleSide {
 }
 
 function targetSide(role: CalculatedFlowRole): PlannerHandleSide {
-  if (role === 'fuel') return 'top';
+  if (role === 'fuel' || role === 'steam') return 'top';
   if (role === 'fertilizer') return 'bottom';
   return 'left';
 }
@@ -136,7 +144,7 @@ function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
     data: {
       itemId: flow.itemId,
       itemName: labelName,
-      rateLabel: rateLabel(flow, lang),
+      rateLabel: flow.role === 'steam' ? formatNumber(flow.rate) + '/min' : rateLabel(flow, lang),
       color: edgeColor,
       cycleSide: isSelfLoop ? 1 : 0,
       labelShiftY: isSelfLoop ? -42 : 0,

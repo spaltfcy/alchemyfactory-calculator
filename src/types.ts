@@ -61,6 +61,8 @@ export type ItemSourceMode = 'auto' | 'craft' | 'buy' | 'stock';
 export type GraphDetailLevel = 'simple' | 'normal' | 'detailed';
 
 export type FuelSourceMode = 'craft' | 'buy';
+export type HeatingMode = 'direct' | 'steam';
+export type SteamBoilerMode = 'low' | 'medium' | 'high';
 export type FertilizerSourceMode = 'craft' | 'buy';
 export type CrucibleVariant = 'crucible' | 'stackable_crucible';
 
@@ -68,6 +70,8 @@ export type FuelSettings = {
   enabled: boolean;
   fuelItemId: string;
   fuelSourceMode: FuelSourceMode;
+  heatingMode: HeatingMode;
+  steamBoilerMode: SteamBoilerMode;
   crucibleVariant: CrucibleVariant;
   crucibleOverheadHeatPerSec: number;
   otherOverheadHeatPerSec: number;

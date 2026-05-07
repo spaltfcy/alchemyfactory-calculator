@@ -27,6 +27,8 @@ export const DEFAULT_STATE: AppState = {
       enabled: true,
       fuelItemId: 'charcoal_powder',
       fuelSourceMode: 'craft',
+      heatingMode: 'direct',
+      steamBoilerMode: 'low',
       crucibleVariant: 'crucible',
       crucibleOverheadHeatPerSec: 0.4,
       otherOverheadHeatPerSec: 1,

@@ -231,8 +231,11 @@ type RunAnalysis = {
   demandByItem: Map<string, number>;
   byproductSupplyByItem: Map<string, number>;
   heatByRecipe: Map<string, number>;
+  steamByRecipe: Map<string, number>;
   fertilizerNutrientsByRecipe: Map<string, number>;
   heatRequiredPerMin: number;
+  steamRequiredPerMin: number;
+  steamBoilerRecipeId?: string;
   fertilizerNutrientsRequiredPerMin: number;
   fertilizerRequiredPerMin: number;
 };
@@ -247,6 +250,8 @@ const DEFAULT_FUEL_SETTINGS: FuelSettings = {
   enabled: true,
   fuelItemId: 'charcoal_powder',
   fuelSourceMode: 'craft',
+  heatingMode: 'direct',
+  steamBoilerMode: 'low',
   crucibleVariant: 'crucible',
   crucibleOverheadHeatPerSec: 0.4,
   otherOverheadHeatPerSec: 1,
@@ -262,12 +267,17 @@ const DEFAULT_FERTILIZER_SETTINGS: FertilizerSettings = {
 };
 
 function normalizeFuelSettings(settings: AppSettings): FuelSettings {
+  const fuel = settings.fuel ?? {};
+  const heatingMode = fuel.heatingMode === 'steam' ? 'steam' : 'direct';
+  const steamBoilerMode = fuel.steamBoilerMode === 'medium' || fuel.steamBoilerMode === 'high' ? fuel.steamBoilerMode : 'low';
   return {
     ...DEFAULT_FUEL_SETTINGS,
-    ...(settings.fuel ?? {}),
-    crucibleOverheadHeatPerSec: Math.max(0, Number(settings.fuel?.crucibleOverheadHeatPerSec ?? 0.4)),
-    otherOverheadHeatPerSec: Math.max(0, Number(settings.fuel?.otherOverheadHeatPerSec ?? 1)),
-    maxIterations: Math.max(1, Math.min(20, Math.floor(Number(settings.fuel?.maxIterations ?? 16)))),
+    ...fuel,
+    heatingMode,
+    steamBoilerMode,
+    crucibleOverheadHeatPerSec: Math.max(0, Number(fuel.crucibleOverheadHeatPerSec ?? 0.4)),
+    otherOverheadHeatPerSec: Math.max(0, Number(fuel.otherOverheadHeatPerSec ?? 1)),
+    maxIterations: Math.max(1, Math.min(20, Math.floor(Number(fuel.maxIterations ?? 16)))),
   };
 }
 
@@ -278,6 +288,19 @@ function normalizeFertilizerSettings(settings: AppSettings): FertilizerSettings 
     nurseryNutrientsPerSec: Math.max(0, Number(settings.fertilizer?.nurseryNutrientsPerSec ?? 12)),
     maxIterations: Math.max(1, Math.min(12, Math.floor(Number(settings.fertilizer?.maxIterations ?? 4)))),
   };
+}
+
+
+const STEAM_PER_HEAT_PER_SEC = 3;
+const STEAM_HEATING_PAD_BASE_HEAT_PER_SEC = 20;
+const STEAM_BOILER_MODES = {
+  low: { recipeId: 'steam_boiler_low', heatPerSec: 225, steamPerMin: 675 },
+  medium: { recipeId: 'steam_boiler_medium', heatPerSec: 1125, steamPerMin: 3375 },
+  high: { recipeId: 'steam_boiler_high', heatPerSec: 6750, steamPerMin: 20250 },
+} as const;
+
+function steamBoilerConfig(mode: FuelSettings['steamBoilerMode']): (typeof STEAM_BOILER_MODES)[keyof typeof STEAM_BOILER_MODES] {
+  return STEAM_BOILER_MODES[mode] ?? STEAM_BOILER_MODES.low;
 }
 
 function nowMs(): number {
@@ -365,6 +388,11 @@ function roundQuantity(rate: number, settings: AppSettings): number {
 
 function isNurserySeedInput(recipe: Recipe, itemId: string): boolean {
   return recipe.machineId === 'nursery' && itemId.endsWith('_seeds');
+}
+
+function heatConsumerBasePerMachinePerSecond(machineId: string, fuelSettings: FuelSettings): number {
+  const heatMachineId = resolveHeatMachineId(machineId, fuelSettings.crucibleVariant);
+  return HEAT_CONSUMER_BY_MACHINE_ID[heatMachineId]?.heatPerSec ?? 0;
 }
 
 function heatPerMachinePerSecond(machineId: string, fuelSettings: FuelSettings): number {
@@ -673,8 +701,10 @@ export function calculate(input: CalculateInput): CalculationResult {
     const demandByItem = new Map<string, number>();
     const byproductSupplyByItem = new Map<string, number>();
     const heatByRecipe = new Map<string, number>();
+    const steamByRecipe = new Map<string, number>();
     const fertilizerNutrientsByRecipe = new Map<string, number>();
     let heatRequiredPerMin = 0;
+    let steamRequiredPerMin = 0;
     let fertilizerNutrientsRequiredPerMin = 0;
 
     function addDemand(lot: DemandLot): void {
@@ -689,10 +719,21 @@ export function calculate(input: CalculateInput): CalculationResult {
       const machineRunRate = runRateForRecipe(recipe);
       const actualMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
       const heatPerSec = heatPerMachinePerSecond(recipe.machineId, fuelSettings);
-      const recipeHeat = fuelSettings.enabled && heatPerSec > EPS ? actualMachines * heatPerSec * 60 * heatConsumptionMultiplier : 0;
-      if (recipeHeat > EPS) {
-        heatRequiredPerMin += recipeHeat;
-        heatByRecipe.set(recipe.id, recipeHeat);
+      const baseHeatPerSec = heatConsumerBasePerMachinePerSecond(recipe.machineId, fuelSettings);
+      if (fuelSettings.enabled && heatPerSec > EPS) {
+        if (fuelSettings.heatingMode === 'steam' && baseHeatPerSec > EPS) {
+          const steamRate = actualMachines * (STEAM_HEATING_PAD_BASE_HEAT_PER_SEC + baseHeatPerSec * heatConsumptionMultiplier) * STEAM_PER_HEAT_PER_SEC;
+          if (steamRate > EPS) {
+            steamRequiredPerMin += steamRate;
+            steamByRecipe.set(recipe.id, steamRate);
+          }
+        } else {
+          const recipeHeat = actualMachines * heatPerSec * 60 * heatConsumptionMultiplier;
+          if (recipeHeat > EPS) {
+            heatRequiredPerMin += recipeHeat;
+            heatByRecipe.set(recipe.id, recipeHeat);
+          }
+        }
       }
       const recipeNutrients = fertilizerSettings.enabled && recipe.machineId === 'nursery'
         ? runsPerMinute * nurseryNutrientsRequiredPerRun(recipe)
@@ -710,6 +751,12 @@ export function calculate(input: CalculateInput): CalculationResult {
         if (!primary) addToMap(byproductSupplyByItem, output.itemId, output.amount * (output.probability ?? 1) * runsPerMinute);
       }
     }
+    if (fuelSettings.enabled && fuelSettings.heatingMode === 'steam' && steamRequiredPerMin > EPS) {
+      const steamBoiler = steamBoilerConfig(fuelSettings.steamBoilerMode);
+      heatRequiredPerMin = (steamRequiredPerMin / steamBoiler.steamPerMin) * steamBoiler.heatPerSec * 60;
+      heatByRecipe.set(steamBoiler.recipeId, heatRequiredPerMin);
+    }
+
 
     if (fuelSettings.enabled && injectedFuelRate > EPS && fuelSettings.fuelSourceMode === 'craft' && heatRequiredPerMin > EPS) {
       for (const [recipeId, recipeHeat] of heatByRecipe.entries()) {
@@ -731,7 +778,19 @@ export function calculate(input: CalculateInput): CalculationResult {
       }
     }
 
-    return { demandLots, demandByItem, byproductSupplyByItem, heatByRecipe, fertilizerNutrientsByRecipe, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, fertilizerRequiredPerMin };
+    return {
+      demandLots,
+      demandByItem,
+      byproductSupplyByItem,
+      heatByRecipe,
+      steamByRecipe,
+      fertilizerNutrientsByRecipe,
+      heatRequiredPerMin,
+      steamRequiredPerMin,
+      steamBoilerRecipeId: steamRequiredPerMin > EPS ? steamBoilerConfig(fuelSettings.steamBoilerMode).recipeId : undefined,
+      fertilizerNutrientsRequiredPerMin,
+      fertilizerRequiredPerMin,
+    };
   }
 
   function desiredRunsFromAnalysis(analysis: RunAnalysis): RunMap {
@@ -815,7 +874,6 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
         map.set(output.itemId, lots);
       }
     }
-
     for (const lock of locks) {
       consumeLotsForPrune(primaryLotsByItem.get(lock.itemId), lock.actualRate, usedOutputByRecipe);
     }
@@ -1041,6 +1099,24 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
     const byproductLotsByItem = new Map<string, SupplyLot[]>();
     const targetReservedByItem = new Map<string, number>();
 
+
+    const steamBoilerRecipeId = analysis.steamBoilerRecipeId;
+    if (steamBoilerRecipeId && analysis.steamRequiredPerMin > EPS) {
+      const steamBoiler = steamBoilerConfig(fuelSettings.steamBoilerMode);
+      const boilerMachines = analysis.steamRequiredPerMin / steamBoiler.steamPerMin;
+      recipeStats[steamBoilerRecipeId] = {
+        recipeId: steamBoilerRecipeId,
+        machineId: 'steam_boiler',
+        theoreticalMachines: boilerMachines,
+        actualMachines: boilerMachines,
+        runsPerMinute: boilerMachines,
+        inputRates: {},
+        outputRates: { steam: analysis.steamRequiredPerMin },
+        surplusOutputRates: {},
+        discardedOutputRates: {},
+        targetIds: [],
+      };
+    }
     for (const [recipeId, runsPerMinute] of runs.entries()) {
       const recipe = recipeById[recipeId];
       if (!recipe || runsPerMinute <= EPS) continue;
@@ -1150,6 +1226,12 @@ function pruneRunsWithUnusedPrimaryOutputs(candidateRuns: RunMap, injectedFuelRa
         addFlow({ type: 'itemSource', itemId: demand.itemId, sourceMode: mode }, consumer, demand.itemId, remaining, demandRole);
       }
     }
+    if (steamBoilerRecipeId && analysis.steamRequiredPerMin > EPS) {
+      for (const [recipeId, steamRate] of analysis.steamByRecipe.entries()) {
+        addFlow({ type: 'recipe', recipeId: steamBoilerRecipeId }, { type: 'recipe', recipeId }, 'steam', steamRate, 'steam');
+      }
+    }
+
 
     if (fuelSettings.enabled && injectedFuelRate > EPS && fuelSettings.fuelSourceMode === 'buy' && analysis.heatRequiredPerMin > EPS) {
       for (const [recipeId, heat] of analysis.heatByRecipe.entries()) {
