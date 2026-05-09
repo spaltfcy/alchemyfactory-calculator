@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import type { AppState, Lang } from '../types';
 import { buildNegativeTargetWarningInput, filterPositiveTargets, sanitizeNegativeTargets, type NegativeTargetEntry } from '../engine/targetValidation';
 import { calculationInvalidPersistentError, createUserMessage, verificationErrorMessage, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
-import { calculate, calculateWithDebug, type CalculateInput } from '../engine/calculate';
+import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { buildFlowGraphSvg } from '../engine/graph';
 
 type DebugTabProps = {
@@ -498,8 +498,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
 
   function buildDebugArtifact(sourceState: AppState, userMessageLogs: UserMessageLog[] = userMessages, currentRunMessageLogs: UserMessageLog[] = []) {
     const input = buildInputFromState(sourceState);
-    const result = calculate(input);
-    const { debugLog } = calculateWithDebug(input);
+    const { result, debugLog } = calculateWithDebug(input);
     const resultWithDebugStatus = result as typeof result & {
       calculationStatus?: 'ok' | 'invalid';
       errorSummaries?: unknown[];
