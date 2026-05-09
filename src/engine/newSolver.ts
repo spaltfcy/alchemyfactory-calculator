@@ -10,6 +10,7 @@ import {
 } from '../data/abilityTables';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
+import { calculateAlphaLinear, type AlphaLinearSolveResult } from './alphaLinearSolver';
 import {
   calculate as calculateLegacy,
   calculateWithDebug as calculateLegacyWithDebug,
@@ -224,6 +225,7 @@ export type NewSolverResult = {
   result: CalculationResult;
   engineId: SolverEngineId;
   linearModelDiagnostics?: LinearModelDiagnostics;
+  alphaLinearTrace?: AlphaLinearSolveResult['trace'];
 };
 
 const ACTIVE_ENGINE: SolverEngineId = 'linear-v070-alpha';
@@ -1010,9 +1012,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.7.0-alpha.3 では、通常計算結果は旧solver互換のまま、ログ出力時だけ線形収支モデルの変数・制約・候補診断を生成します。',
+      'v0.7.0-alpha.4 では、新solver結果経路を通常計算に使い、ログ出力時は旧solver比較も併記します。',
     noteEn:
-      'v0.7.0-alpha.3 keeps runtime results legacy-compatible and only emits linear balance model variables, constraints, and candidate diagnostics during log export.',
+      'v0.7.0-alpha.4 keeps runtime results legacy-compatible and only emits linear balance model variables, constraints, and candidate diagnostics during log export.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',
@@ -1046,21 +1048,31 @@ export function buildNewSolverResultFromLegacy(
 }
 
 export function calculateWithNewSolver(input: CalculateInput): NewSolverResult {
-  return buildNewSolverResultFromLegacy(calculateLegacy(input));
+  const diagnostics = buildLinearModelDiagnostics(input);
+  const alpha = calculateAlphaLinear(input, diagnostics);
+  return {
+    result: alpha.result,
+    engineId: ACTIVE_ENGINE,
+    linearModelDiagnostics: diagnostics,
+    alphaLinearTrace: alpha.trace,
+  };
 }
 
 export function calculateWithNewSolverDebug(input: CalculateInput): CalculationDebugResult {
   const legacyDebug = calculateLegacyWithDebug(input);
   const linearModelDiagnostics = buildLinearModelDiagnostics(input);
+  const alpha = calculateAlphaLinear(input, linearModelDiagnostics);
   return {
-    result: legacyDebug.result,
+    result: alpha.result,
     debugLog: {
       ...legacyDebug.debugLog,
       solverEngine: ACTIVE_ENGINE,
       linearModelDiagnostics,
+      alphaLinearTrace: alpha.trace,
     } as CalculationDebugResult['debugLog'] & {
       solverEngine: SolverEngineId;
       linearModelDiagnostics: LinearModelDiagnostics;
+      alphaLinearTrace: AlphaLinearSolveResult['trace'];
     },
   };
 }
@@ -1083,6 +1095,6 @@ export function buildSolverComparisonFromResults(
 export function buildSolverComparison(input: CalculateInput): SolverComparison {
   const legacy = calculateLegacy(input);
   const diagnostics = buildLinearModelDiagnostics(input);
-  const next = buildNewSolverResultFromLegacy(legacy, diagnostics).result;
+  const next = calculateAlphaLinear(input, diagnostics).result;
   return buildSolverComparisonFromResults(legacy, next, diagnostics);
 }

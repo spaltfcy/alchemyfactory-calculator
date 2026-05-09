@@ -2,11 +2,10 @@ export * from './legacyCalculate';
 
 import {
   buildLinearModelDiagnostics,
-  buildNewSolverResultFromLegacy,
   buildSolverComparisonFromResults,
+  calculateWithNewSolver,
 } from './newSolver';
 import {
-  calculate as calculateLegacy,
   calculateWithDebug as calculateLegacyWithDebug,
   type CalculateInput,
   type CalculationDebugResult,
@@ -14,31 +13,33 @@ import {
 } from './legacyCalculate';
 
 export function calculate(input: CalculateInput): CalculationResult {
-  // v0.7.0-alpha.1 keeps normal runtime calculation fully legacy-compatible and cheap.
-  // New solver diagnostics/comparison are generated only by calculateWithDebug() for log export.
-  return calculateLegacy(input);
+  return calculateWithNewSolver(input).result;
 }
 
 export function calculateWithDebug(input: CalculateInput): CalculationDebugResult {
   const legacyDebug = calculateLegacyWithDebug(input);
   const linearModelDiagnostics = buildLinearModelDiagnostics(input);
-  const newSolverResult = buildNewSolverResultFromLegacy(legacyDebug.result, linearModelDiagnostics);
+  const newSolverResult = calculateWithNewSolver(input);
   const solverComparison = buildSolverComparisonFromResults(
     legacyDebug.result,
     newSolverResult.result,
     linearModelDiagnostics,
   );
   return {
-    result: legacyDebug.result,
+    result: newSolverResult.result,
     debugLog: {
       ...legacyDebug.debugLog,
+      resultEngine: newSolverResult.engineId,
       solverEngine: newSolverResult.engineId,
       linearModelDiagnostics,
       solverComparison,
+      alphaLinearTrace: newSolverResult.alphaLinearTrace,
     } as CalculationDebugResult['debugLog'] & {
+      resultEngine: typeof newSolverResult.engineId;
       solverEngine: typeof newSolverResult.engineId;
       linearModelDiagnostics: typeof linearModelDiagnostics;
       solverComparison: typeof solverComparison;
+      alphaLinearTrace: typeof newSolverResult.alphaLinearTrace;
     },
   };
 }

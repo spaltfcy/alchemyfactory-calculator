@@ -222,7 +222,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 9,
+      debugSchemaVersion: 10,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,
@@ -426,6 +426,34 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                     onChange={(event: ChangeEvent<HTMLInputElement>) => patchSettings({ showInitialInvestmentLines: event.target.checked })}
                   />
                   <span>{lang === 'ja' ? '表示' : 'Show'}</span>
+                </span>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '不足時の代替レシピ補完' : 'Alternate recipes for shortages'}</span>
+                <span className="checkbox-control">
+                  <input
+                    id="allow-alternate-recipe-completion"
+                    name="allow-alternate-recipe-completion"
+                    type="checkbox"
+                    checked={state.settings.allowAlternateRecipeCompletion ?? false}
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchSettings({ allowAlternateRecipeCompletion: event.target.checked })}
+                  />
+                  <span>{lang === 'ja' ? '有効' : 'Enabled'}</span>
+                </span>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '副産物を燃料として利用' : 'Use byproducts as fuel'}</span>
+                <span className="checkbox-control">
+                  <input
+                    id="use-byproduct-fuel"
+                    name="use-byproduct-fuel"
+                    type="checkbox"
+                    checked={state.settings.useByproductFuel ?? false}
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchSettings({ useByproductFuel: event.target.checked })}
+                  />
+                  <span>{lang === 'ja' ? '有効' : 'Enabled'}</span>
                 </span>
               </label>
 

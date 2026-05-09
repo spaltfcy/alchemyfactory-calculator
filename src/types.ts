@@ -140,6 +140,8 @@ export type AppSettings = {
   showDiscardedByproducts: boolean;
   showCompleted: boolean;
   showInitialInvestmentLines: boolean;
+  allowAlternateRecipeCompletion: boolean;
+  useByproductFuel: boolean;
   fuel: FuelSettings;
   fertilizer: FertilizerSettings;
 };

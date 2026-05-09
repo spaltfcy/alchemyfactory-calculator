@@ -21,6 +21,8 @@ export const DEFAULT_STATE: AppState = {
     showDiscardedByproducts: true,
     showCompleted: true,
     showInitialInvestmentLines: true,
+    allowAlternateRecipeCompletion: false,
+    useByproductFuel: false,
     fuel: {
       enabled: true,
       fuelItemId: 'charcoal_powder',
