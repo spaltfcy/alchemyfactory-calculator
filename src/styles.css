@@ -1528,11 +1528,18 @@ a {
   }
 }
 
-/* v0.6.4: app-level temporary/persistent message log */
+/* app-level temporary/persistent message log */
 .app-message-stack {
+  position: fixed;
+  top: clamp(5.4rem, 10vh, 9.2rem);
+  right: 1rem;
+  z-index: 3000;
   display: grid;
   gap: 8px;
-  padding: 8px 16px 0;
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: min(45vh, 24rem);
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .app-message {
@@ -1541,17 +1548,19 @@ a {
   align-items: start;
   gap: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 10px;
-  padding: 9px 12px;
-  background: rgba(20, 24, 32, 0.94);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(20, 24, 32, 0.96);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34);
+  pointer-events: auto;
 }
 
 .app-message pre {
   margin: 0;
   white-space: pre-wrap;
   font: inherit;
-  line-height: 1.5;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .app-message button {
@@ -1565,21 +1574,32 @@ a {
 }
 
 .app-message-error {
-  border-color: rgba(255, 112, 112, 0.55);
-  background: rgba(68, 22, 28, 0.96);
+  border-color: rgba(255, 112, 112, 0.72);
+  background: rgba(74, 20, 28, 0.98);
 }
 
 .app-message-warning {
-  border-color: rgba(255, 207, 93, 0.55);
-  background: rgba(58, 46, 16, 0.96);
+  border-color: rgba(255, 207, 93, 0.72);
+  background: rgba(64, 48, 13, 0.98);
 }
 
 .app-message-info {
-  border-color: rgba(120, 188, 255, 0.45);
+  border-color: rgba(120, 188, 255, 0.55);
 }
 
 .app-message-temporary {
-  animation: app-message-enter 0.16s ease-out;
+  animation: app-message-life var(--message-duration, 5s) ease-in-out forwards;
+}
+
+.app-message-persistent {
+  animation: app-message-enter 0.14s ease-out;
+}
+
+@keyframes app-message-life {
+  0% { transform: translateY(-6px); opacity: 0; }
+  4% { transform: translateY(0); opacity: 1; }
+  88% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-4px); opacity: 0; }
 }
 
 @keyframes app-message-enter {

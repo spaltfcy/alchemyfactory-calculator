@@ -1,10 +1,14 @@
 export type UserMessageSeverity = 'info' | 'warning' | 'error';
 export type UserMessageVisibility = 'temporary' | 'persistent';
+export type UserMessageDisplayMode = 'toast' | 'persistent';
 
 export type UserMessageLog = {
   id: string;
   severity: UserMessageSeverity;
   visibility: UserMessageVisibility;
+  displayMode: UserMessageDisplayMode;
+  lifetimeMs: number | null;
+  persistInLog: true;
   code: string;
   messageJa: string;
   messageEn: string;
@@ -32,13 +36,15 @@ function makeId(): string {
 
 export function createUserMessage(input: UserMessageInput, now = new Date()): UserMessageLog {
   const createdAt = now.toISOString();
-  const expiresAt = input.visibility === 'temporary'
-    ? new Date(now.getTime() + Math.max(1, input.durationMs ?? 5000)).toISOString()
-    : undefined;
+  const lifetimeMs = input.visibility === 'temporary' ? Math.max(1, input.durationMs ?? 5000) : null;
+  const expiresAt = lifetimeMs === null ? undefined : new Date(now.getTime() + lifetimeMs).toISOString();
   return {
     id: makeId(),
     severity: input.severity,
     visibility: input.visibility,
+    displayMode: input.visibility === 'temporary' ? 'toast' : 'persistent',
+    lifetimeMs,
+    persistInLog: true,
     code: input.code,
     messageJa: input.messageJa,
     messageEn: input.messageEn,

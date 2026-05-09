@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import type { AbilityId, AppState } from './types';
 import { filterPositiveTargets, sanitizeNegativeTargets } from './engine/targetValidation';
 import { createUserMessage, messageText, type UserMessageInput, type UserMessageLog } from './utils/userMessages';
@@ -15,7 +15,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.6.4';
+const APP_VERSION = '0.6.5';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -142,25 +142,32 @@ export function App() {
   const [runtimeFlags, setRuntimeFlags] = useState<RuntimeFlags>(() => parseRuntimeFlags());
   const [state, setState] = useState<AppState>(() => mergeInitialState(parseRuntimeFlags().safeMode));
   const [abilityOpen, setAbilityOpen] = useState(false);
-  const [userMessages, setUserMessages] = useState<UserMessageLog[]>([]);
+  const [visibleUserMessages, setVisibleUserMessages] = useState<UserMessageLog[]>([]);
+  const [userMessageHistory, setUserMessageHistory] = useState<UserMessageLog[]>([]);
   const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
 
   function addUserMessage(input: UserMessageInput): UserMessageLog {
     const message = createUserMessage(input);
-    setUserMessages((current) => [message, ...current].slice(0, 80));
+    setUserMessageHistory((current) => [message, ...current].slice(0, 300));
+    setVisibleUserMessages((current) => [message, ...current].slice(0, 20));
     if (message.visibility === 'temporary') {
-      const durationMs = Math.max(1, input.durationMs ?? 5000);
+      const durationMs = Math.max(1, message.lifetimeMs ?? input.durationMs ?? 5000);
       window.setTimeout(() => {
-        setUserMessages((current) => current.filter((item) => item.id !== message.id));
+        setVisibleUserMessages((current) => current.filter((item) => item.id !== message.id));
       }, durationMs);
     }
     return message;
   }
 
   function removeUserMessage(id: string): void {
-    setUserMessages((current) => current.filter((item) => item.id !== id));
+    setVisibleUserMessages((current) => current.filter((item) => item.id !== id));
+  }
+
+  function messageStyle(message: UserMessageLog): CSSProperties | undefined {
+    if (message.visibility !== 'temporary') return undefined;
+    return { '--message-duration': `${Math.max(1, message.lifetimeMs ?? 5000)}ms` } as CSSProperties;
   }
 
 
@@ -393,10 +400,10 @@ export function App() {
         </div>
       </header>
 
-      {userMessages.length > 0 && (
+      {visibleUserMessages.length > 0 && (
         <div className="app-message-stack" aria-live="polite">
-          {userMessages.slice(0, 5).map((message) => (
-            <div key={message.id} className={`app-message app-message-${message.severity} app-message-${message.visibility}`}>
+          {visibleUserMessages.slice(0, 5).map((message) => (
+            <div key={message.id} className={`app-message app-message-${message.severity} app-message-${message.visibility}`} style={messageStyle(message)}>
               <pre>{messageText(message, lang)}</pre>
               {message.visibility === 'persistent' && (
                 <button type="button" aria-label={lang === 'ja' ? 'メッセージを閉じる' : 'Close message'} onClick={() => removeUserMessage(message.id)}>
@@ -433,7 +440,7 @@ export function App() {
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
-          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} setState={setState} appVersion={APP_VERSION} gameVersion={GAME_VERSION} userMessages={userMessages} onUserMessage={addUserMessage} />}
+          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} setState={setState} appVersion={APP_VERSION} gameVersion={GAME_VERSION} userMessages={userMessageHistory} onUserMessage={addUserMessage} />}
         </section>
       </main>
     </div>

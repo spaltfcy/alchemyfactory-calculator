@@ -435,7 +435,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 6,
+      debugSchemaVersion: 7,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -566,7 +566,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 6,
+      debugSchemaVersion: 7,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -590,6 +590,39 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       summary: enriched?.summary,
       negativeTargets: args.negativeTargets ?? [],
       userMessageLogs: args.userMessageLogs ?? userMessages,
+      diagnostics: {
+        primaryFailure: {
+          status: args.status,
+          phase: args.phase,
+          code: args.code,
+          messageJa: args.messageJa,
+          messageEn: args.messageEn,
+        },
+        includedFiles: {
+          sourceJson: true,
+          inputJson: Boolean(args.artifact),
+          debugJson: Boolean(args.artifact),
+          userMessageLogJson: true,
+          errorSummaryJson: true,
+        },
+        inputState: stateSummary(args.importedState),
+        sanitizedInput: args.input ? stateSummary({ ...state, targets: args.input.targets }) : undefined,
+        targetValidation: {
+          negativeTargetCount: args.negativeTargets?.length ?? 0,
+          negativeTargets: args.negativeTargets ?? [],
+        },
+        messageLog: {
+          count: (args.userMessageLogs ?? userMessages).length,
+          recent: (args.userMessageLogs ?? userMessages).slice(0, 30),
+        },
+        calculation: {
+          status: enriched?.calculationStatus,
+          errorSummaryCount: Array.isArray(enriched?.errorSummaries) ? enriched.errorSummaries.length : 0,
+          issueCount: Array.isArray(enriched?.issues) ? enriched.issues.length : 0,
+          warningCount: Array.isArray(enriched?.warnings) ? enriched.warnings.length : 0,
+          residualUnresolvedFlowCount: Array.isArray(enriched?.residualUnresolvedFlows) ? enriched.residualUnresolvedFlows.length : 0,
+        },
+      },
     };
   }
 

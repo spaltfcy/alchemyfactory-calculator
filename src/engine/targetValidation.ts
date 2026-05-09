@@ -75,10 +75,11 @@ export function buildNegativeTargetWarningInput(entries: NegativeTargetEntry[]):
   if (entries.length <= 0) return undefined;
   return {
     severity: 'warning',
-    visibility: 'persistent',
+    visibility: 'temporary',
     code: 'NEGATIVE_TARGET_VALUE_IGNORED',
     messageJa: buildNegativeTargetLines(entries, 'ja').join('\n'),
     messageEn: buildNegativeTargetLines(entries, 'en').join('\n'),
+    durationMs: 5000,
     details: {
       ignoredTargetCount: entries.length,
       negativeTargets: entries,
