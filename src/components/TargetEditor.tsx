@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import type { Lang, ProductionTarget } from '../types';
+import { negativeOutputTemporaryError, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
 import { ITEMS, itemById } from '../data/items';
 import { DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing, recipeById } from '../data/recipes';
 import { getItemSortNameJa, validateItemSortNames } from '../data/itemSortNames';
@@ -9,6 +10,7 @@ export type TargetEditorProps = {
   lang: Lang;
   targets: ProductionTarget[];
   onChange: (targets: ProductionTarget[]) => void;
+  onUserMessage?: (input: UserMessageInput) => UserMessageLog;
 };
 
 type BulkModeValue = '' | ProductionTarget['mode'];
@@ -74,7 +76,7 @@ function sameTargetOrder(a: ProductionTarget[], b: ProductionTarget[]): boolean 
   return a.length === b.length && a.every((target, index) => target.id === b[index]?.id);
 }
 
-export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
+export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetEditorProps) {
   const selectableItems = getSelectableOutputItems(lang);
   const [bulkValue, setBulkValue] = useState('');
   const [bulkMode, setBulkMode] = useState<BulkModeValue>('');
@@ -88,6 +90,20 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
   }, [targets]);
 
   function commitTargets(nextTargets: ProductionTarget[]) { syncedTargetsRef.current = nextTargets; setDraftTargets(nextTargets); onChange(nextTargets); }
+
+  function showNegativeOutputError(): void {
+    onUserMessage?.(negativeOutputTemporaryError());
+  }
+
+  function parseNonNegativeInputValue(rawValue: string): number | undefined {
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) return undefined;
+    if (value < 0) {
+      showNegativeOutputError();
+      return undefined;
+    }
+    return value;
+  }
 
   function updateTarget(id: string, patch: Partial<ProductionTarget>) {
     const nextTargets = draftTargets.map((target) => {
@@ -107,6 +123,10 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
 
     const value = Number(trimmed);
     if (hasValue && !Number.isFinite(value)) return;
+    if (hasValue && value < 0) {
+      showNegativeOutputError();
+      return;
+    }
 
     const nextTargets = draftTargets.map((target) => ({
       ...target,
@@ -151,6 +171,7 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
             <span>{bulkOutputLabel}</span>
             <input
               type="number"
+              min={0}
               value={bulkValue}
               onChange={(event: ChangeEvent<HTMLInputElement>) => setBulkValue(event.target.value)}
               onKeyDown={onBulkKeyDown}
@@ -195,10 +216,13 @@ export function TargetEditor({ lang, targets, onChange }: TargetEditorProps) {
               <span>{outputLabel}</span>
               <input
                 type="number"
+                min={0}
                 value={target.value}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  updateTarget(target.id, { value: Number(event.target.value) })
-                }
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  const value = parseNonNegativeInputValue(event.target.value);
+                  if (value === undefined) return;
+                  updateTarget(target.id, { value });
+                }}
               />
             </label>
 

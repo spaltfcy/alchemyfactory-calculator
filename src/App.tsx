@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import type { AbilityId, AppState } from './types';
+import { filterPositiveTargets, sanitizeNegativeTargets } from './engine/targetValidation';
+import { createUserMessage, messageText, type UserMessageInput, type UserMessageLog } from './utils/userMessages';
 import { DEFAULT_STATE } from './defaultState';
 import { calculate } from './engine/calculate';
 import { loadState, saveState } from './utils/storage';
@@ -13,7 +15,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.6.3';
+const APP_VERSION = '0.6.4';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -123,6 +125,7 @@ function mergeInitialState(safeMode: boolean): AppState {
 
   if (merged.settings.showInitialInvestmentLines === undefined) merged.settings.showInitialInvestmentLines = DEFAULT_STATE.settings.showInitialInvestmentLines;
 
+  merged.targets = sanitizeNegativeTargets(merged.targets).targets;
   merged.version = Math.max(DEFAULT_STATE.version, saved.version ?? 0);
   return merged;
 }
@@ -139,9 +142,26 @@ export function App() {
   const [runtimeFlags, setRuntimeFlags] = useState<RuntimeFlags>(() => parseRuntimeFlags());
   const [state, setState] = useState<AppState>(() => mergeInitialState(parseRuntimeFlags().safeMode));
   const [abilityOpen, setAbilityOpen] = useState(false);
+  const [userMessages, setUserMessages] = useState<UserMessageLog[]>([]);
   const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
+
+  function addUserMessage(input: UserMessageInput): UserMessageLog {
+    const message = createUserMessage(input);
+    setUserMessages((current) => [message, ...current].slice(0, 80));
+    if (message.visibility === 'temporary') {
+      const durationMs = Math.max(1, input.durationMs ?? 5000);
+      window.setTimeout(() => {
+        setUserMessages((current) => current.filter((item) => item.id !== message.id));
+      }, durationMs);
+    }
+    return message;
+  }
+
+  function removeUserMessage(id: string): void {
+    setUserMessages((current) => current.filter((item) => item.id !== id));
+  }
 
 
   useEffect(() => {
@@ -204,12 +224,14 @@ export function App() {
 
   const calculationTargets = useMemo(
     () =>
-      state.targets
-        .map((target) => ({
-          ...target,
-          recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
-        }))
-        .sort((a, b) => a.id.localeCompare(b.id)),
+      filterPositiveTargets(
+        state.targets
+          .map((target) => ({
+            ...target,
+            recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
+          }))
+          .sort((a, b) => a.id.localeCompare(b.id)),
+      ),
     [targetCalculationKey],
   );
 
@@ -371,10 +393,25 @@ export function App() {
         </div>
       </header>
 
+      {userMessages.length > 0 && (
+        <div className="app-message-stack" aria-live="polite">
+          {userMessages.slice(0, 5).map((message) => (
+            <div key={message.id} className={`app-message app-message-${message.severity} app-message-${message.visibility}`}>
+              <pre>{messageText(message, lang)}</pre>
+              {message.visibility === 'persistent' && (
+                <button type="button" aria-label={lang === 'ja' ? 'メッセージを閉じる' : 'Close message'} onClick={() => removeUserMessage(message.id)}>
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       <main className={showSidebar ? 'main-layout' : 'main-layout main-layout-full'}>
         {showSidebar && (
           <aside className="side-pane">
-            <TargetEditor lang={lang} targets={state.targets} onChange={(targets) => setState({ ...state, targets })} />
+            <TargetEditor lang={lang} targets={state.targets} onChange={(targets) => setState({ ...state, targets })} onUserMessage={addUserMessage} />
           </aside>
         )}
 
@@ -396,7 +433,7 @@ export function App() {
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
-          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} setState={setState} appVersion={APP_VERSION} gameVersion={GAME_VERSION} />}
+          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} setState={setState} appVersion={APP_VERSION} gameVersion={GAME_VERSION} userMessages={userMessages} onUserMessage={addUserMessage} />}
         </section>
       </main>
     </div>

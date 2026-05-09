@@ -665,26 +665,28 @@ export function calculate(input: CalculateInput): CalculationResult {
   const directTargetPurchases: DirectTargetPurchase[] = [];
 
   for (const target of input.targets) {
+    const targetValue = Number(target.value);
+    if (!Number.isFinite(targetValue) || targetValue <= EPS) continue;
     const itemId = target.outputItemId;
     if (!itemId) continue;
     const recipe = target.recipeId && recipeById[target.recipeId] ? recipeById[target.recipeId] : chooseRecipeForItem(itemId, input.recipePreferences);
     if (!recipe) {
-      directTargetPurchases.push({ itemId, rate: Math.max(0, target.value), targetId: target.id });
+      directTargetPurchases.push({ itemId, rate: targetValue, targetId: target.id });
       continue;
     }
     const outputRate = outputRateForRecipe(recipe, itemId);
     if (outputRate <= EPS) {
-      directTargetPurchases.push({ itemId, rate: Math.max(0, target.value), targetId: target.id });
+      directTargetPurchases.push({ itemId, rate: targetValue, targetId: target.id });
       continue;
     }
     const machineRunRate = runRateForRecipe(recipe);
     let requestedRate: number;
     let actualMachines: number;
     if (target.mode === 'machines') {
-      actualMachines = Math.max(0, target.value);
+      actualMachines = targetValue;
       requestedRate = actualMachines * outputRate;
     } else {
-      requestedRate = Math.max(0, target.value);
+      requestedRate = targetValue;
       const theoreticalMachines = requestedRate / outputRate;
       actualMachines = shouldRound(input.settings.machineRounding, true) ? safeCeil(theoreticalMachines) : theoreticalMachines;
     }

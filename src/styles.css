@@ -1527,3 +1527,62 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* v0.6.4: app-level temporary/persistent message log */
+.app-message-stack {
+  display: grid;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+.app-message {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: rgba(20, 24, 32, 0.94);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+.app-message pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.app-message button {
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.app-message-error {
+  border-color: rgba(255, 112, 112, 0.55);
+  background: rgba(68, 22, 28, 0.96);
+}
+
+.app-message-warning {
+  border-color: rgba(255, 207, 93, 0.55);
+  background: rgba(58, 46, 16, 0.96);
+}
+
+.app-message-info {
+  border-color: rgba(120, 188, 255, 0.45);
+}
+
+.app-message-temporary {
+  animation: app-message-enter 0.16s ease-out;
+}
+
+@keyframes app-message-enter {
+  from { transform: translateY(-4px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

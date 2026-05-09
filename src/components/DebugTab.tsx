@@ -1,6 +1,8 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import JSZip from 'jszip';
 import type { AppState, Lang } from '../types';
+import { buildNegativeTargetWarningInput, filterPositiveTargets, sanitizeNegativeTargets, type NegativeTargetEntry } from '../engine/targetValidation';
+import { createUserMessage, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
 import { calculate, calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { buildFlowGraphSvg } from '../engine/graph';
 
@@ -10,6 +12,8 @@ type DebugTabProps = {
   setState: (next: AppState) => void;
   appVersion: string;
   gameVersion: string;
+  userMessages: UserMessageLog[];
+  onUserMessage?: (input: UserMessageInput) => UserMessageLog;
 };
 
 type LastSummary = {
@@ -283,10 +287,12 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
 
 function buildInputFromState(sourceState: AppState): CalculateInput {
   return {
-    targets: sourceState.targets.map((target) => ({
-      ...target,
-      recipeId: sourceState.recipePreferences[target.outputItemId] ?? target.recipeId,
-    })),
+    targets: filterPositiveTargets(
+      sourceState.targets.map((target) => ({
+        ...target,
+        recipeId: sourceState.recipePreferences[target.outputItemId] ?? target.recipeId,
+      })),
+    ),
     settings: sourceState.settings,
     abilities: sourceState.abilities,
     recipePreferences: sourceState.recipePreferences,
@@ -323,7 +329,7 @@ async function waitForGraphRender(timeoutMs = 15000): Promise<void> {
     }
 
     const signature = nodes.length + ':' + edges.length + ':' + (errorPanel ? 'error' : 'ok');
-    if (signature === lastSignature && (nodes.length > 0 || errorPanel)) {
+    if (signature === lastSignature && (nodes.length > 0 || errorPanel || edges.length === 0)) {
       stableCount += 1;
     } else {
       stableCount = 0;
@@ -359,7 +365,7 @@ function captureLiveGraphFile(): Promise<LiveGraphFile> {
   });
 }
 
-export function DebugTab({ lang, state, setState, appVersion, gameVersion }: DebugTabProps) {
+export function DebugTab({ lang, state, setState, appVersion, gameVersion, userMessages, onUserMessage }: DebugTabProps) {
   const zipInputRef = useRef<HTMLInputElement | null>(null);
   const [lastSummary, setLastSummary] = useState<LastSummary | null>(null);
   const [status, setStatus] = useState('');
@@ -382,6 +388,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion }: Deb
           graphFailed: 'グラフSVG保存に失敗しました。',
           zipSelectFailed: '検証JSONの読込に失敗しました。',
           zipSaved: '検証ZIPを保存しました。',
+          zipSavedInvalid: '検証ZIPを保存しました（計算不能の詳細JSONを含みます）。',
           zipFailed: '検証ZIP保存に失敗しました。',
         }
       : {
@@ -400,10 +407,11 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion }: Deb
           graphFailed: 'Failed to save graph SVG.',
           zipSelectFailed: 'Failed to read verification JSON.',
           zipSaved: 'Saved verification ZIP.',
+          zipSavedInvalid: 'Saved verification ZIP with invalid calculation details.',
           zipFailed: 'Failed to save verification ZIP.',
         };
 
-  function buildDebugArtifact(sourceState: AppState) {
+  function buildDebugArtifact(sourceState: AppState, userMessageLogs: UserMessageLog[] = userMessages) {
     const input = buildInputFromState(sourceState);
     const result = calculate(input);
     const { debugLog } = calculateWithDebug(input);
@@ -427,11 +435,12 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion }: Deb
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 5,
+      debugSchemaVersion: 6,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
       issues: normalizedIssues,
+      userMessageLogs,
     };
     const resultForSvg = {
       ...result,
@@ -486,14 +495,243 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion }: Deb
     }
   }
 
+  function fileInfo(file: File) {
+    return {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: file.lastModified,
+      lastModifiedIso: Number.isFinite(file.lastModified) ? new Date(file.lastModified).toISOString() : undefined,
+    };
+  }
+
+  function exceptionInfo(error: unknown) {
+    if (error instanceof Error) {
+      return {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      };
+    }
+    return {
+      name: typeof error,
+      message: String(error),
+    };
+  }
+
+  function stateSummary(sourceState: Partial<AppState> | undefined) {
+    const targets = Array.isArray(sourceState?.targets) ? sourceState.targets : [];
+    return {
+      version: sourceState?.version,
+      language: sourceState?.language,
+      activeTab: sourceState?.activeTab,
+      targetCount: targets.length,
+      positiveTargetCount: targets.filter((target) => Number.isFinite(Number(target.value)) && Number(target.value) > 0).length,
+      zeroTargetCount: targets.filter((target) => Number(target.value) === 0).length,
+      negativeTargetCount: targets.filter((target) => Number.isFinite(Number(target.value)) && Number(target.value) < 0).length,
+      targetPreview: targets.slice(0, 20).map((target) => ({
+        id: target.id,
+        recipeId: target.recipeId,
+        outputItemId: target.outputItemId,
+        mode: target.mode,
+        value: target.value,
+      })),
+    };
+  }
+
+  function buildVerificationErrorSummary(args: {
+    status: 'error' | 'invalid';
+    phase: string;
+    code: string;
+    messageJa: string;
+    messageEn: string;
+    file: File;
+    error?: unknown;
+    importedState?: Partial<AppState>;
+    input?: CalculateInput;
+    artifact?: ReturnType<typeof buildDebugArtifact>;
+    negativeTargets?: NegativeTargetEntry[];
+    userMessageLogs?: UserMessageLog[];
+  }) {
+    const enriched = args.artifact?.enrichedDebugLog as {
+      calculationStatus?: string;
+      errorSummaries?: unknown[];
+      warnings?: unknown[];
+      issues?: unknown[];
+      residualUnresolvedFlows?: unknown[];
+      totals?: unknown;
+      summary?: unknown;
+    } | undefined;
+
+    return {
+      appVersion,
+      gameVersion,
+      debugSchemaVersion: 6,
+      status: args.status,
+      phase: args.phase,
+      code: args.code,
+      messageJa: args.messageJa,
+      messageEn: args.messageEn,
+      createdAt: new Date().toISOString(),
+      file: fileInfo(args.file),
+      environment: {
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        locationHash: window.location.hash,
+      },
+      exception: args.error === undefined ? undefined : exceptionInfo(args.error),
+      inputSummary: args.input ? stateSummary({ ...state, targets: args.input.targets }) : stateSummary(args.importedState),
+      calculationStatus: enriched?.calculationStatus,
+      errorSummaries: enriched?.errorSummaries ?? [],
+      warnings: enriched?.warnings ?? [],
+      issues: enriched?.issues ?? [],
+      residualUnresolvedFlows: enriched?.residualUnresolvedFlows ?? [],
+      totals: enriched?.totals,
+      summary: enriched?.summary,
+      negativeTargets: args.negativeTargets ?? [],
+      userMessageLogs: args.userMessageLogs ?? userMessages,
+    };
+  }
+
+  async function saveVerificationErrorZip(args: {
+    file: File;
+    baseName: string;
+    timestamp: string;
+    raw?: string;
+    status: 'error' | 'invalid';
+    phase: string;
+    code: string;
+    messageJa: string;
+    messageEn: string;
+    error?: unknown;
+    importedState?: Partial<AppState>;
+    input?: CalculateInput;
+    artifact?: ReturnType<typeof buildDebugArtifact>;
+    negativeTargets?: NegativeTargetEntry[];
+    userMessageLogs?: UserMessageLog[];
+  }): Promise<void> {
+    const zip = new JSZip();
+    if (args.raw !== undefined) zip.file(args.baseName + '__source.json', args.raw);
+    zip.file(
+      args.baseName + '__error-summary.json',
+      JSON.stringify(
+        buildVerificationErrorSummary({
+          status: args.status,
+          phase: args.phase,
+          code: args.code,
+          messageJa: args.messageJa,
+          messageEn: args.messageEn,
+          file: args.file,
+          error: args.error,
+          importedState: args.importedState,
+          input: args.input,
+          artifact: args.artifact,
+          negativeTargets: args.negativeTargets,
+          userMessageLogs: args.userMessageLogs,
+        }),
+        null,
+        2,
+      ),
+    );
+    zip.file(args.baseName + '__user-message-log.json', JSON.stringify(args.userMessageLogs ?? userMessages, null, 2));
+    if (args.artifact) {
+      zip.file(args.baseName + '__input.json', JSON.stringify(args.artifact.input, null, 2));
+      zip.file(args.baseName + '__debug.json', JSON.stringify(args.artifact.enrichedDebugLog, null, 2));
+    }
+    const blob = await zip.generateAsync({ type: 'blob' });
+    downloadBlob(args.baseName + '__verification-error-' + args.timestamp + '.zip', blob);
+  }
+
   async function saveVerificationZipFromFile(file: File): Promise<void> {
     const baseName = safeFilePart(file.name);
-    const raw = await file.text();
-    const imported = JSON.parse(raw) as Partial<AppState>;
-    if (isUnsupportedImportedState(imported)) throw new Error(unsupportedImportMessage(lang));
-    const importedState = mergeImportedState(state, imported);
-    const artifact = buildDebugArtifact(importedState);
     const timestamp = timestampForFile();
+    let raw = '';
+    let imported: Partial<AppState> | undefined;
+
+    try {
+      raw = await file.text();
+    } catch (error) {
+      await saveVerificationErrorZip({
+        file,
+        baseName,
+        timestamp,
+        status: 'error',
+        phase: 'read_file',
+        code: 'VERIFICATION_FILE_READ_FAILED',
+        messageJa: '検証JSONファイルの読み込みに失敗しました。',
+        messageEn: 'Failed to read the verification JSON file.',
+        error,
+      });
+      throw error;
+    }
+
+    try {
+      imported = JSON.parse(raw) as Partial<AppState>;
+    } catch (error) {
+      await saveVerificationErrorZip({
+        file,
+        baseName,
+        timestamp,
+        raw,
+        status: 'error',
+        phase: 'parse_json',
+        code: 'INVALID_JSON',
+        messageJa: 'JSONの形式が不正です。',
+        messageEn: 'The JSON format is invalid.',
+        error,
+      });
+      throw new Error(lang === 'ja' ? 'JSONの形式が不正です。' : 'The JSON format is invalid.');
+    }
+
+    if (isUnsupportedImportedState(imported)) {
+      const error = new Error(unsupportedImportMessage(lang));
+      await saveVerificationErrorZip({
+        file,
+        baseName,
+        timestamp,
+        raw,
+        status: 'error',
+        phase: 'import_validation',
+        code: 'UNSUPPORTED_IMPORTED_STATE',
+        messageJa: unsupportedImportMessage('ja'),
+        messageEn: unsupportedImportMessage('en'),
+        error,
+        importedState: imported,
+      });
+      throw error;
+    }
+
+    const mergedImportedState = mergeImportedState(state, imported);
+    const targetSanitization = sanitizeNegativeTargets(mergedImportedState.targets);
+    const warningInput = buildNegativeTargetWarningInput(targetSanitization.negativeTargets);
+    const warningMessage = warningInput ? (onUserMessage?.(warningInput) ?? createUserMessage(warningInput)) : undefined;
+    const verificationMessages = warningMessage ? [warningMessage, ...userMessages] : userMessages;
+    const importedState = {
+      ...mergedImportedState,
+      targets: targetSanitization.targets,
+    };
+
+    let artifact: ReturnType<typeof buildDebugArtifact>;
+    try {
+      artifact = buildDebugArtifact(importedState, verificationMessages);
+    } catch (error) {
+      await saveVerificationErrorZip({
+        file,
+        baseName,
+        timestamp,
+        raw,
+        status: 'error',
+        phase: 'calculation_exception',
+        code: 'CALCULATION_EXCEPTION',
+        messageJa: '計算中に例外が発生しました。',
+        messageEn: 'An exception occurred during calculation.',
+        error,
+        importedState,
+        negativeTargets: targetSanitization.negativeTargets,
+        userMessageLogs: verificationMessages,
+      });
+      throw error;
+    }
 
     setStatus(lang === 'ja' ? '検証JSONを反映してグラフ描画を待っています。' : 'Applied verification JSON. Waiting for graph render.');
     setState(importedState);
@@ -502,10 +740,44 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion }: Deb
     zip.file(baseName + '__source.json', raw);
     zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
     zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
+    zip.file(baseName + '__user-message-log.json', JSON.stringify(verificationMessages, null, 2));
+    if (targetSanitization.negativeTargets.length > 0) {
+      zip.file(baseName + '__target-warning-summary.json', JSON.stringify({
+        code: 'NEGATIVE_TARGET_VALUE_IGNORED',
+        negativeTargetCount: targetSanitization.negativeTargets.length,
+        negativeTargets: targetSanitization.negativeTargets,
+        displayedMessageJa: warningInput?.messageJa,
+        displayedMessageEn: warningInput?.messageEn,
+      }, null, 2));
+    }
     zip.file(
       baseName + '__graph.svg',
       buildFlowGraphSvg(artifact.resultForSvg as typeof artifact.result, lang, importedState.settings, importedState.completedGraphNodeIds),
     );
+
+    const calculationInvalid = artifact.enrichedDebugLog.calculationStatus === 'invalid' || artifact.enrichedDebugLog.errorSummaries.length > 0;
+    if (calculationInvalid) {
+      zip.file(
+        baseName + '__error-summary.json',
+        JSON.stringify(
+          buildVerificationErrorSummary({
+            status: 'invalid',
+            phase: 'calculation',
+            code: 'CALCULATION_INVALID',
+            messageJa: '計算不能の結果です。',
+            messageEn: 'The calculation result is invalid.',
+            file,
+            importedState,
+            input: artifact.input,
+            artifact,
+            negativeTargets: targetSanitization.negativeTargets,
+            userMessageLogs: verificationMessages,
+          }),
+          null,
+          2,
+        ),
+      );
+    }
 
     try {
       await waitForGraphRender();
@@ -513,12 +785,23 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion }: Deb
       zip.file(baseName + '__graph-live.' + liveGraph.extension, liveGraph.blob);
     } catch (error) {
       zip.file(baseName + '__graph-live-error.txt', error instanceof Error ? error.message : String(error));
+      zip.file(baseName + '__graph-live-error-summary.json', JSON.stringify({
+        appVersion,
+        gameVersion,
+        status: 'error',
+        phase: 'graph_capture',
+        code: 'LIVE_GRAPH_CAPTURE_FAILED',
+        messageJa: 'ライブグラフの保存に失敗しました。計算ログと静的SVGは保存済みです。',
+        messageEn: 'Failed to save the live graph. The calculation log and static SVG were saved.',
+        exception: exceptionInfo(error),
+        createdAt: new Date().toISOString(),
+      }, null, 2));
     }
 
     const blob = await zip.generateAsync({ type: 'blob' });
     downloadBlob(baseName + '__verification-' + timestamp + '.zip', blob);
     refreshSummary(artifact);
-    setStatus(labels.zipSaved);
+    setStatus(calculationInvalid ? labels.zipSavedInvalid : labels.zipSaved);
   }
 
   async function onVerificationZipFileChange(event: ChangeEvent<HTMLInputElement>) {
