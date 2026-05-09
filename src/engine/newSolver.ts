@@ -19,7 +19,7 @@ import {
   type CalculatedFlow,
 } from './legacyCalculate';
 
-export type SolverEngineId = 'legacy-v0610' | 'balance-v070-alpha6';
+export type SolverEngineId = 'legacy-v0610' | 'balance-v070-alpha7';
 
 export type SolverRunSummary = {
   engineId: SolverEngineId;
@@ -227,7 +227,7 @@ export type NewSolverResult = {
   alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
 };
 
-const ACTIVE_ENGINE: SolverEngineId = 'balance-v070-alpha6';
+const ACTIVE_ENGINE: SolverEngineId = 'balance-v070-alpha7';
 const EPS = 1e-9;
 const MAX_CHANGED_ROWS = 60;
 
@@ -325,7 +325,7 @@ function makeFlowKey(flow: CalculatedFlow): string {
 
 function compareResults(legacy: CalculationResult, next: CalculationResult): SolverComparisonDiff {
   const legacySummary = summarizeResult('legacy-v0610', legacy);
-  const nextSummary = summarizeResult('balance-v070-alpha6', next);
+  const nextSummary = summarizeResult('balance-v070-alpha7', next);
   const nonFiniteEntries: NonFiniteNumericEntry[] = [];
   const totalDeltas: Record<string, NumericDebugValue> = {};
   for (const key of Object.keys(legacySummary.totals) as Array<keyof SolverRunSummary['totals']>) {
@@ -1011,9 +1011,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.7.0-alpha.6 では、収支ベースsolver結果経路を通常計算に使い、ログ出力時は旧solver比較も併記します。',
+      'v0.7.0-alpha.7 では、収支ベースsolver結果経路を通常計算に使い、ログ出力時は旧solver比較も併記します。',
     noteEn:
-      'v0.7.0-alpha.6 uses the balance-based solver result path at runtime and keeps the legacy comparison in debug/log output.',
+      'v0.7.0-alpha.7 uses the balance-based solver result path at runtime and keeps the legacy comparison in debug/log output.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',
@@ -1102,7 +1102,7 @@ export function buildSolverComparisonFromResults(
     generatedAt: new Date().toISOString(),
     activeEngine: ACTIVE_ENGINE,
     legacy: summarizeResult('legacy-v0610', legacyResult),
-    next: summarizeResult('balance-v070-alpha6', newResult),
+    next: summarizeResult('balance-v070-alpha7', newResult),
     diff: compareResults(legacyResult, newResult),
     linearModelDiagnostics,
   };

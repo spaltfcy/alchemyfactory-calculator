@@ -15,7 +15,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.7.0-alpha.6';
+const APP_VERSION = '0.7.0-alpha.7';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {

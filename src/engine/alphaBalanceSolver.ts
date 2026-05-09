@@ -37,8 +37,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.7.0-alpha.6' as const;
-const BALANCE_SOLVER_MODE = 'balance-iterative-alpha6';
+const BALANCE_SOLVER_VERSION = '0.7.0-alpha.7' as const;
+const BALANCE_SOLVER_MODE = 'balance-iterative-alpha7';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -64,10 +64,11 @@ type CycleInputLot = {
 type SourceBucket = Map<string, SourceLot>;
 type CycleInputBucket = Map<string, CycleInputLot>;
 type AlternateRecipeUse = { itemId: string; selectedRecipeId: string; alternateRecipeId: string; reason: 'selected_recipe_cycle'; rateAdded: number };
+type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; consumerRecipeId: string; reason: 'alternate_recipe_disabled' | 'no_alternate_recipe'; rateBlocked: number; cycleRecipeIds: string[]; cycleItemIds: string[] };
 type ByproductFuelUse = { itemId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-alpha6' | 'legacy-fallback';
+  mode: 'balance-iterative-alpha7' | 'legacy-fallback';
   version: typeof BALANCE_SOLVER_VERSION;
   fallbackReason?: string;
   iterations?: number;
@@ -82,6 +83,7 @@ type AlphaSolveTrace = {
   alternateRecipeCompletion: {
     enabled: boolean;
     uses: AlternateRecipeUse[];
+    blockedCycles: SelectedRecipeCycleBlock[];
   };
   byproductFuel: {
     enabled: boolean;
@@ -516,6 +518,24 @@ function recipeIdsInActiveCycles(diagnostics: LinearModelDiagnostics): Set<strin
   return new Set(diagnostics.activePlanCyclicComponents.flatMap((cycle) => cycle.recipeIds));
 }
 
+function activeCycleForRecipe(recipeId: string, diagnostics: LinearModelDiagnostics): SelectedRecipeCycleDiagnostic | undefined {
+  return diagnostics.activePlanCyclicComponents.find((cycle) => cycle.recipeIds.includes(recipeId));
+}
+
+function addSelectedRecipeCycleBlock(blocks: SelectedRecipeCycleBlock[], block: SelectedRecipeCycleBlock): void {
+  const existing = blocks.find((entry) =>
+    entry.itemId === block.itemId
+    && entry.selectedRecipeId === block.selectedRecipeId
+    && entry.consumerRecipeId === block.consumerRecipeId
+    && entry.reason === block.reason
+  );
+  if (existing) {
+    existing.rateBlocked += block.rateBlocked;
+    return;
+  }
+  blocks.push(block);
+}
+
 function chooseAlternateRecipeForItem(itemId: string, selectedRecipe: Recipe | undefined, diagnostics: LinearModelDiagnostics): Recipe | undefined {
   const cycleRecipeIds = recipeIdsInActiveCycles(diagnostics);
   const alternatives = getRecipesProducing(itemId)
@@ -535,6 +555,7 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
   heatRequiredPerMin: number;
   fertilizerNutrientsRequiredPerMin: number;
   alternateRecipeUses: AlternateRecipeUse[];
+  selectedRecipeCycleBlocks: SelectedRecipeCycleBlock[];
 } {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const { runs, targetRuns, targetRates, invalidTargets } = initialRunsFromTargets(input, productionSpeedMultiplier);
@@ -544,6 +565,7 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
   const cycleInputIds = cycleInputItemIds(diagnostics);
   const activeCycleRecipeIds = recipeIdsInActiveCycles(diagnostics);
   const alternateRecipeUses: AlternateRecipeUse[] = [];
+  const selectedRecipeCycleBlocks: SelectedRecipeCycleBlock[] = [];
   let heatRequiredPerMin = 0;
   let fertilizerNutrientsRequiredPerMin = 0;
 
@@ -571,11 +593,6 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
 
     for (const demand of sortedDemandLots) {
       let remaining = consumeRecipeLots(supplyLotsByItem.get(demand.itemId), demand.rate).remaining;
-
-      if (demand.role === 'fuel') {
-        const byproductFuel = consumeByproductFuelLots(supplyLotsByItem, demand.itemId, remaining, input);
-        remaining = byproductFuel.remainingPreferredFuelRate;
-      }
 
       if (demand.role === 'material') {
         remaining = consumeCycleInputBucket(cycleInputLots, demand.itemId, remaining).remaining;
@@ -638,21 +655,44 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
 
       const selectedRecipe = chooseRecipeForItem(demand.itemId, input.recipePreferences);
       let recipeToUse = selectedRecipe;
-      if (
-        input.settings.allowAlternateRecipeCompletion
-        && selectedRecipe
-        && activeCycleRecipeIds.has(selectedRecipe.id)
-      ) {
-        const alternate = chooseAlternateRecipeForItem(demand.itemId, selectedRecipe, diagnostics);
-        if (alternate) {
-          recipeToUse = alternate;
-          alternateRecipeUses.push({
+      if (selectedRecipe && activeCycleRecipeIds.has(selectedRecipe.id)) {
+        const cycle = activeCycleForRecipe(selectedRecipe.id, diagnostics);
+        if (input.settings.allowAlternateRecipeCompletion) {
+          const alternate = chooseAlternateRecipeForItem(demand.itemId, selectedRecipe, diagnostics);
+          if (alternate && alternate.id !== selectedRecipe.id) {
+            recipeToUse = alternate;
+            alternateRecipeUses.push({
+              itemId: demand.itemId,
+              selectedRecipeId: selectedRecipe.id,
+              alternateRecipeId: alternate.id,
+              reason: 'selected_recipe_cycle',
+              rateAdded: remaining,
+            });
+          } else {
+            addSelectedRecipeCycleBlock(selectedRecipeCycleBlocks, {
+              itemId: demand.itemId,
+              selectedRecipeId: selectedRecipe.id,
+              consumerRecipeId: demand.consumerRecipeId,
+              reason: 'no_alternate_recipe',
+              rateBlocked: remaining,
+              cycleRecipeIds: cycle?.recipeIds ?? [selectedRecipe.id],
+              cycleItemIds: cycle?.itemIds ?? [demand.itemId],
+            });
+            unresolved.add('__selected_recipe_cycle_unresolved__');
+            continue;
+          }
+        } else {
+          addSelectedRecipeCycleBlock(selectedRecipeCycleBlocks, {
             itemId: demand.itemId,
             selectedRecipeId: selectedRecipe.id,
-            alternateRecipeId: alternate.id,
-            reason: 'selected_recipe_cycle',
-            rateAdded: remaining,
+            consumerRecipeId: demand.consumerRecipeId,
+            reason: 'alternate_recipe_disabled',
+            rateBlocked: remaining,
+            cycleRecipeIds: cycle?.recipeIds ?? [selectedRecipe.id],
+            cycleItemIds: cycle?.itemIds ?? [demand.itemId],
           });
+          unresolved.add('__alternate_recipe_required_but_disabled__');
+          continue;
         }
       }
 
@@ -673,18 +713,18 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
     const cycleInputRates = [...cycleInputs.values()].map((lot) => lot.rate);
     if ([...nextRuns.values()].some(isNonFiniteOrHuge) || sourceRates.some(isNonFiniteOrHuge) || cycleInputRates.some(isNonFiniteOrHuge)) {
       unresolved.add('__non_finite_or_huge__');
-      return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses };
+      return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks };
     }
 
     if (!changed || mapAlmostEqual(runs, nextRuns)) {
-      return { runs: nextRuns, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses };
+      return { runs: nextRuns, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks };
     }
     runs.clear();
     for (const [recipeId, rate] of nextRuns.entries()) runs.set(recipeId, rate);
   }
 
   unresolved.add('__solver_did_not_converge__');
-  return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: MAX_ALPHA_ITERATIONS, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses };
+  return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: MAX_ALPHA_ITERATIONS, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks };
 }
 
 function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: ConveyorEdgeStat[]; outputEdges: OutputEdgeStat[] } {
@@ -720,11 +760,11 @@ function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: 
 }
 
 export function calculateAlphaBalance(input: CalculateInput, diagnostics: LinearModelDiagnostics): AlphaBalanceSolveResult {
-  // The alpha.6 balance solver handles ordinary material/source/cycle-input balances.
+  // The alpha.7 balance solver handles ordinary material/source/cycle-input balances.
   // Internal fuel/fertilizer self-dependency still falls back to the legacy-compatible engine until the full v0.8 replacement.
   const fallbackTraceBase = {
     version: BALANCE_SOLVER_VERSION,
-    alternateRecipeCompletion: { enabled: input.settings.allowAlternateRecipeCompletion, uses: [] as AlternateRecipeUse[] },
+    alternateRecipeCompletion: { enabled: input.settings.allowAlternateRecipeCompletion, uses: [] as AlternateRecipeUse[], blockedCycles: [] as SelectedRecipeCycleBlock[] },
     byproductFuel: { enabled: input.settings.useByproductFuel, uses: [] as ByproductFuelUse[] },
   };
 
@@ -734,9 +774,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       trace: {
         ...fallbackTraceBase,
         mode: 'legacy-fallback',
-        fallbackReason: 'internal_fuel_not_yet_active_in_alpha6',
-        notesJa: ['v0.7.0-alpha.6 では内部燃料の完全な収支solver化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.6 still uses the legacy-compatible fallback for internal fuel.'],
+        fallbackReason: 'internal_fuel_not_yet_active_in_alpha7',
+        notesJa: ['v0.7.0-alpha.7 では内部燃料の完全な収支solver化はまだ比較用フォールバックです。'],
+        notesEn: ['v0.7.0-alpha.7 still uses the legacy-compatible fallback for internal fuel.'],
       },
     };
   }
@@ -746,9 +786,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       trace: {
         ...fallbackTraceBase,
         mode: 'legacy-fallback',
-        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha6',
-        notesJa: ['v0.7.0-alpha.6 では内部肥料の完全な収支solver化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.6 still uses the legacy-compatible fallback for internal fertilizer.'],
+        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha7',
+        notesJa: ['v0.7.0-alpha.7 では内部肥料の完全な収支solver化はまだ比較用フォールバックです。'],
+        notesEn: ['v0.7.0-alpha.7 still uses the legacy-compatible fallback for internal fertilizer.'],
       },
     };
   }
@@ -859,7 +899,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       pushFlow(makeFlow({ type: 'recipe', recipeId: use.recipeId }, consumer, use.itemId, use.rate, demand.role, conveyorItemsPerMinute));
     }
 
-    if (demand.role === 'fuel') {
+    if (demand.role === 'fuel' && solved.selectedRecipeCycleBlocks.length === 0 && solved.unresolved.size === 0) {
       const byproductFuel = consumeByproductFuelLots(supplyLotsByItem, demand.itemId, remaining, input);
       remaining = byproductFuel.remainingPreferredFuelRate;
       for (const use of byproductFuel.uses) {
@@ -923,6 +963,24 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       messageJa: invalidRootItemIds.map((itemId) => itemById[itemId]?.name.ja ?? itemId).join(' / ') + ' の入手方法がありません。',
       messageEn: 'No source is available for: ' + invalidRootItemIds.join(' / '),
       itemIds: invalidRootItemIds,
+    });
+  }
+  if (solved.unresolved.has('__alternate_recipe_required_but_disabled__')) {
+    errorSummaries.push({
+      code: 'ALTERNATE_RECIPE_REQUIRED_BUT_DISABLED',
+      messageJa: '選択レシピの循環を解くには代替レシピ補完が必要ですが、設定でOFFになっています。',
+      messageEn: 'The selected recipe cycle requires alternate recipe completion, but that setting is disabled.',
+      itemIds: [...new Set(solved.selectedRecipeCycleBlocks.map((block) => block.itemId))],
+      recipeIds: [...new Set(solved.selectedRecipeCycleBlocks.flatMap((block) => block.cycleRecipeIds))],
+    });
+  }
+  if (solved.unresolved.has('__selected_recipe_cycle_unresolved__')) {
+    errorSummaries.push({
+      code: 'SELECTED_RECIPE_CYCLE_UNRESOLVED',
+      messageJa: '選択レシピの循環を代替レシピでも解けませんでした。',
+      messageEn: 'The selected recipe cycle could not be resolved even with alternate recipes.',
+      itemIds: [...new Set(solved.selectedRecipeCycleBlocks.map((block) => block.itemId))],
+      recipeIds: [...new Set(solved.selectedRecipeCycleBlocks.flatMap((block) => block.cycleRecipeIds))],
     });
   }
   if (solved.unresolved.has('__solver_did_not_converge__')) {
@@ -1023,13 +1081,14 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       alternateRecipeCompletion: {
         enabled: input.settings.allowAlternateRecipeCompletion,
         uses: solved.alternateRecipeUses,
+        blockedCycles: solved.selectedRecipeCycleBlocks,
       },
       byproductFuel: {
         enabled: input.settings.useByproductFuel,
         uses: byproductFuelUses,
       },
-      notesJa: ['v0.7.0-alpha.6 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
-      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.6. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
+      notesJa: ['v0.7.0-alpha.7 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
+      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.7. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
     },
   };
 }
