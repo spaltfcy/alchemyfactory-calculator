@@ -37,8 +37,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.7.0-alpha.7' as const;
-const BALANCE_SOLVER_MODE = 'balance-iterative-alpha7';
+const BALANCE_SOLVER_VERSION = '0.7.0-alpha.8' as const;
+const BALANCE_SOLVER_MODE = 'balance-iterative-alpha8';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -68,7 +68,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-alpha7' | 'legacy-fallback';
+  mode: 'balance-iterative-alpha8' | 'legacy-fallback';
   version: typeof BALANCE_SOLVER_VERSION;
   fallbackReason?: string;
   iterations?: number;
@@ -522,6 +522,10 @@ function activeCycleForRecipe(recipeId: string, diagnostics: LinearModelDiagnost
   return diagnostics.activePlanCyclicComponents.find((cycle) => cycle.recipeIds.includes(recipeId));
 }
 
+function cycleBreakers(cycle: SelectedRecipeCycleDiagnostic | undefined): string[] {
+  return (cycle?.buyableInputItemIds ?? []).filter((itemId) => isBuyableItem(itemId));
+}
+
 function addSelectedRecipeCycleBlock(blocks: SelectedRecipeCycleBlock[], block: SelectedRecipeCycleBlock): void {
   const existing = blocks.find((entry) =>
     entry.itemId === block.itemId
@@ -657,42 +661,50 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
       let recipeToUse = selectedRecipe;
       if (selectedRecipe && activeCycleRecipeIds.has(selectedRecipe.id)) {
         const cycle = activeCycleForRecipe(selectedRecipe.id, diagnostics);
-        if (input.settings.allowAlternateRecipeCompletion) {
-          const alternate = chooseAlternateRecipeForItem(demand.itemId, selectedRecipe, diagnostics);
-          if (alternate && alternate.id !== selectedRecipe.id) {
-            recipeToUse = alternate;
-            alternateRecipeUses.push({
-              itemId: demand.itemId,
-              selectedRecipeId: selectedRecipe.id,
-              alternateRecipeId: alternate.id,
-              reason: 'selected_recipe_cycle',
-              rateAdded: remaining,
-            });
+        const breakers = cycleBreakers(cycle);
+
+        // A selected recipe cycle is valid when the cycle itself has a buyable input
+        // that can be used as a cycleInput breaker. Example:
+        //   purchased gold_coin -> gold_ingot_2 -> gold_ingot -> gold_coin target.
+        // In that case the demanded item (gold_ingot) does not need to be buyable.
+        if (breakers.length === 0) {
+          if (input.settings.allowAlternateRecipeCompletion) {
+            const alternate = chooseAlternateRecipeForItem(demand.itemId, selectedRecipe, diagnostics);
+            if (alternate && alternate.id !== selectedRecipe.id) {
+              recipeToUse = alternate;
+              alternateRecipeUses.push({
+                itemId: demand.itemId,
+                selectedRecipeId: selectedRecipe.id,
+                alternateRecipeId: alternate.id,
+                reason: 'selected_recipe_cycle',
+                rateAdded: remaining,
+              });
+            } else {
+              addSelectedRecipeCycleBlock(selectedRecipeCycleBlocks, {
+                itemId: demand.itemId,
+                selectedRecipeId: selectedRecipe.id,
+                consumerRecipeId: demand.consumerRecipeId,
+                reason: 'no_alternate_recipe',
+                rateBlocked: remaining,
+                cycleRecipeIds: cycle?.recipeIds ?? [selectedRecipe.id],
+                cycleItemIds: cycle?.itemIds ?? [demand.itemId],
+              });
+              unresolved.add('__selected_recipe_cycle_unresolved__');
+              continue;
+            }
           } else {
             addSelectedRecipeCycleBlock(selectedRecipeCycleBlocks, {
               itemId: demand.itemId,
               selectedRecipeId: selectedRecipe.id,
               consumerRecipeId: demand.consumerRecipeId,
-              reason: 'no_alternate_recipe',
+              reason: 'alternate_recipe_disabled',
               rateBlocked: remaining,
               cycleRecipeIds: cycle?.recipeIds ?? [selectedRecipe.id],
               cycleItemIds: cycle?.itemIds ?? [demand.itemId],
             });
-            unresolved.add('__selected_recipe_cycle_unresolved__');
+            unresolved.add('__alternate_recipe_required_but_disabled__');
             continue;
           }
-        } else {
-          addSelectedRecipeCycleBlock(selectedRecipeCycleBlocks, {
-            itemId: demand.itemId,
-            selectedRecipeId: selectedRecipe.id,
-            consumerRecipeId: demand.consumerRecipeId,
-            reason: 'alternate_recipe_disabled',
-            rateBlocked: remaining,
-            cycleRecipeIds: cycle?.recipeIds ?? [selectedRecipe.id],
-            cycleItemIds: cycle?.itemIds ?? [demand.itemId],
-          });
-          unresolved.add('__alternate_recipe_required_but_disabled__');
-          continue;
         }
       }
 
@@ -760,7 +772,7 @@ function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: 
 }
 
 export function calculateAlphaBalance(input: CalculateInput, diagnostics: LinearModelDiagnostics): AlphaBalanceSolveResult {
-  // The alpha.7 balance solver handles ordinary material/source/cycle-input balances.
+  // The alpha.8 balance solver handles ordinary material/source/cycle-input balances.
   // Internal fuel/fertilizer self-dependency still falls back to the legacy-compatible engine until the full v0.8 replacement.
   const fallbackTraceBase = {
     version: BALANCE_SOLVER_VERSION,
@@ -774,9 +786,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       trace: {
         ...fallbackTraceBase,
         mode: 'legacy-fallback',
-        fallbackReason: 'internal_fuel_not_yet_active_in_alpha7',
-        notesJa: ['v0.7.0-alpha.7 では内部燃料の完全な収支solver化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.7 still uses the legacy-compatible fallback for internal fuel.'],
+        fallbackReason: 'internal_fuel_not_yet_active_in_alpha8',
+        notesJa: ['v0.7.0-alpha.8 では内部燃料の完全な収支solver化はまだ比較用フォールバックです。'],
+        notesEn: ['v0.7.0-alpha.8 still uses the legacy-compatible fallback for internal fuel.'],
       },
     };
   }
@@ -786,9 +798,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       trace: {
         ...fallbackTraceBase,
         mode: 'legacy-fallback',
-        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha7',
-        notesJa: ['v0.7.0-alpha.7 では内部肥料の完全な収支solver化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.7 still uses the legacy-compatible fallback for internal fertilizer.'],
+        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha8',
+        notesJa: ['v0.7.0-alpha.8 では内部肥料の完全な収支solver化はまだ比較用フォールバックです。'],
+        notesEn: ['v0.7.0-alpha.8 still uses the legacy-compatible fallback for internal fertilizer.'],
       },
     };
   }
@@ -955,7 +967,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
     }
   }
 
-  const invalidRootItemIds = [...solved.unresolved].filter((itemId) => !itemId.startsWith('__'));
+  const blockedCycleItemIds = new Set(solved.selectedRecipeCycleBlocks.flatMap((block) => block.cycleItemIds));
+  const invalidRootItemIds = [...solved.unresolved].filter((itemId) => !itemId.startsWith('__') && !blockedCycleItemIds.has(itemId));
   const errorSummaries: CalculationErrorSummary[] = [];
   if (invalidRootItemIds.length > 0) {
     errorSummaries.push({
@@ -1087,8 +1100,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         enabled: input.settings.useByproductFuel,
         uses: byproductFuelUses,
       },
-      notesJa: ['v0.7.0-alpha.7 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
-      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.7. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
+      notesJa: ['v0.7.0-alpha.8 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
+      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.8. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
     },
   };
 }
