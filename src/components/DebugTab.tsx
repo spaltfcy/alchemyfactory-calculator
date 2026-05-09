@@ -227,6 +227,32 @@ function normalizeDebugIssues(issues: unknown): unknown[] {
   });
 }
 
+function isUnsupportedImportedState(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return true;
+  const candidate = value as {
+    itemSourceModes?: unknown;
+    stockOverrides?: unknown;
+    settings?: {
+      fuel?: { fuelSourceMode?: unknown };
+      fertilizer?: { fertilizerSourceMode?: unknown };
+    };
+    version?: unknown;
+  };
+  return (
+    candidate.itemSourceModes !== undefined ||
+    candidate.stockOverrides !== undefined ||
+    candidate.settings?.fuel?.fuelSourceMode !== undefined ||
+    candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
+    (typeof candidate.version !== 'number' || candidate.version < 22)
+  );
+}
+
+function unsupportedImportMessage(lang: Lang): string {
+  return lang === 'ja'
+    ? 'このJSONは旧形式のため読み込めません。v0.6.1以降の形式で保存し直してください。'
+    : 'This JSON uses an old format and cannot be imported. Please re-save it with v0.6.1 or later.';
+}
+
 function mergeImportedState(current: AppState, imported: Partial<AppState>): AppState {
   return {
     ...current,
@@ -250,7 +276,6 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
     },
     recipePreferences: imported.recipePreferences ?? {},
     surplusPolicies: imported.surplusPolicies ?? {},
-    itemSourceModes: imported.itemSourceModes ?? {},
     completedGraphNodeIds: imported.completedGraphNodeIds ?? {},
     nodeNotes: imported.nodeNotes ?? {},
   };
@@ -266,7 +291,6 @@ function buildInputFromState(sourceState: AppState): CalculateInput {
     abilities: sourceState.abilities,
     recipePreferences: sourceState.recipePreferences,
     surplusPolicies: sourceState.surplusPolicies,
-    itemSourceModes: sourceState.itemSourceModes,
   };
 }
 
@@ -466,6 +490,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion }: Deb
     const baseName = safeFilePart(file.name);
     const raw = await file.text();
     const imported = JSON.parse(raw) as Partial<AppState>;
+    if (isUnsupportedImportedState(imported)) throw new Error(unsupportedImportMessage(lang));
     const importedState = mergeImportedState(state, imported);
     const artifact = buildDebugArtifact(importedState);
     const timestamp = timestampForFile();

@@ -4,7 +4,7 @@ import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
 import { t, text } from '../i18n';
-import { formatCopper, formatNumber } from '../utils/format';
+import { formatCopper, formatNumber, formatRate } from '../utils/format';
 
 export type TableTabProps = {
   lang: Lang;
@@ -84,7 +84,7 @@ export function TableTab({ lang, result }: TableTabProps) {
                   .filter(([, value]) => value > 0)
                   .map(([itemId, value]) => {
                     const item = itemById[itemId];
-                    return `${item ? text(item.name, lang) : fallbackName(itemId, lang)} +${formatNumber(value)}/min`;
+                    return `${item ? text(item.name, lang) : fallbackName(itemId, lang)} +${formatRate(value)}/min`;
                   })
                   .join(', ');
 
@@ -130,12 +130,12 @@ export function TableTab({ lang, result }: TableTabProps) {
                 return (
                   <tr key={row.itemId}>
                     <td>{item ? text(item.name, lang) : row.itemId}</td>
-                    <td>{formatNumber(row.targetRequested)}</td>
-                    <td>{formatNumber(row.targetActual)}</td>
-                    <td>{formatNumber(row.consumed)}</td>
-                    <td>{formatNumber(row.produced)}</td>
-                    <td>{formatNumber(row.surplus)}</td>
-                    <td>{formatNumber(row.purchased)}</td>
+                    <td>{formatRate(row.targetRequested)}</td>
+                    <td>{formatRate(row.targetActual)}</td>
+                    <td>{formatRate(row.consumed)}</td>
+                    <td>{formatRate(row.produced)}</td>
+                    <td>{formatRate(row.surplus)}</td>
+                    <td>{formatRate(row.purchased)}</td>
                     <td>{formatNumber(row.initialPurchased)}</td>
                     <td>{formatCopper(row.purchaseCostCopperPerMin)}</td>
                     <td>{formatCopper(row.initialCostCopper)}</td>
@@ -170,7 +170,7 @@ export function TableTab({ lang, result }: TableTabProps) {
                     <td>
                       {item ? text(item.name, lang) : edge.fromItemId} → {recipe ? text(recipe.name, lang) : edge.toRecipeId}
                     </td>
-                    <td>{formatNumber(edge.rate)}/min</td>
+                    <td>{formatRate(edge.rate)}/min</td>
                     <td>{transportCountLabel(edge, lang)}</td>
                   </tr>
                 );

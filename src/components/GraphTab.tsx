@@ -202,19 +202,19 @@ function readEdgeData(edge: Edge): EdgeData {
 }
 
 function getCyclePath(sourceX: number, sourceY: number, targetX: number, targetY: number, side: number) {
- const dx = targetX - sourceX;
- const dy = targetY - sourceY;
- const length = Math.max(Math.hypot(dx, dy), 1);
- const nx = -dy / length;
- const ny = dx / length;
- const offset = Math.min(260, Math.max(160, length * 0.36)) * side;
- const controlX = (sourceX + targetX) / 2 + nx * offset;
- const controlY = (sourceY + targetY) / 2 + ny * offset;
- return {
-  path: `M ${sourceX},${sourceY} Q ${controlX},${controlY} ${targetX},${targetY}`,
-  labelX: sourceX * 0.25 + controlX * 0.5 + targetX * 0.25,
-  labelY: sourceY * 0.25 + controlY * 0.5 + targetY * 0.25,
- };
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
+  const length = Math.max(Math.hypot(dx, dy), 1);
+  const nx = -dy / length;
+  const ny = dx / length;
+  const offset = Math.min(260, Math.max(160, length * 0.36)) * side;
+  const controlX = (sourceX + targetX) / 2 + nx * offset;
+  const controlY = (sourceY + targetY) / 2 + ny * offset;
+  return {
+    path: `M ${sourceX},${sourceY} Q ${controlX},${controlY} ${targetX},${targetY}`,
+    labelX: sourceX * 0.25 + controlX * 0.5 + targetX * 0.25,
+    labelY: sourceY * 0.25 + controlY * 0.5 + targetY * 0.25,
+  };
 }
 
 function FlowEdge(props: EdgeProps) {
@@ -268,25 +268,25 @@ function LockIcon() {
 
 
 function edgeTargetSide(edge: Edge): PlannerHandleSide {
- const data = edge.data as { targetSide?: PlannerHandleSide } | undefined;
- return data?.targetSide ?? 'left';
+  const data = edge.data as { targetSide?: PlannerHandleSide } | undefined;
+  return data?.targetSide ?? 'left';
 }
 function edgeSourceSide(edge: Edge): PlannerHandleSide {
- const data = edge.data as { sourceSide?: PlannerHandleSide } | undefined;
- return data?.sourceSide ?? 'right';
+  const data = edge.data as { sourceSide?: PlannerHandleSide } | undefined;
+  return data?.sourceSide ?? 'right';
 }
 
 
 function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
- const incoming = new Map<string, Edge[]>();
- const outgoing = new Map<string, Edge[]>();
- const nodeY = new Map(nodes.map((node) => [node.id, node.position.y]));
- const nextNodes = nodes.map((node) => ({ ...node, data: { ...(node.data ?? {}) } }));
- const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
- const nextEdges = edges.map((edge) => ({ ...edge, data: { ...(edge.data ?? {}) } }));
- const nextEdgeById = new Map(nextEdges.map((edge) => [edge.id, edge]));
+  const incoming = new Map<string, Edge[]>();
+  const outgoing = new Map<string, Edge[]>();
+  const nodeY = new Map(nodes.map((node) => [node.id, node.position.y]));
+  const nextNodes = nodes.map((node) => ({ ...node, data: { ...(node.data ?? {}) } }));
+  const nextNodeById = new Map(nextNodes.map((node) => [node.id, node]));
+  const nextEdges = edges.map((edge) => ({ ...edge, data: { ...(edge.data ?? {}) } }));
+  const nextEdgeById = new Map(nextEdges.map((edge) => [edge.id, edge]));
 
- for (const edge of edges) {
+  for (const edge of edges) {
   const inc = incoming.get(edge.target) ?? [];
   inc.push(edge);
   incoming.set(edge.target, inc);
@@ -294,11 +294,11 @@ function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
   const out = outgoing.get(edge.source) ?? [];
   out.push(edge);
   outgoing.set(edge.source, out);
- }
+  }
 
- const sideOrder: PlannerHandleSide[] = ['top', 'left', 'right', 'bottom'];
+  const sideOrder: PlannerHandleSide[] = ['top', 'left', 'right', 'bottom'];
 
- for (const [targetId, group] of incoming.entries()) {
+  for (const [targetId, group] of incoming.entries()) {
   const target = nextNodeById.get(targetId);
   if (!target) continue;
   const sorted = [...group].sort((a, b) => {
@@ -329,9 +329,9 @@ function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
    });
   }
   target.data = { ...(target.data ?? {}), targetHandles };
- }
+  }
 
- for (const [sourceId, group] of outgoing.entries()) {
+  for (const [sourceId, group] of outgoing.entries()) {
   const source = nextNodeById.get(sourceId);
   if (!source) continue;
   const sorted = [...group].sort((a, b) => {
@@ -362,9 +362,9 @@ function realignIncomingHandlesBySourceY(nodes: Node[], edges: Edge[]) {
    });
   }
   source.data = { ...(source.data ?? {}), sourceHandles };
- }
+  }
 
- return { nodes: nextNodes, edges: nextEdges };
+  return { nodes: nextNodes, edges: nextEdges };
 }
 
 function applyCompletedStateToNodes(nodes: Node[], completedGraphNodeIds: Record<string, boolean>): Node[] {

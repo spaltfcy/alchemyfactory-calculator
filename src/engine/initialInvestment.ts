@@ -1,13 +1,13 @@
 import type { AppSettings, Recipe } from '../types';
-import { DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing, recipeById } from '../data/recipes';
-import { economyByItemId } from '../data/economy';
+import { recipeById } from '../data/recipes';
 import { itemById } from '../data/items';
+import { resolveItemSource } from './itemSourceResolver';
 import { safeCeil } from '../utils/format';
 import type { CalculateInput, CalculationResult, RecipeStat } from './calculate';
 
 export type InitialInvestmentEndpoint =
   | { type: 'recipe'; recipeId: string }
-  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'stock' }
+  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'unresolved' }
   | { type: 'itemSink'; itemId: string; sinkMode: 'initial' };
 
 export type InitialInvestmentTransportKind = 'belt' | 'pipeline';
@@ -31,12 +31,14 @@ export type InitialInvestmentGroup = {
   flows: InitialInvestmentFlow[];
   recipeStats: Record<string, RecipeStat>;
   purchasedItemIds: string[];
+  unresolvedItemIds: string[];
 };
 
 export type InitialInvestmentData = {
   groups: InitialInvestmentGroup[];
   requiredByRecipe: Record<string, string[]>;
   purchasedItemIds: string[];
+  unresolvedItemIds: string[];
 };
 
 const EPS = 1e-9;
@@ -64,34 +66,14 @@ function isSelfSustainingForItem(recipe: Recipe, itemId: string): boolean {
   return inputAmountPerRun(recipe, itemId) > EPS && outputPerRun(recipe, itemId) + EPS >= inputAmountPerRun(recipe, itemId);
 }
 
-function chooseStartupRecipe(itemId: string, input: CalculateInput, blockedRecipeIds: Set<string>): Recipe | undefined {
-  const candidates: Recipe[] = [];
-  const preferred = input.recipePreferences[itemId];
-  if (preferred && recipeById[preferred]) candidates.push(recipeById[preferred]);
-  const defaultRecipeId = DEFAULT_RECIPE_BY_ITEM_ID[itemId];
-  if (defaultRecipeId && recipeById[defaultRecipeId]) candidates.push(recipeById[defaultRecipeId]);
-  candidates.push(...getRecipesProducing(itemId));
-
-  const seen = new Set<string>();
-  for (const recipe of candidates) {
-    if (!recipe || seen.has(recipe.id)) continue;
-    seen.add(recipe.id);
-    if (blockedRecipeIds.has(recipe.id)) continue;
-    if (isSelfSustainingForItem(recipe, itemId)) continue;
-    if (outputRatePerMachine(recipe, itemId, 1) <= EPS) continue;
-    return recipe;
-  }
-  return undefined;
-}
-
 function flowBelts(rate: number, conveyorItemsPerMinute: number): number {
   const capacity = Math.max(1, conveyorItemsPerMinute || 60);
   return Math.max(1, safeCeil(rate / capacity));
 }
 
 function transportKindForItem(itemId: string): InitialInvestmentTransportKind {
-  const physicalState = itemId === 'steam' ? 'steam' : (itemById[itemId]?.physicalState ?? 'solid');
-  return physicalState === 'liquid' || physicalState === 'steam' ? 'pipeline' : 'belt';
+  const physicalState = itemById[itemId]?.physicalState;
+  return physicalState === 'liquid' ? 'pipeline' : 'belt';
 }
 
 
@@ -166,6 +148,10 @@ function endpointKey(endpoint: InitialInvestmentEndpoint): string {
   return 'sink:' + endpoint.sinkMode + ':' + endpoint.itemId;
 }
 
+function addUnresolvedStartupItem(group: InitialInvestmentGroup, itemId: string): void {
+  if (!group.unresolvedItemIds.includes(itemId)) group.unresolvedItemIds.push(itemId);
+}
+
 function buildStartupSupply(
   itemId: string,
   demandRate: number,
@@ -180,36 +166,42 @@ function buildStartupSupply(
 ): void {
   if (demandRate <= EPS) return;
   if (depth > MAX_DEPTH) {
+    addUnresolvedStartupItem(group, itemId);
+    addFlow(group, { type: 'itemSource', itemId, sourceMode: 'unresolved' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
+    return;
+  }
+
+  const resolved = resolveItemSource(itemId, {
+    recipePreferences: input.recipePreferences,
+    blockedRecipeIds,
+    isRecipeAllowed: (candidate) => !isSelfSustainingForItem(candidate, itemId) && outputRatePerMachine(candidate, itemId, 1) > EPS,
+  });
+
+  if (resolved.kind === 'purchase') {
     group.purchasedItemIds.push(itemId);
     addFlow(group, { type: 'itemSource', itemId, sourceMode: 'buy' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
     return;
   }
 
-  const sourceMode = input.itemSourceModes[itemId] ?? 'auto';
-  if (sourceMode === 'buy' || sourceMode === 'stock') {
-    if (sourceMode === 'buy') group.purchasedItemIds.push(itemId);
-    addFlow(group, { type: 'itemSource', itemId, sourceMode: sourceMode === 'stock' ? 'stock' : 'buy' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
+  if (resolved.kind === 'unresolved') {
+    addUnresolvedStartupItem(group, itemId);
+    addFlow(group, { type: 'itemSource', itemId, sourceMode: 'unresolved' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
     return;
   }
 
-  const recipe = chooseStartupRecipe(itemId, input, blockedRecipeIds);
-  if (!recipe) {
-    group.purchasedItemIds.push(itemId);
-    addFlow(group, { type: 'itemSource', itemId, sourceMode: 'buy' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
-    return;
-  }
+  const recipe = resolved.recipe;
 
   const key = recipe.id + ':' + itemId;
   if (visitedKeys.has(key)) {
-    group.purchasedItemIds.push(itemId);
-    addFlow(group, { type: 'itemSource', itemId, sourceMode: 'buy' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
+    addUnresolvedStartupItem(group, itemId);
+    addFlow(group, { type: 'itemSource', itemId, sourceMode: 'unresolved' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
     return;
   }
 
   const outputRate = outputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
   if (outputRate <= EPS) {
-    group.purchasedItemIds.push(itemId);
-    addFlow(group, { type: 'itemSource', itemId, sourceMode: 'buy' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
+    addUnresolvedStartupItem(group, itemId);
+    addFlow(group, { type: 'itemSource', itemId, sourceMode: 'unresolved' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
     return;
   }
 
@@ -266,7 +258,7 @@ export function buildInitialInvestment(
   conveyorItemsPerMinute: number,
 ): CalculationResult {
   const enabled = input.settings.showInitialInvestmentLines !== false;
-  const empty: InitialInvestmentData = { groups: [], requiredByRecipe: {}, purchasedItemIds: [] };
+  const empty: InitialInvestmentData = { groups: [], requiredByRecipe: {}, purchasedItemIds: [], unresolvedItemIds: [] };
   if (!enabled) return { ...baseResult, initialInvestment: empty };
 
   const result: CalculationResult = {
@@ -275,7 +267,7 @@ export function buildInitialInvestment(
     totals: { ...baseResult.totals },
   };
 
-  const data: InitialInvestmentData = { groups: [], requiredByRecipe: {}, purchasedItemIds: [] };
+  const data: InitialInvestmentData = { groups: [], requiredByRecipe: {}, purchasedItemIds: [], unresolvedItemIds: [] };
   const purchasedItemIds = new Set<string>();
 
   for (const recipeStat of Object.values(baseResult.recipeStats)) {
@@ -293,6 +285,7 @@ export function buildInitialInvestment(
       flows: [],
       recipeStats: {},
       purchasedItemIds: [],
+      unresolvedItemIds: [],
     };
     const blocked = new Set<string>([recipe.id]);
     for (const itemId of requiredItemIds) {
@@ -312,19 +305,36 @@ export function buildInitialInvestment(
     }
 
     group.purchasedItemIds = [...new Set(group.purchasedItemIds)];
+    group.unresolvedItemIds = [...new Set(group.unresolvedItemIds)];
     for (const itemId of group.purchasedItemIds) purchasedItemIds.add(itemId);
+    for (const itemId of group.unresolvedItemIds) {
+      if (!data.unresolvedItemIds.includes(itemId)) data.unresolvedItemIds.push(itemId);
+    }
     if (group.flows.length > 0 || group.purchasedItemIds.length > 0) data.groups.push(group);
   }
 
   data.purchasedItemIds = [...purchasedItemIds];
   for (const itemId of data.purchasedItemIds) {
     const stat = ensureItemStat(result, itemId);
-    const price = economyByItemId[itemId]?.buyPriceCopper ?? 0;
+    const price = itemById[itemId]?.buyPriceCopper ?? 0;
     stat.initialPurchased += 1;
     stat.initialCostCopper += price;
     result.totals.initialCostCopper += price;
   }
 
   result.initialInvestment = data;
+  if (data.unresolvedItemIds.length > 0) {
+    result.calculationStatus = 'invalid';
+    result.errorSummaries = [
+      ...(result.errorSummaries ?? []),
+      {
+        code: 'UNRESOLVED_INITIAL_INVESTMENT_ITEM',
+        messageJa: '初期投資ラインに仕入価格もレシピもない根本アイテムがあります。',
+        messageEn: 'The startup line has root items with neither a recipe nor a buy price.',
+        itemIds: data.unresolvedItemIds,
+      },
+    ];
+  }
   return result;
 }
+

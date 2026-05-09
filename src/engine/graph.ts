@@ -6,7 +6,7 @@ import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
 import { text } from '../i18n';
-import { formatNumber } from '../utils/format';
+import { formatNumber, formatRate } from '../utils/format';
 
 export type PlannerHandleSide = 'left' | 'right' | 'top' | 'bottom';
 
@@ -87,7 +87,7 @@ function rateLabel(
   flow: Pick<CalculatedFlow, 'rate' | 'belts'> & Partial<Pick<CalculatedFlow, 'transportKind' | 'transportUnits'>>,
   lang: Lang,
 ): string {
-  return formatNumber(flow.rate) + '/min ・ ' + transportLabel(flow, lang);
+  return formatRate(flow.rate) + '/min ・ ' + transportLabel(flow, lang);
 }
 
 function marker(color: string) {
@@ -144,7 +144,7 @@ function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
     data: {
       itemId: flow.itemId,
       itemName: labelName,
-      rateLabel: flow.role === 'steam' ? formatNumber(flow.rate) + '/min' : rateLabel(flow, lang),
+      rateLabel: flow.role === 'steam' ? formatRate(flow.rate) + '/min' : rateLabel(flow, lang),
       color: edgeColor,
       cycleSide: isSelfLoop ? 1 : 0,
       labelShiftY: isSelfLoop ? -42 : 0,
@@ -176,7 +176,7 @@ function endpointLabel(endpoint: InitialInvestmentEndpoint, lang: Lang): { label
     return {
       label: itemName(endpoint.itemId, lang),
       kind: 'item',
-      subLabel: (lang === 'ja' ? '初期投資用 ' : 'Startup ') + (endpoint.sourceMode === 'stock' ? (lang === 'ja' ? '在庫' : 'Stock') : (lang === 'ja' ? '購入' : 'Buy')),
+      subLabel: (lang === 'ja' ? '初期投資用 ' : 'Startup ') + (endpoint.sourceMode === 'buy' ? (lang === 'ja' ? '購入' : 'Buy') : (lang === 'ja' ? '未解決' : 'Unresolved')),
     };
   }
   return {
@@ -266,13 +266,13 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const flowRate = result.flows
       .filter((flow) => endpointNodeId(flow.from) === endpointId)
       .reduce((sum, flow) => sum + flow.rate, 0);
-    const rate = endpoint.sourceMode === 'stock' ? 0 : flowRate;
+    const rate = endpoint.sourceMode === 'unresolved' ? 0 : flowRate;
     const label = itemName(endpoint.itemId, lang);
-    const modeLabel = endpoint.sourceMode === 'stock'
-      ? (lang === 'ja' ? '在庫' : 'Stock')
-      : endpoint.sourceMode === 'external'
-        ? (lang === 'ja' ? '外部生産' : 'External')
-        : (lang === 'ja' ? '購入' : 'Buy');
+    const modeLabel = endpoint.sourceMode === 'external'
+      ? (lang === 'ja' ? '外部生産' : 'External')
+      : endpoint.sourceMode === 'buy'
+        ? (lang === 'ja' ? '購入' : 'Buy')
+        : (lang === 'ja' ? '未解決' : 'Unresolved');
     return {
       id,
       type: 'plannerNode',
@@ -280,7 +280,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       data: {
         label,
         kind: 'item',
-        subLabel: modeLabel + (rate > 0 ? ' ' + formatNumber(rate) + '/min' : ''),
+        subLabel: modeLabel + (rate > 0 ? ' ' + formatRate(rate) + '/min' : ''),
       } satisfies PlannerNodeData,
     };
   }
@@ -294,7 +294,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       data: {
         label: labelBase,
         kind: 'final',
-        subLabel: formatNumber(stat?.targetRequested ?? 0) + ' → ' + formatNumber(stat?.targetActual ?? 0) + '/min',
+        subLabel: formatRate(stat?.targetRequested ?? 0) + ' → ' + formatRate(stat?.targetActual ?? 0) + '/min',
       } satisfies PlannerNodeData,
     };
   }
@@ -306,7 +306,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     data: {
       label: labelBase + (discard ? (lang === 'ja' ? '（破棄）' : ' (discard)') : (lang === 'ja' ? '（余剰）' : ' (surplus)')),
       kind: discard ? 'discard' : 'surplus',
-      subLabel: (discard ? (lang === 'ja' ? '破棄 ' : 'Discard ') : (lang === 'ja' ? '余剰 ' : 'Surplus ')) + formatNumber(discard ? (stat?.discarded ?? 0) : (stat?.surplus ?? 0)) + '/min',
+      subLabel: (discard ? (lang === 'ja' ? '破棄 ' : 'Discard ') : (lang === 'ja' ? '余剰 ' : 'Surplus ')) + formatRate(discard ? (stat?.discarded ?? 0) : (stat?.surplus ?? 0)) + '/min',
     } satisfies PlannerNodeData,
   };
 }

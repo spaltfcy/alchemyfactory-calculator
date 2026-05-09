@@ -1,11 +1,9 @@
-import type { ChangeEvent } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import type { AppSettings, AppState, Lang, Recipe, SurplusPolicy } from '../types';
 import { DEFAULT_STATE } from '../defaultState';
-import { FUEL_HEAT_VALUE_BY_ITEM_ID, FUEL_ITEM_IDS } from '../data/heat';
-import { FERTILIZER_ITEM_IDS, FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
-import { ITEMS, itemById } from '../data/items';
+import { ITEMS, fuelItemIds, fertilizerItemIds, itemById } from '../data/items';
 import { machineById } from '../data/machines';
-import { CODEX_RECIPE_ORDER, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
+import { RECIPE_ORDER, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
 import { t, text } from '../i18n';
 import { clearState, downloadJson } from '../utils/storage';
 
@@ -18,19 +16,15 @@ export type SettingsTabProps = {
 const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
   enabled: true,
   fuelItemId: 'charcoal_powder',
-  fuelSourceMode: 'craft',
+  sourceMode: 'internal',
   heatingMode: 'direct',
-  steamBoilerMode: 'low',
-  crucibleVariant: 'crucible',
-  crucibleOverheadHeatPerSec: 0.4,
-  otherOverheadHeatPerSec: 1,
   maxIterations: 16,
 };
 
 const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
   enabled: true,
   fertilizerItemId: 'basic_fertilizer',
-  fertilizerSourceMode: 'craft',
+  sourceMode: 'internal',
   nurseryNutrientsPerSec: 12,
   maxIterations: 4,
 };
@@ -64,7 +58,7 @@ function getDefaultRecipeId(itemId: string): string {
 }
 
 function recipeOrder(recipe: Recipe): number {
-  return CODEX_RECIPE_ORDER[recipe.id] ?? 999999;
+  return RECIPE_ORDER[recipe.id] ?? 999999;
 }
 
 function getSortedRecipesProducing(itemId: string): Recipe[] {
@@ -88,11 +82,10 @@ function joinRecipeItemNames(entries: Array<{ itemId: string }>, lang: Lang): st
 
 function isMeteorCrusherRecipe(recipe: Recipe): boolean {
   const idText = recipe.id.toLowerCase();
-  const urlText = (recipe.sourceUrl ?? '').toLowerCase();
   const hasMeteorInput = recipe.inputs.some((input) => input.itemId.includes('meteor'));
   const hasManyStoneCrusherOutputs = recipe.machineId === 'stone_crusher' && recipe.outputs.length >= 3;
 
-  return hasMeteorInput || idText.includes('meteor') || urlText.includes('meteor') || hasManyStoneCrusherOutputs;
+  return hasMeteorInput || idText.includes('meteor') || hasManyStoneCrusherOutputs;
 }
 
 function recipeOutputNames(recipe: Recipe, lang: Lang): string {
@@ -128,16 +121,42 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
     abilities: { ...current.abilities, ...imported.abilities },
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
     surplusPolicies: { ...current.surplusPolicies, ...imported.surplusPolicies },
-    itemSourceModes: { ...current.itemSourceModes, ...imported.itemSourceModes },
     completedGraphNodeIds: { ...current.completedGraphNodeIds, ...imported.completedGraphNodeIds },
     nodeNotes: { ...current.nodeNotes, ...imported.nodeNotes },
   };
+}
+
+function isUnsupportedImportedState(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return true;
+  const candidate = value as {
+    itemSourceModes?: unknown;
+    stockOverrides?: unknown;
+    settings?: {
+      fuel?: { fuelSourceMode?: unknown };
+      fertilizer?: { fertilizerSourceMode?: unknown };
+    };
+    version?: unknown;
+  };
+  return (
+    candidate.itemSourceModes !== undefined ||
+    candidate.stockOverrides !== undefined ||
+    candidate.settings?.fuel?.fuelSourceMode !== undefined ||
+    candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
+    (typeof candidate.version !== 'number' || candidate.version < 22)
+  );
+}
+
+function unsupportedImportMessage(lang: Lang): string {
+  return lang === 'ja'
+    ? 'このJSONは旧形式のため読み込めません。v0.6.1以降の形式で保存し直してください。'
+    : 'This JSON uses an old format and cannot be imported. Please re-save it with v0.6.1 or later.';
 }
 
 export function SettingsTab({ state, setState, safeMode = false }: SettingsTabProps) {
   const lang = state.language;
   const fuel = getFuelSettings(state);
   const fertilizer = getFertilizerSettings(state);
+  const [importError, setImportError] = useState('');
 
   function patchSettings(patch: Partial<AppSettings>) {
     setState({ ...state, settings: { ...state.settings, ...patch } });
@@ -173,13 +192,26 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
     if (!file) return;
     const raw = await file.text();
     try {
-      sessionStorage.setItem('alchemyfactory:last-import-json-name', file.name);
-      sessionStorage.setItem('alchemyfactory:last-import-json-text', raw);
-    } catch {
-      // The imported file name is only used for debug artifact naming.
+      const parsed = JSON.parse(raw) as Partial<AppState>;
+      if (isUnsupportedImportedState(parsed)) {
+        const message = unsupportedImportMessage(lang);
+        setImportError(message);
+        window.alert(message);
+        return;
+      }
+      try {
+        sessionStorage.setItem('alchemyfactory:last-import-json-name', file.name);
+        sessionStorage.setItem('alchemyfactory:last-import-json-text', raw);
+      } catch {
+        // The imported file name is only used for debug artifact naming.
+      }
+      setImportError('');
+      setState(mergeState(state, parsed));
+    } catch (error) {
+      const message = (lang === 'ja' ? 'JSONを読み込めません: ' : 'Could not import JSON: ') + (error instanceof Error ? error.message : String(error));
+      setImportError(message);
+      window.alert(message);
     }
-    const parsed = JSON.parse(raw) as Partial<AppState>;
-    setState(mergeState(state, parsed));
   }
 
   function resetAll() {
@@ -265,26 +297,6 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                   <option value="all">{t('roundingAll', lang)}</option>
                 </select>
               </label>
-
-<label className="form-field">
- <span>{lang === 'ja' ? '数量丸め' : 'Quantity rounding'}</span>
- <select
-  id="quantity-rounding-step"
-  name="quantity-rounding-step"
-  value={state.settings.quantityRoundingStep ?? '0.01'}
-  autoComplete="off"
-  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-   patchSettings({ quantityRoundingStep: event.target.value as AppSettings['quantityRoundingStep'] })
-  }
- >
-  <option value="none">{lang === 'ja' ? 'なし' : 'None'}</option>
-  <option value="1">1</option>
-  <option value="0.1">0.1</option>
-  <option value="0.01">0.01</option>
- </select>
-</label>
-
-
               <label className="form-field">
                 <span>{t('defaultSurplusPolicy', lang)}</span>
                 <select
@@ -300,24 +312,6 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                   <option value="discard">{t('discard', lang)}</option>
                 </select>
               </label>
-
-              <label className="form-field">
-                <span>{lang === 'ja' ? 'グラフ詳細度' : 'Graph detail'}</span>
-                <select
-                  id="graph-detail-level"
-                  name="graph-detail-level"
-                  value={state.settings.graphDetailLevel}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchSettings({ graphDetailLevel: event.target.value as AppSettings['graphDetailLevel'] })
-                  }
-                >
-                  <option value="simple">{t('simple', lang)}</option>
-                  <option value="normal">{t('normal', lang)}</option>
-                  <option value="detailed">{t('detailed', lang)}</option>
-                </select>
-              </label>
-
               <label className="form-field">
                 <span>{lang === 'ja' ? '余剰ノード' : 'Surplus nodes'}</span>
                 <span className="checkbox-control">
@@ -387,9 +381,9 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                   autoComplete="off"
                   onChange={(event: ChangeEvent<HTMLSelectElement>) => patchFuelSettings({ fuelItemId: event.target.value })}
                 >
-                  {FUEL_ITEM_IDS.map((itemId) => (
+                  {fuelItemIds.map((itemId) => (
                     <option key={itemId} value={itemId}>
-                      {recipeItemName(itemId, lang)} ({FUEL_HEAT_VALUE_BY_ITEM_ID[itemId]})
+                      {recipeItemName(itemId, lang)} ({itemById[itemId]?.fuelValue ?? 0})
                     </option>
                   ))}
                 </select>
@@ -400,14 +394,14 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                 <select
                   id="fuel-source-mode"
                   name="fuel-source-mode"
-                  value={fuel.fuelSourceMode}
+                  value={fuel.sourceMode}
                   autoComplete="off"
                   onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchFuelSettings({ fuelSourceMode: event.target.value as AppSettings['fuel']['fuelSourceMode'] })
+                    patchFuelSettings({ sourceMode: event.target.value as AppSettings['fuel']['sourceMode'] })
                   }
                 >
-                  <option value="craft">{lang === 'ja' ? '内部生産' : 'Internal production'}</option>
-                  <option value="buy">{lang === 'ja' ? '外部生産' : 'External production'}</option>
+                  <option value="internal">{lang === 'ja' ? '内部生産' : 'Internal production'}</option>
+                  <option value="external">{lang === 'ja' ? '外部生産' : 'External production'}</option>
                 </select>
               </label>
 
@@ -427,70 +421,9 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                 </select>
               </label>
 
-              <label className="form-field">
-                <span>{lang === 'ja' ? '蒸気ボイラー出力' : 'Steam boiler output'}</span>
-                <select
-                  id="steam-boiler-mode"
-                  name="steam-boiler-mode"
-                  value={fuel.steamBoilerMode}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchFuelSettings({ steamBoilerMode: event.target.value === 'medium' || event.target.value === 'high' ? event.target.value : 'low' })
-                  }
-                >
-                  <option value="low">{lang === 'ja' ? '低（675/min）' : 'Low (675/min)'}</option>
-                  <option value="medium">{lang === 'ja' ? '中（3375/min）' : 'Medium (3375/min)'}</option>
-                  <option value="high">{lang === 'ja' ? '高（20250/min）' : 'High (20250/min)'}</option>
-                </select>
-              </label>
 
-              <label className="form-field">
-                <span>{lang === 'ja' ? '坩堝設備' : 'Crucible device'}</span>
-                <select
-                  id="crucible-variant"
-                  name="crucible-variant"
-                  value={fuel.crucibleVariant}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchFuelSettings({ crucibleVariant: event.target.value as AppSettings['fuel']['crucibleVariant'] })
-                  }
-                >
-                  <option value="crucible">{lang === 'ja' ? '通常坩堝' : 'Crucible'}</option>
-                  <option value="stackable_crucible">{lang === 'ja' ? '積層坩堝' : 'Stackable Crucible'}</option>
-                </select>
-              </label>
 
-              <label className="form-field">
-                <span>{lang === 'ja' ? '坩堝の炉近似' : 'Crucible furnace overhead'}</span>
-                <input
-                  id="crucible-overhead-heat"
-                  name="crucible-overhead-heat"
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={fuel.crucibleOverheadHeatPerSec}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    patchFuelSettings({ crucibleOverheadHeatPerSec: Number(event.target.value) })
-                  }
-                />
-              </label>
 
-              <label className="form-field">
-                <span>{lang === 'ja' ? 'その他の炉近似' : 'Other furnace overhead'}</span>
-                <input
-                  id="other-overhead-heat"
-                  name="other-overhead-heat"
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={fuel.otherOverheadHeatPerSec}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    patchFuelSettings({ otherOverheadHeatPerSec: Number(event.target.value) })
-                  }
-                />
-              </label>
             </div>
           </div>
         </section>
@@ -524,9 +457,9 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                   autoComplete="off"
                   onChange={(event: ChangeEvent<HTMLSelectElement>) => patchFertilizerSettings({ fertilizerItemId: event.target.value })}
                 >
-                  {FERTILIZER_ITEM_IDS.map((itemId) => (
+                  {fertilizerItemIds.map((itemId) => (
                     <option key={itemId} value={itemId}>
-                      {recipeItemName(itemId, lang)} ({FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[itemId]} / {FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[itemId]}/s)
+                      {recipeItemName(itemId, lang)} ({itemById[itemId]?.fertilizerValue ?? 0} / {itemById[itemId]?.fertilizerNutrientsPerSec ?? 0}/s)
                     </option>
                   ))}
                 </select>
@@ -537,14 +470,14 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
                 <select
                   id="fertilizer-source-mode"
                   name="fertilizer-source-mode"
-                  value={fertilizer.fertilizerSourceMode}
+                  value={fertilizer.sourceMode}
                   autoComplete="off"
                   onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchFertilizerSettings({ fertilizerSourceMode: event.target.value as AppSettings['fertilizer']['fertilizerSourceMode'] })
+                    patchFertilizerSettings({ sourceMode: event.target.value as AppSettings['fertilizer']['sourceMode'] })
                   }
                 >
-                  <option value="craft">{lang === 'ja' ? '内部生産' : 'Internal production'}</option>
-                  <option value="buy">{lang === 'ja' ? '外部生産' : 'External production'}</option>
+                  <option value="internal">{lang === 'ja' ? '内部生産' : 'Internal production'}</option>
+                  <option value="external">{lang === 'ja' ? '外部生産' : 'External production'}</option>
                 </select>
               </label>
             </div>
@@ -555,6 +488,7 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
           <h2>{lang === 'ja' ? 'データ入出力 (JSON)' : 'Data I/O (JSON)'}</h2>
 
           <div className="settings-panel-body">
+            {importError && <p className="debug-status">{importError}</p>}
             <div className="settings-form-grid">
               <div className="form-field">
                 <span>{lang === 'ja' ? '出力' : 'Output'}</span>

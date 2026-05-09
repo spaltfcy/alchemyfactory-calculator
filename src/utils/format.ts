@@ -1,7 +1,22 @@
+export const DISPLAY_RATE_STEP = 0.01;
+
+export function ceilToStep(value: number, step = DISPLAY_RATE_STEP): number {
+  if (!Number.isFinite(value)) return value;
+  if (Math.abs(value) <= 1e-9) return 0;
+  if (step <= 0 || !Number.isFinite(step)) return value;
+  const sign = value < 0 ? -1 : 1;
+  const abs = Math.abs(value);
+  return sign * Math.ceil((abs - 1e-9) / step) * step;
+}
+
 export function formatNumber(value: number, digits = 2): string {
   if (!Number.isFinite(value)) return '-';
   if (Math.abs(value) >= 1000) return value.toLocaleString(undefined, { maximumFractionDigits: digits });
   return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+export function formatRate(value: number, digits = 2): string {
+  return formatNumber(ceilToStep(value, DISPLAY_RATE_STEP), digits);
 }
 
 export function formatCopper(value: number): string {
@@ -18,22 +33,3 @@ export function safeCeil(value: number): number {
   return Math.ceil(value - eps);
 }
 
-export function safeCeilToStep(value: number, step = 1): number {
-  const eps = 1e-9;
-  if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return value;
-  return Math.ceil((value - eps) / step) * step;
-}
-
-export function parseQuantityRoundingStep(step?: string): number {
-  if (step === '1') return 1;
-  if (step === '0.1') return 0.1;
-  if (step === '0.01') return 0.01;
-  return 0;
-}
-
-export function formatRoundedNumber(value: number, roundingStep?: string, digits = 2): string {
-  const step = parseQuantityRoundingStep(roundingStep);
-  const rounded = step > 0 ? safeCeilToStep(value, step) : value;
-  const nextDigits = step === 1 ? 0 : step === 0.1 ? 1 : digits;
-  return formatNumber(rounded, nextDigits);
-}

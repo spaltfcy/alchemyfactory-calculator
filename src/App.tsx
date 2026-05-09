@@ -13,7 +13,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.5.20';
+const APP_VERSION = '0.6.2';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -64,11 +64,40 @@ function parseRuntimeFlags(): RuntimeFlags {
   return { debug, explicitSafeMode, safeMode: debug || explicitSafeMode };
 }
 
+function isUnsupportedSavedState(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as {
+    itemSourceModes?: unknown;
+    stockOverrides?: unknown;
+    settings?: {
+      fuel?: { fuelSourceMode?: unknown };
+      fertilizer?: { fertilizerSourceMode?: unknown };
+    };
+    version?: unknown;
+  };
+  return (
+    candidate.itemSourceModes !== undefined ||
+    candidate.stockOverrides !== undefined ||
+    candidate.settings?.fuel?.fuelSourceMode !== undefined ||
+    candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
+    (typeof candidate.version !== 'number' || candidate.version < 22)
+  );
+}
+
 function mergeInitialState(safeMode: boolean): AppState {
   if (safeMode) return DEFAULT_STATE;
 
   const saved = loadState();
   if (!saved) return DEFAULT_STATE;
+
+  if (isUnsupportedSavedState(saved)) {
+    try {
+      sessionStorage.setItem('alchemyfactory:unsupported-saved-state', '1');
+    } catch {
+      // Ignore sessionStorage failures.
+    }
+    return DEFAULT_STATE;
+  }
 
   const merged: AppState = {
     ...DEFAULT_STATE,
@@ -80,17 +109,18 @@ function mergeInitialState(safeMode: boolean): AppState {
         ...DEFAULT_STATE.settings.fuel,
         ...(saved.settings?.fuel ?? {}),
       },
-      fertilizer: { ...DEFAULT_STATE.settings.fertilizer, ...(saved.settings?.fertilizer ?? {}) },
+      fertilizer: {
+        ...DEFAULT_STATE.settings.fertilizer,
+        ...(saved.settings?.fertilizer ?? {}),
+      },
     },
     abilities: { ...DEFAULT_STATE.abilities, ...saved.abilities },
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
     surplusPolicies: { ...DEFAULT_STATE.surplusPolicies, ...saved.surplusPolicies },
-    itemSourceModes: { ...DEFAULT_STATE.itemSourceModes, ...saved.itemSourceModes },
     completedGraphNodeIds: { ...DEFAULT_STATE.completedGraphNodeIds, ...saved.completedGraphNodeIds },
     nodeNotes: { ...DEFAULT_STATE.nodeNotes, ...saved.nodeNotes },
   };
 
-  if ((saved.version ?? 0) < 4) merged.settings.showSurplus = true;
   if (merged.settings.showInitialInvestmentLines === undefined) merged.settings.showInitialInvestmentLines = DEFAULT_STATE.settings.showInitialInvestmentLines;
 
   merged.version = Math.max(DEFAULT_STATE.version, saved.version ?? 0);
@@ -112,6 +142,17 @@ export function App() {
   const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
+
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('alchemyfactory:unsupported-saved-state') !== '1') return;
+      sessionStorage.removeItem('alchemyfactory:unsupported-saved-state');
+      window.alert(lang === 'ja' ? '保存データが旧形式のため読み込めませんでした。初期状態で起動します。' : 'The saved data uses an old format and could not be loaded. Starting with the default state.');
+    } catch {
+      // Ignore sessionStorage failures.
+    }
+  }, [lang]);
 
   useEffect(() => {
     const onHashChange = () => setRuntimeFlags(parseRuntimeFlags());
@@ -180,9 +221,8 @@ export function App() {
         abilities: state.abilities,
         recipePreferences: state.recipePreferences,
         surplusPolicies: state.surplusPolicies,
-        itemSourceModes: state.itemSourceModes,
       }),
-    [calculationTargets, state.settings, state.abilities, state.recipePreferences, state.surplusPolicies, state.itemSourceModes],
+    [calculationTargets, state.settings, state.abilities, state.recipePreferences, state.surplusPolicies],
   );
 
   function setActiveTab(activeTab: AppState['activeTab']) {
@@ -223,9 +263,9 @@ export function App() {
     return isCalculationInvalid ? calculationInvalidLabel : formatCopper(value);
   }
 
- const debugCalculationLine = runtimeFlags.debug
- ? (lang === 'ja' ? '計算' : 'Calc') + ': ' + formatNumber(result.totals.calculationMs ?? 0, 1) + 'ms / ' + (lang === 'ja' ? '燃料反復' : 'Fuel iterations') + ': ' + String(result.totals.fuelIterations ?? 0)
- : '';
+  const debugCalculationLine = runtimeFlags.debug
+    ? (lang === 'ja' ? '計算' : 'Calc') + ': ' + formatNumber(result.totals.calculationMs ?? 0, 1) + 'ms / ' + (lang === 'ja' ? '燃料反復' : 'Fuel iterations') + ': ' + String(result.totals.fuelIterations ?? 0)
+    : '';
 
   const visibleTabs: AppState['activeTab'][] = runtimeFlags.debug
     ? ['graph', 'table', 'settings', 'about', 'debug']
@@ -250,10 +290,16 @@ export function App() {
             {t('revenue', lang)} {formatMoneyResult(result.totals.revenueCopperPerMin)} / {t('profit', lang)}{' '}
             {formatMoneyResult(result.totals.profitCopperPerMin)} / {t('conveyorSpeed', lang)}{' '}
             {formatNumber(result.totals.conveyorItemsPerMinute)}/min
-  {runtimeFlags.debug && debugCalculationLine && <span className="debug-metric-inline"> / {debugCalculationLine}</span>}
+            {runtimeFlags.debug && debugCalculationLine && (
+              <span className="debug-metric-inline"> / {debugCalculationLine}</span>
+            )}
           </p>
 
-          <nav className="tabs">            {(runtimeFlags.debug ? (['graph', 'table', 'settings', 'about', 'debug'] as const) : (['graph', 'table', 'settings', 'about'] as const)).map((tab) => (
+          <nav className="tabs">
+            {(runtimeFlags.debug
+              ? (['graph', 'table', 'settings', 'about', 'debug'] as const)
+              : (['graph', 'table', 'settings', 'about'] as const)
+            ).map((tab) => (
               <button
                 key={tab}
                 type="button"

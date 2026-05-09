@@ -36,7 +36,8 @@ function getSelectableOutputItems(lang: Lang): string[] {
   const seen = new Set<string>();
   for (const recipe of Object.values(recipeById)) {
     for (const output of recipe.outputs) {
-      if (!itemById[output.itemId]) continue;
+      const item = itemById[output.itemId];
+      if (!item || item.internal) continue;
       if (getRecipesProducing(output.itemId).length <= 0) continue;
       seen.add(output.itemId);
     }

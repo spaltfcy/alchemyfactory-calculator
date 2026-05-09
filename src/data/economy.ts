@@ -1,71 +1,14 @@
-import type { EconomyEntry } from '../types';
+import { ITEMS } from './items';
 
-// Generated from Alchemy Factory Codex item pages.
-// Source: https://alchemy-factory-codex.com/ja/items/
-// Currency is normalized to copper.
-// 1 silver = 1,000 copper, 1 gold = 100,000 copper.
+export type EconomyEntry = {
+  itemId: string;
+  buyPriceCopper?: number;
+  sellPriceCopper?: number;
+};
 
-export const ECONOMY: EconomyEntry[] = [
-  { itemId: "bandage", sellPriceCopper: 350 },
-  { itemId: "black_powder", sellPriceCopper: 330 },
-  { itemId: "blast_potion", sellPriceCopper: 2557 },
-  { itemId: "brick", sellPriceCopper: 70 },
-  { itemId: "bronze_rivet", sellPriceCopper: 120 },
-  { itemId: "chamomile_seeds", buyPriceCopper: 6000 },
-  { itemId: "coal_ore", buyPriceCopper: 4800 },
-  { itemId: "copper_bearing", sellPriceCopper: 300 },
-  { itemId: "clockwork_bird", sellPriceCopper: 5000 },
-  { itemId: "crown", sellPriceCopper: 1600000 },
-  { itemId: "diamond", sellPriceCopper: 100000 },
-  { itemId: "emerald", sellPriceCopper: 700000 },
-  { itemId: "flax_seeds", buyPriceCopper: 280 },
-  { itemId: "gentian_seeds", buyPriceCopper: 64000 },
-  { itemId: "glass", sellPriceCopper: 75 },
-  { itemId: "growth_potion", sellPriceCopper: 1224 },
-  { itemId: "healing_potion", sellPriceCopper: 85 },
-  { itemId: "iron_nails", sellPriceCopper: 16 },
-  { itemId: "iron_ore", buyPriceCopper: 1200 },
-  { itemId: "jupiter", sellPriceCopper: 30000 },
-  { itemId: "lapis_lazuli", sellPriceCopper: 32000 },
-  { itemId: "large_wooden_gear", sellPriceCopper: 5 },
-  { itemId: "lavender_seeds", buyPriceCopper: 16000 },
-  { itemId: "limestone", buyPriceCopper: 600 },
-  { itemId: "linen", sellPriceCopper: 165 },
-  { itemId: "linen_rope", sellPriceCopper: 36 },
-  { itemId: "logs", buyPriceCopper: 200 },
-  { itemId: "luna", sellPriceCopper: 18500000 },
-  { itemId: "malachite", sellPriceCopper: 1020 },
-  { itemId: "mars", sellPriceCopper: 280000 },
-  { itemId: "mercury", sellPriceCopper: 5200000 },
-  { itemId: "meteorite", buyPriceCopper: 2000000 },
-  { itemId: "moonlit_soap", sellPriceCopper: 900000 },
-  { itemId: "mortar", sellPriceCopper: 48 },
-  { itemId: "obsidian", sellPriceCopper: 11000 },
-  { itemId: "panacea_potion", sellPriceCopper: 30000 },
-  { itemId: "perfumed_soap", sellPriceCopper: 2590 },
-  { itemId: "pocket_watch", sellPriceCopper: 1950 },
-  { itemId: "pyrite_ore", buyPriceCopper: 11000 },
-  { itemId: "quartz_ore", buyPriceCopper: 44000 },
-  { itemId: "redcurrant_seeds", buyPriceCopper: 1300 },
-  { itemId: "rock_salt", buyPriceCopper: 9000 },
-  { itemId: "rotten_log", buyPriceCopper: 2000 },
-  { itemId: "ruby", sellPriceCopper: 250000 },
-  { itemId: "sage_seeds", buyPriceCopper: 360 },
-  { itemId: "salt", sellPriceCopper: 100 },
-  { itemId: "sapphire", sellPriceCopper: 480000 },
-  { itemId: "saturn", sellPriceCopper: 150000 },
-  { itemId: "silver_amulet", sellPriceCopper: 48000 },
-  { itemId: "small_wooden_gear", sellPriceCopper: 8 },
-  { itemId: "soap", sellPriceCopper: 60 },
-  { itemId: "sol", sellPriceCopper: 42000000 },
-  { itemId: "steel_gear", sellPriceCopper: 450 },
-  { itemId: "topaz", sellPriceCopper: 2800 },
-  { itemId: "transformation_potion", sellPriceCopper: 620 },
-  { itemId: "turquoise", sellPriceCopper: 290 },
-  { itemId: "venus", sellPriceCopper: 1000000 },
-  { itemId: "vitality_potion", sellPriceCopper: 330 },
-  { itemId: "wooden_pulley", sellPriceCopper: 44 },
-];
+export const ECONOMY: EconomyEntry[] = ITEMS
+  .filter((item) => item.buyPriceCopper !== undefined || item.sellPriceCopper !== undefined)
+  .map((item) => ({ itemId: item.id, buyPriceCopper: item.buyPriceCopper, sellPriceCopper: item.sellPriceCopper }));
 
 export const economyByItemId: Record<string, EconomyEntry> = Object.fromEntries(
   ECONOMY.map((entry) => [entry.itemId, entry]),
