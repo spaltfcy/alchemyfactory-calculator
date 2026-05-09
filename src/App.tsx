@@ -15,7 +15,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.6.8';
+const APP_VERSION = '0.6.10';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -455,11 +455,9 @@ export function App() {
             >
               <div className="app-message-head">
                 <strong>{messageTitle(message)}</strong>
-                {message.lifetimeMs === null && (
-                  <button type="button" aria-label={lang === 'ja' ? 'メッセージを閉じる' : 'Close message'} onClick={() => removeUserMessage(message.id)}>
-                    ×
-                  </button>
-                )}
+                <button type="button" aria-label={lang === 'ja' ? 'メッセージを閉じる' : 'Close message'} onClick={() => removeUserMessage(message.id)}>
+                  ×
+                </button>
               </div>
               <pre>{messageText(message, lang)}</pre>
             </div>

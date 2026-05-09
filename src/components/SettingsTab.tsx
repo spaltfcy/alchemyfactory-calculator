@@ -6,7 +6,7 @@ import { machineById } from '../data/machines';
 import { RECIPE_ORDER, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
 import { t, text } from '../i18n';
 import { sanitizeNegativeTargets, buildNegativeTargetWarningInput } from '../engine/targetValidation';
-import { verificationErrorMessage, type UserMessageInput } from '../utils/userMessages';
+import { createMessageRunId, verificationErrorMessage, withMessageRun, type UserMessageInput } from '../utils/userMessages';
 import { clearState, downloadJson } from '../utils/storage';
 
 export type SettingsTabProps = {
@@ -156,6 +156,10 @@ function unsupportedImportMessage(lang: Lang): string {
     : 'This JSON uses an old format and cannot be imported. Please re-save it with v0.6.1 or later.';
 }
 
+function withImportRun(input: UserMessageInput, runId: string, sourceFileName: string): UserMessageInput {
+  return withMessageRun(input, runId, sourceFileName);
+}
+
 export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImport, onUserMessage }: SettingsTabProps) {
   const lang = state.language;
   const fuel = getFuelSettings(state);
@@ -195,6 +199,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
   async function importJson(file: File | undefined) {
     if (!file) return;
     onBeginJsonImport?.();
+    const runId = createMessageRunId('settings-import');
     setImportError('');
 
     let raw = '';
@@ -204,14 +209,14 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
       const messageJa = 'JSONファイルの読み込みに失敗しました。';
       const messageEn = 'Failed to read the JSON file.';
       setImportError(lang === 'ja' ? messageJa : messageEn);
-      onUserMessage?.(verificationErrorMessage({
+      onUserMessage?.(withImportRun(verificationErrorMessage({
         code: 'IMPORT_FILE_READ_FAILED',
         messageJa,
         messageEn,
         phase: 'read_file',
         sourceFileName: file.name,
-        details: { exception: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error) },
-      }));
+        details: { exception: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error), runId },
+      }), runId, file.name));
       return;
     }
 
@@ -221,14 +226,14 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
         const messageJa = unsupportedImportMessage('ja');
         const messageEn = unsupportedImportMessage('en');
         setImportError(lang === 'ja' ? messageJa : messageEn);
-        onUserMessage?.(verificationErrorMessage({
+        onUserMessage?.(withImportRun(verificationErrorMessage({
           code: 'UNSUPPORTED_IMPORTED_STATE',
           messageJa,
           messageEn,
           phase: 'import_validation',
           sourceFileName: file.name,
-          details: { version: (parsed as { version?: unknown }).version },
-        }));
+          details: { version: (parsed as { version?: unknown }).version, runId },
+        }), runId, file.name));
         return;
       }
       try {
@@ -241,10 +246,10 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
       const targetSanitization = sanitizeNegativeTargets(merged.targets);
       const warningInput = buildNegativeTargetWarningInput(targetSanitization.negativeTargets);
       if (warningInput) {
-        onUserMessage?.({
+        onUserMessage?.(withImportRun({
           ...warningInput,
           source: { ...warningInput.source, sourceFileName: file.name },
-        });
+        }, runId, file.name));
       }
       setImportError('');
       setState({ ...merged, targets: targetSanitization.targets });
@@ -253,14 +258,14 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
       const messageEn = 'The JSON format is invalid.';
       const detailText = error instanceof Error ? error.message : String(error);
       setImportError((lang === 'ja' ? messageJa : messageEn) + (detailText ? ' ' + detailText : ''));
-      onUserMessage?.(verificationErrorMessage({
+      onUserMessage?.(withImportRun(verificationErrorMessage({
         code: 'INVALID_JSON',
         messageJa,
         messageEn,
         phase: 'parse_json',
         sourceFileName: file.name,
-        details: { exception: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error) },
-      }));
+        details: { exception: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error), runId },
+      }), runId, file.name));
     }
   }
 

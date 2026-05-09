@@ -1,11 +1,28 @@
 export type UserMessageSeverity = 'info' | 'warning' | 'error';
 export type UserMessageVisibility = 'temporary' | 'persistent';
 export type UserMessageDisplayMode = 'notification';
+export type UserMessagePhase =
+  | 'import'
+  | 'target_validation'
+  | 'calculation'
+  | 'export'
+  | 'ui'
+  | 'graph_capture'
+  | 'parse_json'
+  | 'import_validation'
+  | 'read_file'
+  | 'calculation_exception';
 
-export type UserMessageSource = {
-  phase?: 'import' | 'target_validation' | 'calculation' | 'export' | 'ui' | 'graph_capture' | 'parse_json' | 'import_validation' | 'read_file' | 'calculation_exception';
+export type UserMessageInputSource = {
+  phase?: UserMessagePhase;
   runId?: string;
   sourceFileName?: string;
+};
+
+export type UserMessageSource = {
+  phase: UserMessagePhase;
+  runId: string;
+  sourceFileName: string;
 };
 
 export type UserMessageLog = {
@@ -20,7 +37,9 @@ export type UserMessageLog = {
   messageEn: string;
   createdAt: string;
   expiresAt?: string;
-  source?: UserMessageSource;
+  runId: string;
+  sourceFileName: string;
+  source: UserMessageSource;
   details?: unknown;
 };
 
@@ -31,7 +50,7 @@ export type UserMessageInput = {
   messageJa: string;
   messageEn: string;
   durationMs?: number;
-  source?: UserMessageSource;
+  source?: UserMessageInputSource;
   details?: unknown;
 };
 
@@ -42,10 +61,44 @@ function makeId(): string {
   return 'msg-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 }
 
+export function createMessageRunId(prefix = 'message'): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return prefix + '-' + crypto.randomUUID();
+  }
+  return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+}
+
+function defaultSourceFileName(phase: UserMessagePhase): string {
+  if (phase === 'ui') return '(ui)';
+  if (phase === 'calculation') return '(calculation)';
+  if (phase === 'export') return '(export)';
+  if (phase === 'graph_capture') return '(graph-capture)';
+  return '(unknown-json)';
+}
+
+function normalizeMessageSource(input: UserMessageInput): UserMessageSource {
+  const phase = input.source?.phase ?? 'ui';
+  const runId = input.source?.runId ?? createMessageRunId(phase);
+  const sourceFileName = input.source?.sourceFileName ?? defaultSourceFileName(phase);
+  return { phase, runId, sourceFileName };
+}
+
+export function withMessageRun(input: UserMessageInput, runId: string, sourceFileName: string): UserMessageInput {
+  return {
+    ...input,
+    source: {
+      ...(input.source ?? {}),
+      runId,
+      sourceFileName: input.source?.sourceFileName ?? sourceFileName,
+    },
+  };
+}
+
 export function createUserMessage(input: UserMessageInput, now = new Date()): UserMessageLog {
   const createdAt = now.toISOString();
   const lifetimeMs = input.visibility === 'temporary' ? Math.max(1, input.durationMs ?? 5000) : null;
   const expiresAt = lifetimeMs === null ? undefined : new Date(now.getTime() + lifetimeMs).toISOString();
+  const source = normalizeMessageSource(input);
   return {
     id: makeId(),
     severity: input.severity,
@@ -58,7 +111,9 @@ export function createUserMessage(input: UserMessageInput, now = new Date()): Us
     messageEn: input.messageEn,
     createdAt,
     expiresAt,
-    source: input.source,
+    runId: source.runId,
+    sourceFileName: source.sourceFileName,
+    source,
     details: input.details,
   };
 }
