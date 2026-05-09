@@ -2,7 +2,7 @@ import type {
   AppSettings,
   Recipe,
 } from '../types';
-import { recipeById } from '../data/recipes';
+import { getRecipesProducing, recipeById } from '../data/recipes';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import {
@@ -37,20 +37,56 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
+const BALANCE_SOLVER_VERSION = '0.7.0-alpha.6' as const;
+const BALANCE_SOLVER_MODE = 'balance-iterative-alpha6';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
 type SupplyLot = { recipeId: string; itemId: string; rate: number; originalRate: number };
 type SourceMode = 'buy' | 'external' | 'cycleInput' | 'unresolved';
-type SourceBucket = Map<string, number>;
+type SourceKind = 'materialBuy' | 'fuelExternal' | 'fertilizerExternal';
+type SourceRole = Extract<CalculatedFlowRole, 'material' | 'fuel' | 'fertilizer'>;
+type SourceLot = {
+  key: string;
+  itemId: string;
+  role: SourceRole;
+  sourceKind: SourceKind;
+  sourceMode: Extract<SourceMode, 'buy' | 'external'>;
+  rate: number;
+};
+type CycleInputLot = {
+  key: string;
+  itemId: string;
+  role: 'material';
+  sourceMode: 'cycleInput';
+  rate: number;
+};
+type SourceBucket = Map<string, SourceLot>;
+type CycleInputBucket = Map<string, CycleInputLot>;
+type AlternateRecipeUse = { itemId: string; selectedRecipeId: string; alternateRecipeId: string; reason: 'selected_recipe_cycle'; rateAdded: number };
+type ByproductFuelUse = { itemId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-alpha4' | 'legacy-fallback';
+  mode: 'balance-iterative-alpha6' | 'legacy-fallback';
+  version: typeof BALANCE_SOLVER_VERSION;
   fallbackReason?: string;
   iterations?: number;
   cycleInputItemIds?: string[];
   cycleInputRates?: Record<string, number>;
   unresolvedItemIds?: string[];
+  sourceBuckets?: {
+    materialBuy: Record<string, number>;
+    fuelExternal: Record<string, number>;
+    fertilizerExternal: Record<string, number>;
+  };
+  alternateRecipeCompletion: {
+    enabled: boolean;
+    uses: AlternateRecipeUse[];
+  };
+  byproductFuel: {
+    enabled: boolean;
+    uses: ByproductFuelUse[];
+  };
   notesJa: string[];
   notesEn: string[];
 };
@@ -336,17 +372,178 @@ function consumeLots(lots: SupplyLot[] | undefined, rate: number): number {
   return remaining;
 }
 
-function addSource(sourceMap: SourceBucket, itemId: string, rate: number): void {
-  addToMap(sourceMap, itemId, rate);
+function sourceKey(kind: SourceKind, itemId: string, role: SourceRole): string {
+  return kind + ':' + role + ':' + itemId;
 }
 
-function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics): { runs: RunMap; targetRuns: Map<string, number>; targetRates: Map<string, number>; sources: SourceBucket; cycleInputs: SourceBucket; unresolved: Set<string>; iterations: number; heatRequiredPerMin: number; fertilizerNutrientsRequiredPerMin: number } {
+function addSource(
+  sourceMap: SourceBucket,
+  sourceKind: SourceKind,
+  itemId: string,
+  role: SourceRole,
+  rate: number,
+  sourceMode: Extract<SourceMode, 'buy' | 'external'>,
+): void {
+  if (rate <= EPS) return;
+  const key = sourceKey(sourceKind, itemId, role);
+  const existing = sourceMap.get(key);
+  const nextRate = (existing?.rate ?? 0) + rate;
+  if (Math.abs(nextRate) <= EPS) sourceMap.delete(key);
+  else sourceMap.set(key, { key, itemId, role, sourceKind, sourceMode, rate: nextRate });
+}
+
+function addCycleInput(cycleInputs: CycleInputBucket, itemId: string, rate: number): void {
+  if (rate <= EPS) return;
+  const key = 'cycleInput:material:' + itemId;
+  const existing = cycleInputs.get(key);
+  const nextRate = (existing?.rate ?? 0) + rate;
+  if (Math.abs(nextRate) <= EPS) cycleInputs.delete(key);
+  else cycleInputs.set(key, { key, itemId, role: 'material', sourceMode: 'cycleInput', rate: nextRate });
+}
+
+function ratesByItem<T extends { itemId: string; rate: number }>(bucket: Map<string, T>): Record<string, number> {
+  const record: Record<string, number> = {};
+  for (const lot of bucket.values()) addToRecord(record, lot.itemId, lot.rate);
+  return record;
+}
+
+function sourceRatesByKind(sourceMap: SourceBucket, kind: SourceKind): Record<string, number> {
+  const record: Record<string, number> = {};
+  for (const lot of sourceMap.values()) {
+    if (lot.sourceKind === kind) addToRecord(record, lot.itemId, lot.rate);
+  }
+  return record;
+}
+
+function cloneSourceBucket(sourceMap: SourceBucket): SourceBucket {
+  return new Map([...sourceMap.entries()].map(([key, lot]) => [key, { ...lot }]));
+}
+
+function cloneCycleInputBucket(cycleInputs: CycleInputBucket): CycleInputBucket {
+  return new Map([...cycleInputs.entries()].map(([key, lot]) => [key, { ...lot }]));
+}
+
+type SourceUse = { itemId: string; rate: number; sourceMode: Extract<SourceMode, 'buy' | 'external' | 'cycleInput'>; sourceKind: SourceKind | 'cycleInput'; role: SourceRole };
+
+function consumeSourceBucket(
+  sourceMap: SourceBucket,
+  itemId: string,
+  role: SourceRole,
+  sourceKinds: SourceKind[],
+  rate: number,
+): { remaining: number; uses: SourceUse[] } {
+  let remaining = rate;
+  const uses: SourceUse[] = [];
+  for (const lot of sourceMap.values()) {
+    if (remaining <= EPS) break;
+    if (lot.itemId !== itemId || lot.role !== role || !sourceKinds.includes(lot.sourceKind) || lot.rate <= EPS) continue;
+    const take = Math.min(lot.rate, remaining);
+    lot.rate -= take;
+    remaining -= take;
+    uses.push({ itemId, rate: take, sourceMode: lot.sourceMode, sourceKind: lot.sourceKind, role });
+  }
+  return { remaining, uses };
+}
+
+function consumeCycleInputBucket(cycleInputs: CycleInputBucket, itemId: string, rate: number): { remaining: number; uses: SourceUse[] } {
+  let remaining = rate;
+  const uses: SourceUse[] = [];
+  for (const lot of cycleInputs.values()) {
+    if (remaining <= EPS) break;
+    if (lot.itemId !== itemId || lot.rate <= EPS) continue;
+    const take = Math.min(lot.rate, remaining);
+    lot.rate -= take;
+    remaining -= take;
+    uses.push({ itemId, rate: take, sourceMode: 'cycleInput', sourceKind: 'cycleInput', role: 'material' });
+  }
+  return { remaining, uses };
+}
+
+function consumeRecipeLots(lots: SupplyLot[] | undefined, rate: number): { remaining: number; uses: Array<{ recipeId: string; itemId: string; rate: number }> } {
+  let remaining = rate;
+  const uses: Array<{ recipeId: string; itemId: string; rate: number }> = [];
+  for (const lot of lots ?? []) {
+    if (remaining <= EPS) break;
+    if (lot.rate <= EPS) continue;
+    const take = Math.min(lot.rate, remaining);
+    lot.rate -= take;
+    remaining -= take;
+    uses.push({ recipeId: lot.recipeId, itemId: lot.itemId, rate: take });
+  }
+  return { remaining, uses };
+}
+
+function fuelHeatValue(itemId: string, input: CalculateInput): number {
+  return (FUEL_HEAT_VALUE_BY_ITEM_ID[itemId] ?? 0) * getFuelHeatValueMultiplier(input.abilities);
+}
+
+function consumeByproductFuelLots(
+  supplyLotsByItem: Map<string, SupplyLot[]>,
+  preferredFuelItemId: string,
+  preferredFuelRate: number,
+  input: CalculateInput,
+): { remainingPreferredFuelRate: number; uses: ByproductFuelUse[] } {
+  const preferredHeat = fuelHeatValue(preferredFuelItemId, input);
+  if (!input.settings.useByproductFuel || preferredFuelRate <= EPS || preferredHeat <= EPS) {
+    return { remainingPreferredFuelRate: preferredFuelRate, uses: [] };
+  }
+  let remainingHeat = preferredFuelRate * preferredHeat;
+  const uses: ByproductFuelUse[] = [];
+  for (const [itemId, lots] of supplyLotsByItem.entries()) {
+    if (remainingHeat <= EPS) break;
+    const heatValue = fuelHeatValue(itemId, input);
+    if (heatValue <= EPS) continue;
+    for (const lot of lots) {
+      if (remainingHeat <= EPS) break;
+      if (lot.rate <= EPS) continue;
+      const take = Math.min(lot.rate, remainingHeat / heatValue);
+      if (take <= EPS) continue;
+      lot.rate -= take;
+      const heatTaken = take * heatValue;
+      remainingHeat -= heatTaken;
+      uses.push({
+        itemId,
+        consumerRecipeId: '',
+        rate: take,
+        preferredFuelEquivalentRate: heatTaken / preferredHeat,
+      });
+    }
+  }
+  return { remainingPreferredFuelRate: remainingHeat / preferredHeat, uses };
+}
+
+function recipeIdsInActiveCycles(diagnostics: LinearModelDiagnostics): Set<string> {
+  return new Set(diagnostics.activePlanCyclicComponents.flatMap((cycle) => cycle.recipeIds));
+}
+
+function chooseAlternateRecipeForItem(itemId: string, selectedRecipe: Recipe | undefined, diagnostics: LinearModelDiagnostics): Recipe | undefined {
+  const cycleRecipeIds = recipeIdsInActiveCycles(diagnostics);
+  const alternatives = getRecipesProducing(itemId)
+    .filter((recipe) => recipe.id !== selectedRecipe?.id)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  return alternatives.find((recipe) => !cycleRecipeIds.has(recipe.id)) ?? alternatives[0];
+}
+
+function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics): {
+  runs: RunMap;
+  targetRuns: Map<string, number>;
+  targetRates: Map<string, number>;
+  sources: SourceBucket;
+  cycleInputs: CycleInputBucket;
+  unresolved: Set<string>;
+  iterations: number;
+  heatRequiredPerMin: number;
+  fertilizerNutrientsRequiredPerMin: number;
+  alternateRecipeUses: AlternateRecipeUse[];
+} {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const { runs, targetRuns, targetRates, invalidTargets } = initialRunsFromTargets(input, productionSpeedMultiplier);
   const sources: SourceBucket = new Map();
-  const cycleInputs: SourceBucket = new Map();
+  const cycleInputs: CycleInputBucket = new Map();
   const unresolved = new Set<string>(invalidTargets);
   const cycleInputIds = cycleInputItemIds(diagnostics);
+  const activeCycleRecipeIds = recipeIdsInActiveCycles(diagnostics);
+  const alternateRecipeUses: AlternateRecipeUse[] = [];
   let heatRequiredPerMin = 0;
   let fertilizerNutrientsRequiredPerMin = 0;
 
@@ -356,62 +553,138 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
     fertilizerNutrientsRequiredPerMin = analysis.fertilizerNutrientsRequiredPerMin;
 
     const nextRuns: RunMap = new Map(runs);
-    const produced = new Map(analysis.produced);
-    for (const [itemId, sourceRate] of sources.entries()) addToMap(produced, itemId, sourceRate);
-    for (const [itemId, sourceRate] of cycleInputs.entries()) addToMap(produced, itemId, sourceRate);
-    const required = new Map(analysis.consumed);
-    for (const [itemId, targetRate] of targetRates.entries()) addToMap(required, itemId, targetRate);
+    const supplyLotsByItem = buildSupplyLots(runs);
+    const sourceLots = cloneSourceBucket(sources);
+    const cycleInputLots = cloneCycleInputBucket(cycleInputs);
 
-    let changed = false;
-    for (const [itemId, requiredRate] of required.entries()) {
-      const missingRate = requiredRate - (produced.get(itemId) ?? 0);
-      if (missingRate <= 0.000001) continue;
-
-      const externalFuelDemand = input.settings.fuel?.enabled
-        && input.settings.fuel.sourceMode === 'external'
-        && itemId === input.settings.fuel.fuelItemId;
-      const externalFertilizerDemand = input.settings.fertilizer?.enabled
-        && input.settings.fertilizer.sourceMode === 'external'
-        && itemId === input.settings.fertilizer.fertilizerItemId;
-      if (externalFuelDemand || externalFertilizerDemand) {
-        addSource(sources, itemId, missingRate);
-        changed = true;
-        continue;
-      }
-
-      if (cycleInputIds.has(itemId) && isBuyableItem(itemId)) {
-        addSource(cycleInputs, itemId, missingRate);
-        changed = true;
-        continue;
-      }
-      const selectedRecipe = chooseRecipeForItem(itemId, input.recipePreferences);
-      if (selectedRecipe) {
-        addRunForDemand(nextRuns, selectedRecipe, itemId, missingRate, input, productionSpeedMultiplier);
-        changed = true;
-        continue;
-      }
-      if (isBuyableItem(itemId)) {
-        addSource(sources, itemId, missingRate);
-        changed = true;
-        continue;
-      }
-      unresolved.add(itemId);
+    // Reserve target outputs first. A target is a final sink, not a reusable supply.
+    for (const [itemId, targetRate] of targetRates.entries()) {
+      const consumed = consumeRecipeLots(supplyLotsByItem.get(itemId), targetRate);
+      if (consumed.remaining > 0.000001) unresolved.add(itemId);
     }
 
-    if ([...nextRuns.values()].some(isNonFiniteOrHuge) || [...sources.values()].some(isNonFiniteOrHuge) || [...cycleInputs.values()].some(isNonFiniteOrHuge)) {
+    let changed = false;
+    const sortedDemandLots = [...analysis.demandLots].sort((a, b) => {
+      const priority = (role: CalculatedFlowRole): number => role === 'material' ? 0 : role === 'fuel' ? 1 : role === 'fertilizer' ? 2 : 3;
+      return priority(a.role) - priority(b.role);
+    });
+
+    for (const demand of sortedDemandLots) {
+      let remaining = consumeRecipeLots(supplyLotsByItem.get(demand.itemId), demand.rate).remaining;
+
+      if (demand.role === 'fuel') {
+        const byproductFuel = consumeByproductFuelLots(supplyLotsByItem, demand.itemId, remaining, input);
+        remaining = byproductFuel.remainingPreferredFuelRate;
+      }
+
+      if (demand.role === 'material') {
+        remaining = consumeCycleInputBucket(cycleInputLots, demand.itemId, remaining).remaining;
+        remaining = consumeSourceBucket(sourceLots, demand.itemId, 'material', ['materialBuy'], remaining).remaining;
+      } else if (demand.role === 'fuel') {
+        remaining = consumeSourceBucket(sourceLots, demand.itemId, 'fuel', ['fuelExternal'], remaining).remaining;
+      } else if (demand.role === 'fertilizer') {
+        remaining = consumeSourceBucket(sourceLots, demand.itemId, 'fertilizer', ['fertilizerExternal'], remaining).remaining;
+      }
+
+      if (remaining <= 0.000001) continue;
+
+      if (demand.role === 'fuel') {
+        if (input.settings.fuel?.enabled && input.settings.fuel.sourceMode === 'external' && demand.itemId === input.settings.fuel.fuelItemId) {
+          addSource(sources, 'fuelExternal', demand.itemId, 'fuel', remaining, 'external');
+          changed = true;
+          continue;
+        }
+        const fuelRecipe = chooseRecipeForItem(demand.itemId, input.recipePreferences);
+        if (fuelRecipe) {
+          addRunForDemand(nextRuns, fuelRecipe, demand.itemId, remaining, input, productionSpeedMultiplier);
+          changed = true;
+          continue;
+        }
+        if (isBuyableItem(demand.itemId)) {
+          addSource(sources, 'materialBuy', demand.itemId, 'material', remaining, 'buy');
+          changed = true;
+          continue;
+        }
+        unresolved.add(demand.itemId);
+        continue;
+      }
+
+      if (demand.role === 'fertilizer') {
+        if (input.settings.fertilizer?.enabled && input.settings.fertilizer.sourceMode === 'external' && demand.itemId === input.settings.fertilizer.fertilizerItemId) {
+          addSource(sources, 'fertilizerExternal', demand.itemId, 'fertilizer', remaining, 'external');
+          changed = true;
+          continue;
+        }
+        const fertilizerRecipe = chooseRecipeForItem(demand.itemId, input.recipePreferences);
+        if (fertilizerRecipe) {
+          addRunForDemand(nextRuns, fertilizerRecipe, demand.itemId, remaining, input, productionSpeedMultiplier);
+          changed = true;
+          continue;
+        }
+        if (isBuyableItem(demand.itemId)) {
+          addSource(sources, 'materialBuy', demand.itemId, 'material', remaining, 'buy');
+          changed = true;
+          continue;
+        }
+        unresolved.add(demand.itemId);
+        continue;
+      }
+
+      if (cycleInputIds.has(demand.itemId) && isBuyableItem(demand.itemId)) {
+        addCycleInput(cycleInputs, demand.itemId, remaining);
+        changed = true;
+        continue;
+      }
+
+      const selectedRecipe = chooseRecipeForItem(demand.itemId, input.recipePreferences);
+      let recipeToUse = selectedRecipe;
+      if (
+        input.settings.allowAlternateRecipeCompletion
+        && selectedRecipe
+        && activeCycleRecipeIds.has(selectedRecipe.id)
+      ) {
+        const alternate = chooseAlternateRecipeForItem(demand.itemId, selectedRecipe, diagnostics);
+        if (alternate) {
+          recipeToUse = alternate;
+          alternateRecipeUses.push({
+            itemId: demand.itemId,
+            selectedRecipeId: selectedRecipe.id,
+            alternateRecipeId: alternate.id,
+            reason: 'selected_recipe_cycle',
+            rateAdded: remaining,
+          });
+        }
+      }
+
+      if (recipeToUse) {
+        addRunForDemand(nextRuns, recipeToUse, demand.itemId, remaining, input, productionSpeedMultiplier);
+        changed = true;
+        continue;
+      }
+      if (isBuyableItem(demand.itemId)) {
+        addSource(sources, 'materialBuy', demand.itemId, 'material', remaining, 'buy');
+        changed = true;
+        continue;
+      }
+      unresolved.add(demand.itemId);
+    }
+
+    const sourceRates = [...sources.values()].map((lot) => lot.rate);
+    const cycleInputRates = [...cycleInputs.values()].map((lot) => lot.rate);
+    if ([...nextRuns.values()].some(isNonFiniteOrHuge) || sourceRates.some(isNonFiniteOrHuge) || cycleInputRates.some(isNonFiniteOrHuge)) {
       unresolved.add('__non_finite_or_huge__');
-      return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin };
+      return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses };
     }
 
     if (!changed || mapAlmostEqual(runs, nextRuns)) {
-      return { runs: nextRuns, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin };
+      return { runs: nextRuns, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses };
     }
     runs.clear();
     for (const [recipeId, rate] of nextRuns.entries()) runs.set(recipeId, rate);
   }
 
   unresolved.add('__solver_did_not_converge__');
-  return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: MAX_ALPHA_ITERATIONS, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin };
+  return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: MAX_ALPHA_ITERATIONS, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses };
 }
 
 function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: ConveyorEdgeStat[]; outputEdges: OutputEdgeStat[] } {
@@ -447,16 +720,23 @@ function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: 
 }
 
 export function calculateAlphaBalance(input: CalculateInput, diagnostics: LinearModelDiagnostics): AlphaBalanceSolveResult {
-  // The alpha.4 solver handles ordinary material/source/cycle-input balances. Internal fuel/fertilizer
-  // self-dependency still falls back to the legacy-compatible engine until the full v0.8 replacement.
+  // The alpha.6 balance solver handles ordinary material/source/cycle-input balances.
+  // Internal fuel/fertilizer self-dependency still falls back to the legacy-compatible engine until the full v0.8 replacement.
+  const fallbackTraceBase = {
+    version: BALANCE_SOLVER_VERSION,
+    alternateRecipeCompletion: { enabled: input.settings.allowAlternateRecipeCompletion, uses: [] as AlternateRecipeUse[] },
+    byproductFuel: { enabled: input.settings.useByproductFuel, uses: [] as ByproductFuelUse[] },
+  };
+
   if (input.settings.fuel?.enabled && input.settings.fuel.sourceMode === 'internal') {
     return {
       result: calculateLegacy(input),
       trace: {
+        ...fallbackTraceBase,
         mode: 'legacy-fallback',
-        fallbackReason: 'internal_fuel_not_yet_active_in_alpha4',
-        notesJa: ['v0.7.0-alpha.4 では内部燃料の完全線形化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.4 still uses the legacy-compatible fallback for internal fuel.'],
+        fallbackReason: 'internal_fuel_not_yet_active_in_alpha6',
+        notesJa: ['v0.7.0-alpha.6 では内部燃料の完全な収支solver化はまだ比較用フォールバックです。'],
+        notesEn: ['v0.7.0-alpha.6 still uses the legacy-compatible fallback for internal fuel.'],
       },
     };
   }
@@ -464,10 +744,11 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
     return {
       result: calculateLegacy(input),
       trace: {
+        ...fallbackTraceBase,
         mode: 'legacy-fallback',
-        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha4',
-        notesJa: ['v0.7.0-alpha.4 では内部肥料の完全線形化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.4 still uses the legacy-compatible fallback for internal fertilizer.'],
+        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha6',
+        notesJa: ['v0.7.0-alpha.6 では内部肥料の完全な収支solver化はまだ比較用フォールバックです。'],
+        notesEn: ['v0.7.0-alpha.6 still uses the legacy-compatible fallback for internal fertilizer.'],
       },
     };
   }
@@ -481,6 +762,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
   const flows: CalculatedFlow[] = [];
   const warnings: PlanWarning[] = [];
   const purchaseCostByItem = new Map<string, number>();
+  const byproductFuelUses: ByproductFuelUse[] = [];
 
   function stat(itemId: string): ItemStat {
     itemStats[itemId] ??= createItemStat(itemId);
@@ -527,66 +809,94 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
     s.revenueCopperPerMin += targetRate * sell * sellPriceMultiplier;
   }
 
-  for (const [itemId, sourceRate] of solved.sources.entries()) {
-    const s = stat(itemId);
-    s.purchased += sourceRate;
-    const cost = sourceRate * (itemById[itemId]?.buyPriceCopper ?? 0);
-    s.purchaseCostCopperPerMin += cost;
-    addToMap(purchaseCostByItem, itemId, cost);
+  function sourceCostCopper(lot: SourceLot | CycleInputLot): number {
+    if ('sourceKind' in lot && (lot.sourceKind === 'fuelExternal' || lot.sourceKind === 'fertilizerExternal')) return 0;
+    return lot.rate * (itemById[lot.itemId]?.buyPriceCopper ?? 0);
   }
-  for (const [itemId, sourceRate] of solved.cycleInputs.entries()) {
-    const s = stat(itemId);
-    s.purchased += sourceRate;
-    const cost = sourceRate * (itemById[itemId]?.buyPriceCopper ?? 0);
+
+  for (const source of solved.sources.values()) {
+    const s = stat(source.itemId);
+    s.purchased += source.rate;
+    const cost = sourceCostCopper(source);
     s.purchaseCostCopperPerMin += cost;
-    addToMap(purchaseCostByItem, itemId, cost);
+    addToMap(purchaseCostByItem, source.itemId, cost);
+  }
+  for (const cycleInput of solved.cycleInputs.values()) {
+    const s = stat(cycleInput.itemId);
+    s.purchased += cycleInput.rate;
+    const cost = sourceCostCopper(cycleInput);
+    s.purchaseCostCopperPerMin += cost;
+    addToMap(purchaseCostByItem, cycleInput.itemId, cost);
   }
 
   const analysis = analyzeRuns(solved.runs, input, productionSpeedMultiplier);
   const supplyLotsByItem = buildSupplyLots(solved.runs);
 
   for (const [itemId, targetRate] of solved.targetRates.entries()) {
-    let remaining = targetRate;
-    for (const lot of supplyLotsByItem.get(itemId) ?? []) {
-      if (remaining <= EPS) break;
-      if (lot.rate <= EPS) continue;
-      const take = Math.min(lot.rate, remaining);
-      lot.rate -= take;
-      remaining -= take;
-      pushFlow(makeFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'final' }, itemId, take, 'finalOutput', conveyorItemsPerMinute));
+    const consumed = consumeRecipeLots(supplyLotsByItem.get(itemId), targetRate);
+    for (const use of consumed.uses) {
+      pushFlow(makeFlow({ type: 'recipe', recipeId: use.recipeId }, { type: 'itemSink', itemId, sinkMode: 'final' }, itemId, use.rate, 'finalOutput', conveyorItemsPerMinute));
     }
   }
 
-  const sourceAvailable = new Map(solved.sources);
-  const cycleInputAvailable = new Map(solved.cycleInputs);
-  for (const demand of analysis.demandLots) {
+  const sourceAvailable = cloneSourceBucket(solved.sources);
+  const cycleInputAvailable = cloneCycleInputBucket(solved.cycleInputs);
+  const sortedDemandLots = [...analysis.demandLots].sort((a, b) => {
+    const priority = (role: CalculatedFlowRole): number => role === 'material' ? 0 : role === 'fuel' ? 1 : role === 'fertilizer' ? 2 : 3;
+    return priority(a.role) - priority(b.role);
+  });
+
+  for (const demand of sortedDemandLots) {
     const s = stat(demand.itemId);
     s.requested += demand.rate;
     s.consumed += demand.rate;
-    let remaining = demand.rate;
     const consumer = { type: 'recipe', recipeId: demand.consumerRecipeId } as const;
-    for (const lot of supplyLotsByItem.get(demand.itemId) ?? []) {
-      if (remaining <= EPS) break;
-      if (lot.rate <= EPS) continue;
-      const take = Math.min(lot.rate, remaining);
-      lot.rate -= take;
-      remaining -= take;
-      if (demand.role === 'material') s.reused += take;
-      pushFlow(makeFlow({ type: 'recipe', recipeId: lot.recipeId }, consumer, demand.itemId, take, demand.role, conveyorItemsPerMinute));
+
+    const recipeUse = consumeRecipeLots(supplyLotsByItem.get(demand.itemId), demand.rate);
+    let remaining = recipeUse.remaining;
+    for (const use of recipeUse.uses) {
+      if (demand.role === 'material') s.reused += use.rate;
+      pushFlow(makeFlow({ type: 'recipe', recipeId: use.recipeId }, consumer, use.itemId, use.rate, demand.role, conveyorItemsPerMinute));
     }
-    const cycleRate = Math.min(remaining, cycleInputAvailable.get(demand.itemId) ?? 0);
-    if (cycleRate > EPS) {
-      cycleInputAvailable.set(demand.itemId, (cycleInputAvailable.get(demand.itemId) ?? 0) - cycleRate);
-      remaining -= cycleRate;
-      pushFlow(makeFlow({ type: 'itemSource', itemId: demand.itemId, sourceMode: 'cycleInput' }, consumer, demand.itemId, cycleRate, demand.role, conveyorItemsPerMinute));
+
+    if (demand.role === 'fuel') {
+      const byproductFuel = consumeByproductFuelLots(supplyLotsByItem, demand.itemId, remaining, input);
+      remaining = byproductFuel.remainingPreferredFuelRate;
+      for (const use of byproductFuel.uses) {
+        const fuelUse = { ...use, consumerRecipeId: demand.consumerRecipeId };
+        byproductFuelUses.push(fuelUse);
+        const fuelStat = stat(use.itemId);
+        fuelStat.consumed += use.rate;
+        pushFlow(makeFlow({ type: 'recipe', recipeId: 'byproduct-fuel' }, consumer, use.itemId, use.rate, 'fuel', conveyorItemsPerMinute));
+      }
     }
-    const sourceRate = Math.min(remaining, sourceAvailable.get(demand.itemId) ?? 0);
-    if (sourceRate > EPS) {
-      sourceAvailable.set(demand.itemId, (sourceAvailable.get(demand.itemId) ?? 0) - sourceRate);
-      remaining -= sourceRate;
-      const sourceMode: SourceMode = demand.role === 'fuel' || demand.role === 'fertilizer' ? 'external' : 'buy';
-      pushFlow(makeFlow({ type: 'itemSource', itemId: demand.itemId, sourceMode }, consumer, demand.itemId, sourceRate, demand.role, conveyorItemsPerMinute));
+
+    if (demand.role === 'material') {
+      const cycleUse = consumeCycleInputBucket(cycleInputAvailable, demand.itemId, remaining);
+      remaining = cycleUse.remaining;
+      for (const use of cycleUse.uses) {
+        pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: 'cycleInput' }, consumer, use.itemId, use.rate, 'material', conveyorItemsPerMinute));
+      }
+
+      const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'material', ['materialBuy'], remaining);
+      remaining = sourceUse.remaining;
+      for (const use of sourceUse.uses) {
+        pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: use.sourceMode }, consumer, use.itemId, use.rate, 'material', conveyorItemsPerMinute));
+      }
+    } else if (demand.role === 'fuel') {
+      const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'fuel', ['fuelExternal'], remaining);
+      remaining = sourceUse.remaining;
+      for (const use of sourceUse.uses) {
+        pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: 'external' }, consumer, use.itemId, use.rate, 'fuel', conveyorItemsPerMinute));
+      }
+    } else if (demand.role === 'fertilizer') {
+      const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'fertilizer', ['fertilizerExternal'], remaining);
+      remaining = sourceUse.remaining;
+      for (const use of sourceUse.uses) {
+        pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: 'external' }, consumer, use.itemId, use.rate, 'fertilizer', conveyorItemsPerMinute));
+      }
     }
+
     if (remaining > 0.000001) solved.unresolved.add(demand.itemId);
   }
 
@@ -618,22 +928,35 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
   if (solved.unresolved.has('__solver_did_not_converge__')) {
     errorSummaries.push({
       code: 'INTERNAL_ERROR_SOLVER_DID_NOT_CONVERGE',
-      messageJa: '新solverの計算が上限回数内に収束しませんでした。',
-      messageEn: 'The new solver did not converge within the iteration limit.',
+      messageJa: '収支ベースsolverの計算が上限回数内に収束しませんでした。',
+      messageEn: 'The balance-based solver did not converge within the iteration limit.',
     });
   }
   if (solved.unresolved.has('__non_finite_or_huge__')) {
     errorSummaries.push({
       code: 'INTERNAL_ERROR_NON_FINITE_RESULT',
-      messageJa: '新solverで有限ではない、または異常に大きい値が発生しました。',
-      messageEn: 'The new solver produced a non-finite or excessively large value.',
+      messageJa: '収支ベースsolverで有限ではない、または異常に大きい値が発生しました。',
+      messageEn: 'The balance-based solver produced a non-finite or excessively large value.',
     });
   }
 
-  if (solved.cycleInputs.size > 0) {
+  const cycleInputRates = ratesByItem(solved.cycleInputs);
+  if (Object.keys(cycleInputRates).length > 0) {
     warnings.push({
-      messageJa: '循環補填として ' + [...solved.cycleInputs.keys()].map((itemId) => itemById[itemId]?.name.ja ?? itemId).join(' / ') + ' を投入します。',
-      messageEn: 'Cycle input is used for: ' + [...solved.cycleInputs.keys()].join(' / '),
+      messageJa: '循環補填として ' + Object.keys(cycleInputRates).map((itemId) => itemById[itemId]?.name.ja ?? itemId).join(' / ') + ' を投入します。',
+      messageEn: 'Cycle input is used for: ' + Object.keys(cycleInputRates).join(' / '),
+    });
+  }
+  if (solved.alternateRecipeUses.length > 0) {
+    warnings.push({
+      messageJa: '不足補完のため、代替レシピを使用しました。',
+      messageEn: 'Alternate recipes were used to complete shortages.',
+    });
+  }
+  if (byproductFuelUses.length > 0) {
+    warnings.push({
+      messageJa: '副産物を燃料として使用しました。',
+      messageEn: 'Byproduct fuel was used.',
     });
   }
 
@@ -686,13 +1009,27 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
   return {
     result,
     trace: {
-      mode: 'balance-iterative-alpha4',
+      mode: BALANCE_SOLVER_MODE,
+      version: BALANCE_SOLVER_VERSION,
       iterations: solved.iterations,
-      cycleInputItemIds: [...solved.cycleInputs.keys()],
-      cycleInputRates: Object.fromEntries(solved.cycleInputs.entries()),
+      cycleInputItemIds: Object.keys(cycleInputRates),
+      cycleInputRates,
       unresolvedItemIds: invalidRootItemIds,
-      notesJa: ['v0.7.0-alpha.5 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。内部燃料/肥料など一部はレガシー互換フォールバックします。'],
-      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.5. This is not a full linear-programming solver. Some cases still use the legacy-compatible fallback.'],
+      sourceBuckets: {
+        materialBuy: sourceRatesByKind(solved.sources, 'materialBuy'),
+        fuelExternal: sourceRatesByKind(solved.sources, 'fuelExternal'),
+        fertilizerExternal: sourceRatesByKind(solved.sources, 'fertilizerExternal'),
+      },
+      alternateRecipeCompletion: {
+        enabled: input.settings.allowAlternateRecipeCompletion,
+        uses: solved.alternateRecipeUses,
+      },
+      byproductFuel: {
+        enabled: input.settings.useByproductFuel,
+        uses: byproductFuelUses,
+      },
+      notesJa: ['v0.7.0-alpha.6 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
+      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.6. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
     },
   };
 }
