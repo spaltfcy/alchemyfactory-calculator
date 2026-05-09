@@ -15,7 +15,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.7.0-alpha.1';
+const APP_VERSION = '0.7.0-alpha.2';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -488,7 +488,7 @@ export function App() {
             />
           </div>
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
-          {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} onBeginJsonImport={clearActiveUserMessages} onUserMessage={addUserMessage} />}
+          {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} onBeginJsonImport={clearActiveUserMessages} onUserMessage={addUserMessage} appVersion={APP_VERSION} gameVersion={GAME_VERSION} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
           {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} setState={setState} appVersion={APP_VERSION} gameVersion={GAME_VERSION} userMessages={userMessageHistory} onUserMessage={addUserMessage} onBeginJsonImport={clearActiveUserMessages} />}
         </section>

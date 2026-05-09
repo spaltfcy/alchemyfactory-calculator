@@ -5,9 +5,10 @@ import { ITEMS, fuelItemIds, fertilizerItemIds, itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { RECIPE_ORDER, DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
 import { t, text } from '../i18n';
-import { sanitizeNegativeTargets, buildNegativeTargetWarningInput } from '../engine/targetValidation';
+import { sanitizeNegativeTargets, buildNegativeTargetWarningInput, filterPositiveTargets } from '../engine/targetValidation';
 import { createMessageRunId, verificationErrorMessage, withMessageRun, type UserMessageInput } from '../utils/userMessages';
 import { clearState, downloadJson } from '../utils/storage';
+import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 
 export type SettingsTabProps = {
   state: AppState;
@@ -15,6 +16,8 @@ export type SettingsTabProps = {
   safeMode?: boolean;
   onBeginJsonImport?: () => void;
   onUserMessage?: (message: UserMessageInput) => void;
+  appVersion: string;
+  gameVersion: string;
 };
 
 const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
@@ -113,6 +116,8 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
   return {
     ...current,
     ...imported,
+    // Imported settings may contain an activeTab, but importing must not navigate.
+    activeTab: current.activeTab,
     settings: {
       ...current.settings,
       ...imported.settings,
@@ -127,6 +132,21 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
     surplusPolicies: { ...current.surplusPolicies, ...imported.surplusPolicies },
     completedGraphNodeIds: { ...current.completedGraphNodeIds, ...imported.completedGraphNodeIds },
     nodeNotes: { ...current.nodeNotes, ...imported.nodeNotes },
+  };
+}
+
+function buildInputFromState(sourceState: AppState): CalculateInput {
+  return {
+    targets: filterPositiveTargets(
+      sourceState.targets.map((target) => ({
+        ...target,
+        recipeId: sourceState.recipePreferences[target.outputItemId] ?? target.recipeId,
+      })),
+    ),
+    settings: sourceState.settings,
+    abilities: sourceState.abilities,
+    recipePreferences: sourceState.recipePreferences,
+    surplusPolicies: sourceState.surplusPolicies,
   };
 }
 
@@ -160,7 +180,7 @@ function withImportRun(input: UserMessageInput, runId: string, sourceFileName: s
   return withMessageRun(input, runId, sourceFileName);
 }
 
-export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImport, onUserMessage }: SettingsTabProps) {
+export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImport, onUserMessage, appVersion, gameVersion }: SettingsTabProps) {
   const lang = state.language;
   const fuel = getFuelSettings(state);
   const fertilizer = getFertilizerSettings(state);
@@ -193,6 +213,19 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
           ...patch,
         },
       },
+    });
+  }
+
+  function saveDebugLogFromSettings(): void {
+    const input = buildInputFromState(state);
+    const { result, debugLog } = calculateWithDebug(input);
+    downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
+      appVersion,
+      gameVersion,
+      debugSchemaVersion: 8,
+      calculationStatus: result.calculationStatus ?? 'ok',
+      errorSummaries: result.errorSummaries ?? [],
+      ...debugLog,
     });
   }
 
@@ -540,20 +573,27 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
         </section>
 
         <section className="panel settings-panel data-io-panel">
-          <h2>{lang === 'ja' ? 'データ入出力 (JSON)' : 'Data I/O (JSON)'}</h2>
+          <h2>{lang === 'ja' ? 'データ入出力' : 'Data I/O'}</h2>
 
           <div className="settings-panel-body">
             {importError && <p className="debug-status">{importError}</p>}
             <div className="settings-form-grid">
               <div className="form-field">
-                <span>{lang === 'ja' ? '出力' : 'Output'}</span>
+                <span>{lang === 'ja' ? '設定出力' : 'Settings output'}</span>
                 <button type="button" className="data-io-button" onClick={() => downloadJson(`alchemy-factory-calculator-save-${saveFileTimestamp()}.json`, state)}>
                   {lang === 'ja' ? '保存' : 'Save'}
                 </button>
               </div>
 
+              <div className="form-field">
+                <span>{lang === 'ja' ? 'ログ出力' : 'Log output'}</span>
+                <button type="button" className="data-io-button" onClick={saveDebugLogFromSettings}>
+                  {lang === 'ja' ? '保存' : 'Save'}
+                </button>
+              </div>
+
               <label className="form-field data-io-file-field">
-                <span>{lang === 'ja' ? '入力' : 'Input'}</span>
+                <span>{lang === 'ja' ? '設定入力' : 'Settings input'}</span>
                 <span className="file-label data-io-file">
                   <input
                     id="json-file-input"

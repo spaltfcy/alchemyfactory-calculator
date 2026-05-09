@@ -34,6 +34,15 @@ export type SolverRunSummary = {
   >;
 };
 
+export type NumericDebugValue = number | 'NaN' | 'Infinity' | '-Infinity';
+
+export type NonFiniteNumericEntry = {
+  path: string;
+  legacyValue: NumericDebugValue;
+  newValue: NumericDebugValue;
+  sameNonFinite: boolean;
+};
+
 export type SolverComparisonDiff = {
   calculationStatusChanged: boolean;
   errorCodesChanged: boolean;
@@ -41,19 +50,23 @@ export type SolverComparisonDiff = {
   itemStatCountDelta: number;
   recipeStatCountDelta: number;
   residualUnresolvedFlowCountDelta: number;
-  totalDeltas: Record<string, number>;
+  totalDeltas: Record<string, NumericDebugValue>;
+  nonFiniteNumericSummary: {
+    count: number;
+    entries: NonFiniteNumericEntry[];
+  };
   changedRecipeRuns: Array<{
     recipeId: string;
-    legacyRunsPerMinute: number;
-    newRunsPerMinute: number;
-    delta: number;
+    legacyRunsPerMinute: NumericDebugValue;
+    newRunsPerMinute: NumericDebugValue;
+    delta: NumericDebugValue;
   }>;
   changedItemRates: Array<{
     itemId: string;
     field: 'requested' | 'produced' | 'consumed' | 'purchased' | 'surplus' | 'discarded';
-    legacyRate: number;
-    newRate: number;
-    delta: number;
+    legacyRate: NumericDebugValue;
+    newRate: NumericDebugValue;
+    delta: NumericDebugValue;
   }>;
   flowKeyDelta: {
     onlyInLegacy: string[];
@@ -159,9 +172,43 @@ function summarizeResult(engineId: SolverEngineId, result: CalculationResult): S
   };
 }
 
-function delta(a: number, b: number): number {
-  const value = b - a;
-  return Math.abs(value) <= EPS ? 0 : value;
+function encodeNumber(value: number): NumericDebugValue {
+  if (Number.isNaN(value)) return 'NaN';
+  if (value === Infinity) return 'Infinity';
+  if (value === -Infinity) return '-Infinity';
+  return value;
+}
+
+function sameNumericKind(a: NumericDebugValue, b: NumericDebugValue): boolean {
+  return a === b;
+}
+
+function compareNumeric(a: number, b: number): { changed: boolean; delta: NumericDebugValue; legacyValue: NumericDebugValue; newValue: NumericDebugValue; nonFinite?: NonFiniteNumericEntry } {
+  const legacyValue = encodeNumber(a);
+  const newValue = encodeNumber(b);
+  const legacyFinite = typeof legacyValue === 'number' && Number.isFinite(legacyValue);
+  const newFinite = typeof newValue === 'number' && Number.isFinite(newValue);
+
+  if (!legacyFinite || !newFinite) {
+    const sameNonFinite = sameNumericKind(legacyValue, newValue);
+    return {
+      changed: !sameNonFinite,
+      delta: sameNonFinite ? 0 : 'NaN',
+      legacyValue,
+      newValue,
+      nonFinite: { path: '', legacyValue, newValue, sameNonFinite },
+    };
+  }
+
+  const value = newValue - legacyValue;
+  const normalizedDelta = Math.abs(value) <= EPS ? 0 : value;
+  return { changed: normalizedDelta !== 0, delta: normalizedDelta, legacyValue, newValue };
+}
+
+function compareNumericAt(path: string, a: number, b: number, entries: NonFiniteNumericEntry[]): ReturnType<typeof compareNumeric> {
+  const compared = compareNumeric(a, b);
+  if (compared.nonFinite) entries.push({ ...compared.nonFinite, path });
+  return compared;
 }
 
 function makeFlowKey(flow: CalculatedFlow): string {
@@ -181,17 +228,18 @@ function makeFlowKey(flow: CalculatedFlow): string {
 function compareResults(legacy: CalculationResult, next: CalculationResult): SolverComparisonDiff {
   const legacySummary = summarizeResult('legacy-v0610', legacy);
   const nextSummary = summarizeResult('linear-v070-alpha', next);
-  const totalDeltas: Record<string, number> = {};
+  const nonFiniteEntries: NonFiniteNumericEntry[] = [];
+  const totalDeltas: Record<string, NumericDebugValue> = {};
   for (const key of Object.keys(legacySummary.totals) as Array<keyof SolverRunSummary['totals']>) {
-    totalDeltas[key] = delta(legacySummary.totals[key], nextSummary.totals[key]);
+    totalDeltas[key] = compareNumericAt('totals.' + key, legacySummary.totals[key], nextSummary.totals[key], nonFiniteEntries).delta;
   }
 
   const recipeIds = uniqueSorted([...Object.keys(legacy.recipeStats), ...Object.keys(next.recipeStats)]);
   const changedRecipeRuns = recipeIds.flatMap((recipeId) => {
     const legacyRunsPerMinute = legacy.recipeStats[recipeId]?.runsPerMinute ?? 0;
     const newRunsPerMinute = next.recipeStats[recipeId]?.runsPerMinute ?? 0;
-    const d = delta(legacyRunsPerMinute, newRunsPerMinute);
-    return d === 0 ? [] : [{ recipeId, legacyRunsPerMinute, newRunsPerMinute, delta: d }];
+    const compared = compareNumericAt('recipeStats.' + recipeId + '.runsPerMinute', legacyRunsPerMinute, newRunsPerMinute, nonFiniteEntries);
+    return compared.changed ? [{ recipeId, legacyRunsPerMinute: compared.legacyValue, newRunsPerMinute: compared.newValue, delta: compared.delta }] : [];
   }).slice(0, MAX_CHANGED_ROWS);
 
   const fields: Array<'requested' | 'produced' | 'consumed' | 'purchased' | 'surplus' | 'discarded'> = [
@@ -207,8 +255,8 @@ function compareResults(legacy: CalculationResult, next: CalculationResult): Sol
     return fields.flatMap((field) => {
       const legacyRate = legacy.itemStats[itemId]?.[field] ?? 0;
       const newRate = next.itemStats[itemId]?.[field] ?? 0;
-      const d = delta(legacyRate, newRate);
-      return d === 0 ? [] : [{ itemId, field, legacyRate, newRate, delta: d }];
+      const compared = compareNumericAt('itemStats.' + itemId + '.' + field, legacyRate, newRate, nonFiniteEntries);
+      return compared.changed ? [{ itemId, field, legacyRate: compared.legacyValue, newRate: compared.newValue, delta: compared.delta }] : [];
     });
   }).slice(0, MAX_CHANGED_ROWS);
 
@@ -226,6 +274,10 @@ function compareResults(legacy: CalculationResult, next: CalculationResult): Sol
     residualUnresolvedFlowCountDelta:
       nextSummary.residualUnresolvedFlowCount - legacySummary.residualUnresolvedFlowCount,
     totalDeltas,
+    nonFiniteNumericSummary: {
+      count: nonFiniteEntries.length,
+      entries: nonFiniteEntries.slice(0, MAX_CHANGED_ROWS),
+    },
     changedRecipeRuns,
     changedItemRates,
     flowKeyDelta: {

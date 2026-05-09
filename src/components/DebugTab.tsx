@@ -332,7 +332,8 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
   return {
     ...current,
     ...imported,
-    activeTab: 'graph',
+    // Verification/log import must never move the visible tab.
+    activeTab: current.activeTab,
     settings: {
       ...current.settings,
       ...(imported.settings ?? {}),
@@ -1021,7 +1022,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       };
     }
 
-    setStatus(lang === 'ja' ? '検証JSONを反映してグラフ描画を待っています。' : 'Applied verification JSON. Waiting for graph render.');
+    setStatus(lang === 'ja' ? '検証JSONを反映して非表示グラフ描画を待っています。' : 'Applied verification JSON. Waiting for hidden graph render.');
     if (options.applyState !== false) setState(importedState);
 
     const zip = new JSZip();
