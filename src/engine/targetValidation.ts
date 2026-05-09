@@ -80,6 +80,7 @@ export function buildNegativeTargetWarningInput(entries: NegativeTargetEntry[]):
     messageJa: buildNegativeTargetLines(entries, 'ja').join('\n'),
     messageEn: buildNegativeTargetLines(entries, 'en').join('\n'),
     durationMs: 5000,
+    source: { phase: 'target_validation' },
     details: {
       ignoredTargetCount: entries.length,
       negativeTargets: entries,

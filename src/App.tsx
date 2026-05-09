@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import type { AbilityId, AppState } from './types';
 import { filterPositiveTargets, sanitizeNegativeTargets } from './engine/targetValidation';
-import { createUserMessage, messageText, type UserMessageInput, type UserMessageLog } from './utils/userMessages';
+import { calculationInvalidPersistentError, createUserMessage, messageText, type UserMessageInput, type UserMessageLog } from './utils/userMessages';
 import { DEFAULT_STATE } from './defaultState';
 import { calculate } from './engine/calculate';
 import { loadState, saveState } from './utils/storage';
@@ -15,7 +15,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.6.5';
+const APP_VERSION = '0.6.6';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -144,6 +144,7 @@ export function App() {
   const [abilityOpen, setAbilityOpen] = useState(false);
   const [visibleUserMessages, setVisibleUserMessages] = useState<UserMessageLog[]>([]);
   const [userMessageHistory, setUserMessageHistory] = useState<UserMessageLog[]>([]);
+  const calculationErrorMessageRef = useRef<{ id: string; key: string } | null>(null);
   const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
@@ -152,8 +153,8 @@ export function App() {
     const message = createUserMessage(input);
     setUserMessageHistory((current) => [message, ...current].slice(0, 300));
     setVisibleUserMessages((current) => [message, ...current].slice(0, 20));
-    if (message.visibility === 'temporary') {
-      const durationMs = Math.max(1, message.lifetimeMs ?? input.durationMs ?? 5000);
+    if (message.lifetimeMs !== null) {
+      const durationMs = Math.max(1, message.lifetimeMs);
       window.setTimeout(() => {
         setVisibleUserMessages((current) => current.filter((item) => item.id !== message.id));
       }, durationMs);
@@ -166,8 +167,14 @@ export function App() {
   }
 
   function messageStyle(message: UserMessageLog): CSSProperties | undefined {
-    if (message.visibility !== 'temporary') return undefined;
-    return { '--message-duration': `${Math.max(1, message.lifetimeMs ?? 5000)}ms` } as CSSProperties;
+    if (message.lifetimeMs === null) return undefined;
+    return { '--message-duration': `${Math.max(1, message.lifetimeMs)}ms` } as CSSProperties;
+  }
+
+  function messageTitle(message: UserMessageLog): string {
+    if (message.severity === 'error') return lang === 'ja' ? 'エラー' : 'Error';
+    if (message.severity === 'warning') return lang === 'ja' ? '警告' : 'Warning';
+    return lang === 'ja' ? '情報' : 'Info';
   }
 
 
@@ -253,6 +260,39 @@ export function App() {
       }),
     [calculationTargets, state.settings, state.abilities, state.recipePreferences, state.surplusPolicies],
   );
+
+  const calculationErrorKey = useMemo(
+    () =>
+      result.calculationStatus === 'invalid'
+        ? JSON.stringify({ status: result.calculationStatus, errorSummaries: result.errorSummaries ?? [] })
+        : '',
+    [result.calculationStatus, result.errorSummaries],
+  );
+
+  useEffect(() => {
+    if (result.calculationStatus !== 'invalid') {
+      const previous = calculationErrorMessageRef.current;
+      if (previous) {
+        setVisibleUserMessages((current) => current.filter((message) => message.id !== previous.id));
+        calculationErrorMessageRef.current = null;
+      }
+      return;
+    }
+
+    if (calculationErrorMessageRef.current?.key === calculationErrorKey) return;
+
+    const previous = calculationErrorMessageRef.current;
+    if (previous) setVisibleUserMessages((current) => current.filter((message) => message.id !== previous.id));
+
+    const message = addUserMessage(
+      calculationInvalidPersistentError(result.errorSummaries ?? [], {
+        calculationStatus: result.calculationStatus,
+        totals: result.totals,
+        errorSummaries: result.errorSummaries ?? [],
+      }),
+    );
+    calculationErrorMessageRef.current = { id: message.id, key: calculationErrorKey };
+  }, [calculationErrorKey, result.calculationStatus, result.errorSummaries, result.totals]);
 
   function setActiveTab(activeTab: AppState['activeTab']) {
     setState((current) => (current.activeTab === activeTab ? current : { ...current, activeTab }));
@@ -403,13 +443,20 @@ export function App() {
       {visibleUserMessages.length > 0 && (
         <div className="app-message-stack" aria-live="polite">
           {visibleUserMessages.slice(0, 5).map((message) => (
-            <div key={message.id} className={`app-message app-message-${message.severity} app-message-${message.visibility}`} style={messageStyle(message)}>
+            <div
+              key={message.id}
+              className={`app-message app-message-${message.severity} ${message.lifetimeMs === null ? 'app-message-persistent' : 'app-message-timed'}`}
+              style={messageStyle(message)}
+            >
+              <div className="app-message-head">
+                <strong>{messageTitle(message)}</strong>
+                {message.lifetimeMs === null && (
+                  <button type="button" aria-label={lang === 'ja' ? 'メッセージを閉じる' : 'Close message'} onClick={() => removeUserMessage(message.id)}>
+                    ×
+                  </button>
+                )}
+              </div>
               <pre>{messageText(message, lang)}</pre>
-              {message.visibility === 'persistent' && (
-                <button type="button" aria-label={lang === 'ja' ? 'メッセージを閉じる' : 'Close message'} onClick={() => removeUserMessage(message.id)}>
-                  ×
-                </button>
-              )}
             </div>
           ))}
         </div>

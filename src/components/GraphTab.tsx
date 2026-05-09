@@ -557,7 +557,6 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
         : result,
     [result],
   );
-  const graphErrorLines = useMemo(() => graphInvalidLines(result, lang), [result, lang]);
   useEffect(() => {
     const onSaveGraph = () => {
       void saveGraphElementAsPng(lang);
@@ -643,14 +642,6 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
   return (
     <div className="graph-tab">
       <div className="flow-wrap">
-        {result.calculationStatus === 'invalid' && (
-          <div className="graph-error-panel" role="alert">
-            <strong>{graphInvalidTitle(lang)}</strong>
-            {graphErrorLines.map((line, index) => (
-              <p key={index}>{line}</p>
-            ))}
-          </div>
-        )}
         <ReactFlow
           nodes={nodes}
           edges={edges}

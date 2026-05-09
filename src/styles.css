@@ -1528,39 +1528,53 @@ a {
   }
 }
 
-/* app-level temporary/persistent message log */
+/* app-level notification message log: errors and warnings use the same mechanism.
+   Difference is only lifetime: persistent errors stay, warnings usually auto-dismiss. */
 .app-message-stack {
   position: fixed;
-  top: clamp(5.4rem, 10vh, 9.2rem);
-  right: 1rem;
+  top: clamp(5.1rem, 8.8vh, 8.4rem);
+  left: 50%;
   z-index: 3000;
   display: grid;
   gap: 8px;
-  width: min(34rem, calc(100vw - 2rem));
+  width: min(54rem, calc(100vw - 2rem));
   max-height: min(45vh, 24rem);
   overflow: hidden;
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
 .app-message {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 10px;
+  gap: 0.35rem;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: 14px;
+  padding: 0.75rem 0.95rem;
   background: rgba(20, 24, 32, 0.96);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34);
+  box-shadow: var(--shadow);
   pointer-events: auto;
+}
+
+.app-message-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.app-message strong {
+  color: #fff;
+  font-size: 1rem;
 }
 
 .app-message pre {
   margin: 0;
   white-space: pre-wrap;
   font: inherit;
-  font-weight: 700;
-  line-height: 1.45;
+  color: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+  line-height: 1.35;
 }
 
 .app-message button {
@@ -1574,20 +1588,24 @@ a {
 }
 
 .app-message-error {
-  border-color: rgba(255, 112, 112, 0.72);
-  background: rgba(74, 20, 28, 0.98);
+  border-color: rgba(255, 107, 107, 0.72);
+  background: rgba(63, 18, 28, 0.94);
+  color: #ffd0d0;
 }
 
 .app-message-warning {
   border-color: rgba(255, 207, 93, 0.72);
-  background: rgba(64, 48, 13, 0.98);
+  background: rgba(64, 48, 13, 0.94);
+  color: #ffe6a3;
 }
 
 .app-message-info {
   border-color: rgba(120, 188, 255, 0.55);
+  background: rgba(18, 38, 64, 0.94);
+  color: #cfe8ff;
 }
 
-.app-message-temporary {
+.app-message-timed {
   animation: app-message-life var(--message-duration, 5s) ease-in-out forwards;
 }
 
@@ -1606,3 +1624,4 @@ a {
   from { transform: translateY(-4px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
