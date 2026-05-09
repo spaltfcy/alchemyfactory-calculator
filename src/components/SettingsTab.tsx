@@ -11,6 +11,7 @@ export type SettingsTabProps = {
   state: AppState;
   setState: (next: AppState) => void;
   safeMode?: boolean;
+  onBeginJsonImport?: () => void;
 };
 
 const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
@@ -152,7 +153,7 @@ function unsupportedImportMessage(lang: Lang): string {
     : 'This JSON uses an old format and cannot be imported. Please re-save it with v0.6.1 or later.';
 }
 
-export function SettingsTab({ state, setState, safeMode = false }: SettingsTabProps) {
+export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImport }: SettingsTabProps) {
   const lang = state.language;
   const fuel = getFuelSettings(state);
   const fertilizer = getFertilizerSettings(state);
@@ -190,6 +191,8 @@ export function SettingsTab({ state, setState, safeMode = false }: SettingsTabPr
 
   async function importJson(file: File | undefined) {
     if (!file) return;
+    onBeginJsonImport?.();
+    setImportError('');
     const raw = await file.text();
     try {
       const parsed = JSON.parse(raw) as Partial<AppState>;

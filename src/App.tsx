@@ -15,7 +15,7 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 
-const APP_VERSION = '0.6.6';
+const APP_VERSION = '0.6.7';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -164,6 +164,11 @@ export function App() {
 
   function removeUserMessage(id: string): void {
     setVisibleUserMessages((current) => current.filter((item) => item.id !== id));
+  }
+
+  function clearActiveUserMessages(): void {
+    setVisibleUserMessages([]);
+    calculationErrorMessageRef.current = null;
   }
 
   function messageStyle(message: UserMessageLog): CSSProperties | undefined {
@@ -485,9 +490,9 @@ export function App() {
             />
           </div>
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
-          {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} />}
+          {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} onBeginJsonImport={clearActiveUserMessages} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
-          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} setState={setState} appVersion={APP_VERSION} gameVersion={GAME_VERSION} userMessages={userMessageHistory} onUserMessage={addUserMessage} />}
+          {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} setState={setState} appVersion={APP_VERSION} gameVersion={GAME_VERSION} userMessages={userMessageHistory} onUserMessage={addUserMessage} onBeginJsonImport={clearActiveUserMessages} />}
         </section>
       </main>
     </div>
