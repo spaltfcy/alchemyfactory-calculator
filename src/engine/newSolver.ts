@@ -1,6 +1,15 @@
-import { RECIPES, recipeById } from '../data/recipes';
+import { RECIPES, getRecipesProducing, recipeById } from '../data/recipes';
+import type { Recipe } from '../types';
 import { itemById } from '../data/items';
 import { chooseRecipeForItem, isBuyableItem } from './itemSourceResolver';
+import {
+  getFertilizerNutritionMultiplier,
+  getFuelHeatValueMultiplier,
+  getHeatConsumptionMultiplier,
+  getProductionSpeedMultiplier,
+} from '../data/abilityTables';
+import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
+import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
 import {
   calculate as calculateLegacy,
   calculateWithDebug as calculateLegacyWithDebug,
@@ -92,6 +101,93 @@ export type DependencyGraphDiagnostic = {
   cyclicComponentCount: number;
 };
 
+export type LinearModelVariableKind =
+  | 'recipeRun'
+  | 'itemSource'
+  | 'cycleInput'
+  | 'surplus'
+  | 'discard'
+  | 'liquidSurplus'
+  | 'fuelDemand'
+  | 'fertilizerDemand';
+
+export type LinearModelVariable = {
+  id: string;
+  kind: LinearModelVariableKind;
+  itemId?: string;
+  recipeId?: string;
+  sourceMode?: 'buy' | 'external' | 'cycleInput' | 'internalProduction';
+  unit: 'runsPerMinute' | 'itemsPerMinute' | 'heatPerMinute' | 'nutrientsPerMinute';
+  noteJa: string;
+  noteEn: string;
+};
+
+export type LinearModelConstraintKind =
+  | 'targetOutput'
+  | 'itemBalance'
+  | 'liquidSurplusZeroPreferred'
+  | 'fuelHeatDemand'
+  | 'fertilizerNutrientDemand';
+
+export type LinearModelConstraintTerm = {
+  variableId: string;
+  coefficient: number;
+};
+
+export type LinearModelConstraint = {
+  id: string;
+  kind: LinearModelConstraintKind;
+  relation: '=' | '>=';
+  priority: 'hard' | 'preferred';
+  itemId?: string;
+  recipeId?: string;
+  rhs: number;
+  terms: LinearModelConstraintTerm[];
+  noteJa: string;
+  noteEn: string;
+};
+
+export type LinearModelCandidate = {
+  itemId?: string;
+  recipeId?: string;
+  selectedRecipeId?: string;
+  alternateRecipeIds?: string[];
+  candidateRecipeIds?: string[];
+  reasonJa: string;
+  reasonEn: string;
+};
+
+export type LinearBalanceModelDiagnostics = {
+  status: 'model-built-diagnostic-only';
+  activeRecipeIds: string[];
+  activeItemIds: string[];
+  targetItemIds: string[];
+  summary: {
+    variableCount: number;
+    constraintCount: number;
+    variableCountsByKind: Record<string, number>;
+    constraintCountsByKind: Record<string, number>;
+    activeRecipeCount: number;
+    activeItemCount: number;
+    liquidActiveItemCount: number;
+    targetCount: number;
+  };
+  variables: LinearModelVariable[];
+  constraints: LinearModelConstraint[];
+  candidates: {
+    cycleInput: LinearModelCandidate[];
+    liquidSurplus: LinearModelCandidate[];
+    alternateRecipe: LinearModelCandidate[];
+    byproductFuel: LinearModelCandidate[];
+  };
+  objectivePlan: Array<{
+    priority: number;
+    objective: string;
+    noteJa: string;
+    noteEn: string;
+  }>;
+};
+
 export type LinearModelDiagnostics = {
   mode: 'diagnostic-only';
   noteJa: string;
@@ -112,6 +208,7 @@ export type LinearModelDiagnostics = {
   activePlanCyclicComponents: SelectedRecipeCycleDiagnostic[];
   allRecipeCyclicComponents: SelectedRecipeCycleDiagnostic[];
   liquidOutputRecipeIds: string[];
+  linearBalanceModel: LinearBalanceModelDiagnostics;
 };
 
 export type SolverComparison = {
@@ -448,11 +545,463 @@ function buildCycleDiagnostics(graph: DependencyGraphData): { graph: DependencyG
   };
 }
 
+
+function variableId(kind: LinearModelVariableKind, key: string): string {
+  return kind + ':' + key;
+}
+
+function addCount(record: Record<string, number>, key: string, value = 1): void {
+  record[key] = (record[key] ?? 0) + value;
+}
+
+function outputPerRunForRecipe(recipe: Recipe, itemId: string): number {
+  const output = recipe.outputs.find((x) => x.itemId === itemId);
+  if (!output) return 0;
+  return output.amount * (output.probability ?? 1);
+}
+
+function runRateForDiagnosticRecipe(recipe: Recipe, input: CalculateInput): number {
+  const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
+  if (recipe.machineId === 'nursery') {
+    const fertilizer = input.settings.fertilizer;
+    const selectedNutrientsPerSec = fertilizer?.enabled
+      ? Math.max(0, Number(FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[fertilizer.fertilizerItemId] ?? fertilizer.nurseryNutrientsPerSec))
+      : Math.max(0, Number(fertilizer?.nurseryNutrientsPerSec ?? 12));
+    const nutrientsRequired = Math.max(0, recipe.timeSec * 12);
+    if (nutrientsRequired > EPS && selectedNutrientsPerSec > EPS) {
+      return (60 * selectedNutrientsPerSec * productionSpeedMultiplier) / nutrientsRequired;
+    }
+  }
+  return (60 / recipe.timeSec) * productionSpeedMultiplier;
+}
+
+function outputRateForDiagnosticRecipe(recipe: Recipe, itemId: string, input: CalculateInput): number {
+  return outputPerRunForRecipe(recipe, itemId) * runRateForDiagnosticRecipe(recipe, input);
+}
+
+function selectedSteamBoilerRecipe(input: CalculateInput): Recipe | undefined {
+  const preferred = input.recipePreferences.steam;
+  if (preferred && recipeById[preferred]) return recipeById[preferred];
+  return recipeById.steam_boiler_low;
+}
+
+function collectSelectedRecipeClosure(seedRecipeIds: Iterable<string>, input: CalculateInput): string[] {
+  const visited = new Set<string>();
+  const stack = [...seedRecipeIds].filter((recipeId) => !!recipeById[recipeId]);
+  while (stack.length > 0) {
+    const recipeId = stack.pop();
+    if (!recipeId || visited.has(recipeId)) continue;
+    visited.add(recipeId);
+    for (const edge of buildSelectedDependencyEdge(recipeId, input)) {
+      if (!visited.has(edge.toRecipeId)) stack.push(edge.toRecipeId);
+    }
+  }
+  return uniqueSorted(visited);
+}
+
+function modelRecipeIds(input: CalculateInput, activeGraph: DependencyGraphData): string[] {
+  const seeds = new Set(activeGraph.recipeIds);
+  if (input.settings.fuel?.enabled && input.settings.fuel.sourceMode === 'internal') {
+    const fuelRecipe = chooseRecipeForItem(input.settings.fuel.fuelItemId, input.recipePreferences);
+    if (fuelRecipe) seeds.add(fuelRecipe.id);
+  }
+  if (input.settings.fuel?.enabled && input.settings.fuel.heatingMode === 'steam') {
+    const steamBoiler = selectedSteamBoilerRecipe(input);
+    if (steamBoiler) seeds.add(steamBoiler.id);
+  }
+  if (input.settings.fertilizer?.enabled && input.settings.fertilizer.sourceMode === 'internal') {
+    const fertilizerRecipe = chooseRecipeForItem(input.settings.fertilizer.fertilizerItemId, input.recipePreferences);
+    if (fertilizerRecipe) seeds.add(fertilizerRecipe.id);
+  }
+  return collectSelectedRecipeClosure(seeds, input);
+}
+
+function targetDemandByItem(input: CalculateInput): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const target of input.targets) {
+    const targetValue = Number(target.value);
+    if (!Number.isFinite(targetValue) || targetValue <= EPS || !target.outputItemId) continue;
+    let demand = targetValue;
+    const recipe = target.recipeId && recipeById[target.recipeId]
+      ? recipeById[target.recipeId]
+      : chooseRecipeForItem(target.outputItemId, input.recipePreferences);
+    if (target.mode === 'machines' && recipe) {
+      demand = targetValue * outputRateForDiagnosticRecipe(recipe, target.outputItemId, input);
+    }
+    map.set(target.outputItemId, (map.get(target.outputItemId) ?? 0) + demand);
+  }
+  return map;
+}
+
+function activeItemIdsForModel(recipeIds: string[], input: CalculateInput): string[] {
+  const itemIds = new Set<string>();
+  for (const recipeId of recipeIds) {
+    const recipe = recipeById[recipeId];
+    if (!recipe) continue;
+    for (const recipeInput of recipe.inputs) itemIds.add(recipeInput.itemId);
+    for (const output of recipe.outputs) itemIds.add(output.itemId);
+  }
+  for (const target of input.targets) {
+    if (target.outputItemId) itemIds.add(target.outputItemId);
+  }
+  if (input.settings.fuel?.enabled) itemIds.add(input.settings.fuel.fuelItemId);
+  if (input.settings.fertilizer?.enabled) itemIds.add(input.settings.fertilizer.fertilizerItemId);
+  return uniqueSorted(itemIds);
+}
+
+function heatPerRunForRecipe(recipe: Recipe, input: CalculateInput): number {
+  const heatPerSec = HEAT_CONSUMER_BY_MACHINE_ID[recipe.machineId]?.heatPerSec ?? 0;
+  if (heatPerSec <= EPS) return 0;
+  const heatConsumptionMultiplier = getHeatConsumptionMultiplier(input.abilities);
+  const runRate = runRateForDiagnosticRecipe(recipe, input);
+  if (runRate <= EPS) return 0;
+  return (heatPerSec * 60 * heatConsumptionMultiplier) / runRate;
+}
+
+function nutrientsPerRunForRecipe(recipe: Recipe): number {
+  if (recipe.machineId !== 'nursery') return 0;
+  return Math.max(0, recipe.timeSec * 12);
+}
+
+function buildLinearBalanceModelDiagnostics(
+  input: CalculateInput,
+  activeGraph: DependencyGraphData,
+  activeCycles: SelectedRecipeCycleDiagnostic[],
+): LinearBalanceModelDiagnostics {
+  const recipeIds = modelRecipeIds(input, activeGraph);
+  const itemIds = activeItemIdsForModel(recipeIds, input);
+  const targetDemand = targetDemandByItem(input);
+  const targetItemIds = uniqueSorted(targetDemand.keys());
+  const variables: LinearModelVariable[] = [];
+  const constraints: LinearModelConstraint[] = [];
+  const seenVariables = new Set<string>();
+
+  function addVariable(variable: LinearModelVariable): string {
+    if (!seenVariables.has(variable.id)) {
+      seenVariables.add(variable.id);
+      variables.push(variable);
+    }
+    return variable.id;
+  }
+
+  for (const recipeId of recipeIds) {
+    addVariable({
+      id: variableId('recipeRun', recipeId),
+      kind: 'recipeRun',
+      recipeId,
+      unit: 'runsPerMinute',
+      noteJa: recipeNameJa(recipeId) + ' の実行回数/min。',
+      noteEn: 'Runs per minute for ' + recipeId + '.',
+    });
+  }
+
+  const cycleInputItemIds = new Set(activeCycles.flatMap((cycle) => cycle.buyableInputItemIds));
+  for (const itemId of itemIds) {
+    const item = itemById[itemId];
+    const isLiquid = item?.physicalState === 'liquid';
+    const selectedProducer = chooseRecipeForItem(itemId, input.recipePreferences);
+    if (isBuyableItem(itemId) && (!selectedProducer || cycleInputItemIds.has(itemId))) {
+      addVariable({
+        id: variableId(cycleInputItemIds.has(itemId) ? 'cycleInput' : 'itemSource', itemId),
+        kind: cycleInputItemIds.has(itemId) ? 'cycleInput' : 'itemSource',
+        itemId,
+        sourceMode: cycleInputItemIds.has(itemId) ? 'cycleInput' : 'buy',
+        unit: 'itemsPerMinute',
+        noteJa: cycleInputItemIds.has(itemId)
+          ? itemNameJa(itemId) + ' を循環補填として投入する量/min。'
+          : itemNameJa(itemId) + ' を購入/外部投入する量/min。',
+        noteEn: cycleInputItemIds.has(itemId)
+          ? 'Cycle input rate for ' + itemId + '.'
+          : 'Purchased/external source rate for ' + itemId + '.',
+      });
+    }
+    addVariable({
+      id: variableId(isLiquid ? 'liquidSurplus' : 'surplus', itemId),
+      kind: isLiquid ? 'liquidSurplus' : 'surplus',
+      itemId,
+      unit: 'itemsPerMinute',
+      noteJa: itemNameJa(itemId) + (isLiquid ? ' の液体余剰/min。原則0を目指します。' : ' の余剰/min。'),
+      noteEn: (isLiquid ? 'Liquid surplus rate for ' : 'Surplus rate for ') + itemId + '.',
+    });
+    if (!isLiquid) {
+      addVariable({
+        id: variableId('discard', itemId),
+        kind: 'discard',
+        itemId,
+        unit: 'itemsPerMinute',
+        noteJa: itemNameJa(itemId) + ' の破棄/min。',
+        noteEn: 'Discard rate for ' + itemId + '.',
+      });
+    }
+  }
+
+  if (input.settings.fuel?.enabled) {
+    const fuelItemId = input.settings.fuel.fuelItemId;
+    addVariable({
+      id: variableId('fuelDemand', fuelItemId),
+      kind: 'fuelDemand',
+      itemId: fuelItemId,
+      unit: 'itemsPerMinute',
+      noteJa: itemNameJa(fuelItemId) + ' の燃料消費量/min。',
+      noteEn: 'Fuel demand rate for ' + fuelItemId + '.',
+    });
+    if (input.settings.fuel.sourceMode === 'external') {
+      addVariable({
+        id: variableId('itemSource', 'fuel:' + fuelItemId),
+        kind: 'itemSource',
+        itemId: fuelItemId,
+        sourceMode: 'external',
+        unit: 'itemsPerMinute',
+        noteJa: itemNameJa(fuelItemId) + ' を外部燃料として投入する量/min。',
+        noteEn: 'External fuel source rate for ' + fuelItemId + '.',
+      });
+    }
+  }
+
+  if (input.settings.fertilizer?.enabled) {
+    const fertilizerItemId = input.settings.fertilizer.fertilizerItemId;
+    addVariable({
+      id: variableId('fertilizerDemand', fertilizerItemId),
+      kind: 'fertilizerDemand',
+      itemId: fertilizerItemId,
+      unit: 'itemsPerMinute',
+      noteJa: itemNameJa(fertilizerItemId) + ' の肥料消費量/min。',
+      noteEn: 'Fertilizer demand rate for ' + fertilizerItemId + '.',
+    });
+    if (input.settings.fertilizer.sourceMode === 'external') {
+      addVariable({
+        id: variableId('itemSource', 'fertilizer:' + fertilizerItemId),
+        kind: 'itemSource',
+        itemId: fertilizerItemId,
+        sourceMode: 'external',
+        unit: 'itemsPerMinute',
+        noteJa: itemNameJa(fertilizerItemId) + ' を外部肥料として投入する量/min。',
+        noteEn: 'External fertilizer source rate for ' + fertilizerItemId + '.',
+      });
+    }
+  }
+
+  for (const target of input.targets) {
+    const targetValue = Number(target.value);
+    if (!Number.isFinite(targetValue) || targetValue <= EPS || !target.outputItemId) continue;
+    const recipe = target.recipeId && recipeById[target.recipeId]
+      ? recipeById[target.recipeId]
+      : chooseRecipeForItem(target.outputItemId, input.recipePreferences);
+    if (!recipe) continue;
+    const terms: LinearModelConstraintTerm[] = [];
+    const recipeVariableId = variableId('recipeRun', recipe.id);
+    if (target.mode === 'machines') {
+      terms.push({ variableId: recipeVariableId, coefficient: 1 });
+      constraints.push({
+        id: 'target-machines:' + target.id,
+        kind: 'targetOutput',
+        relation: '=',
+        priority: 'hard',
+        itemId: target.outputItemId,
+        recipeId: recipe.id,
+        rhs: targetValue * runRateForDiagnosticRecipe(recipe, input),
+        terms,
+        noteJa: '目標設備台数から ' + recipeNameJa(recipe.id) + ' の実行回数を固定します。',
+        noteEn: 'Fix recipe run rate from target machine count.',
+      });
+    } else {
+      terms.push({ variableId: recipeVariableId, coefficient: outputPerRunForRecipe(recipe, target.outputItemId) });
+      constraints.push({
+        id: 'target-rate:' + target.id,
+        kind: 'targetOutput',
+        relation: '>=',
+        priority: 'hard',
+        itemId: target.outputItemId,
+        recipeId: recipe.id,
+        rhs: targetValue,
+        terms,
+        noteJa: itemNameJa(target.outputItemId) + ' の目標出力/minを満たす制約です。',
+        noteEn: 'Target output rate constraint for ' + target.outputItemId + '.',
+      });
+    }
+  }
+
+  for (const itemId of itemIds) {
+    const item = itemById[itemId];
+    const isLiquid = item?.physicalState === 'liquid';
+    const terms: LinearModelConstraintTerm[] = [];
+    for (const recipeId of recipeIds) {
+      const recipe = recipeById[recipeId];
+      if (!recipe) continue;
+      const outputAmount = outputPerRunForRecipe(recipe, itemId);
+      if (outputAmount > EPS) terms.push({ variableId: variableId('recipeRun', recipe.id), coefficient: outputAmount });
+      const inputAmount = recipe.inputs
+        .filter((recipeInput) => recipeInput.itemId === itemId)
+        .reduce((sum, recipeInput) => sum + recipeInput.amount, 0);
+      if (inputAmount > EPS) terms.push({ variableId: variableId('recipeRun', recipe.id), coefficient: -inputAmount });
+    }
+    for (const variable of variables) {
+      if (variable.itemId !== itemId) continue;
+      if (variable.kind === 'itemSource' || variable.kind === 'cycleInput') terms.push({ variableId: variable.id, coefficient: 1 });
+      if (variable.kind === 'fuelDemand' || variable.kind === 'fertilizerDemand') terms.push({ variableId: variable.id, coefficient: -1 });
+    }
+    terms.push({ variableId: variableId(isLiquid ? 'liquidSurplus' : 'surplus', itemId), coefficient: -1 });
+    if (!isLiquid) terms.push({ variableId: variableId('discard', itemId), coefficient: -1 });
+    constraints.push({
+      id: 'item-balance:' + itemId,
+      kind: 'itemBalance',
+      relation: '=',
+      priority: 'hard',
+      itemId,
+      rhs: targetDemand.get(itemId) ?? 0,
+      terms,
+      noteJa: itemNameJa(itemId) + ' の生産・消費・投入・余剰の収支制約です。',
+      noteEn: 'Item balance constraint for ' + itemId + '.',
+    });
+    if (isLiquid) {
+      constraints.push({
+        id: 'liquid-surplus-zero:' + itemId,
+        kind: 'liquidSurplusZeroPreferred',
+        relation: '=',
+        priority: 'preferred',
+        itemId,
+        rhs: 0,
+        terms: [{ variableId: variableId('liquidSurplus', itemId), coefficient: 1 }],
+        noteJa: itemNameJa(itemId) + ' の液体余剰を0に寄せる優先制約です。',
+        noteEn: 'Preferred zero liquid surplus constraint for ' + itemId + '.',
+      });
+    }
+  }
+
+  if (input.settings.fuel?.enabled) {
+    const terms: LinearModelConstraintTerm[] = [];
+    for (const recipeId of recipeIds) {
+      const recipe = recipeById[recipeId];
+      if (!recipe) continue;
+      const heatPerRun = heatPerRunForRecipe(recipe, input);
+      if (heatPerRun > EPS) terms.push({ variableId: variableId('recipeRun', recipe.id), coefficient: heatPerRun });
+    }
+    const fuelItemId = input.settings.fuel.fuelItemId;
+    const heatValue = (FUEL_HEAT_VALUE_BY_ITEM_ID[fuelItemId] ?? 0) * getFuelHeatValueMultiplier(input.abilities);
+    terms.push({ variableId: variableId('fuelDemand', fuelItemId), coefficient: -heatValue });
+    constraints.push({
+      id: 'fuel-heat-demand:' + fuelItemId,
+      kind: 'fuelHeatDemand',
+      relation: '=',
+      priority: 'hard',
+      itemId: fuelItemId,
+      rhs: 0,
+      terms,
+      noteJa: '熱需要と ' + itemNameJa(fuelItemId) + ' の燃料消費量を結びます。',
+      noteEn: 'Connect heat demand to fuel consumption rate.',
+    });
+  }
+
+  if (input.settings.fertilizer?.enabled) {
+    const terms: LinearModelConstraintTerm[] = [];
+    for (const recipeId of recipeIds) {
+      const recipe = recipeById[recipeId];
+      if (!recipe) continue;
+      const nutrients = nutrientsPerRunForRecipe(recipe);
+      if (nutrients > EPS) terms.push({ variableId: variableId('recipeRun', recipe.id), coefficient: nutrients });
+    }
+    const fertilizerItemId = input.settings.fertilizer.fertilizerItemId;
+    const nutrientValue = (FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[fertilizerItemId] ?? 0) * getFertilizerNutritionMultiplier(input.abilities);
+    terms.push({ variableId: variableId('fertilizerDemand', fertilizerItemId), coefficient: -nutrientValue });
+    constraints.push({
+      id: 'fertilizer-nutrient-demand:' + fertilizerItemId,
+      kind: 'fertilizerNutrientDemand',
+      relation: '=',
+      priority: 'hard',
+      itemId: fertilizerItemId,
+      rhs: 0,
+      terms,
+      noteJa: '苗床の栄養需要と ' + itemNameJa(fertilizerItemId) + ' の肥料消費量を結びます。',
+      noteEn: 'Connect nursery nutrient demand to fertilizer consumption rate.',
+    });
+  }
+
+  const variableCountsByKind: Record<string, number> = {};
+  for (const variable of variables) addCount(variableCountsByKind, variable.kind);
+  const constraintCountsByKind: Record<string, number> = {};
+  for (const constraint of constraints) addCount(constraintCountsByKind, constraint.kind);
+
+  const cycleInputCandidates: LinearModelCandidate[] = activeCycles.flatMap((cycle) => cycle.buyableInputItemIds.map((itemId) => ({
+    itemId,
+    candidateRecipeIds: cycle.recipeIds,
+    reasonJa: itemNameJa(itemId) + ' は循環 ' + cycle.recipeIds.map(recipeNameJa).join(' / ') + ' を購入/投入で切れる候補です。',
+    reasonEn: itemId + ' can break the cycle ' + cycle.recipeIds.join(' / ') + ' as a purchased/input source.',
+  })));
+
+  const liquidSurplusCandidates: LinearModelCandidate[] = itemIds
+    .filter((itemId) => itemById[itemId]?.physicalState === 'liquid')
+    .map((itemId) => ({
+      itemId,
+      reasonJa: itemNameJa(itemId) + ' は液体/蒸気のため、余剰0を優先します。',
+      reasonEn: itemId + ' is liquid/steam-like and should prefer zero surplus.',
+    }));
+
+  const alternateRecipeCandidates: LinearModelCandidate[] = itemIds.flatMap((itemId) => {
+    const selectedRecipe = chooseRecipeForItem(itemId, input.recipePreferences);
+    const alternates = getRecipesProducing(itemId).filter((recipe) => recipe.id !== selectedRecipe?.id);
+    if (alternates.length <= 0) return [];
+    return [{
+      itemId,
+      selectedRecipeId: selectedRecipe?.id,
+      alternateRecipeIds: alternates.map((recipe) => recipe.id),
+      reasonJa: itemNameJa(itemId) + ' は不足時に代替レシピ補完候補があります。デフォルトでは使用しません。',
+      reasonEn: itemId + ' has alternate recipe completion candidates. They are disabled by default.',
+    }];
+  });
+
+  const targetItemSet = new Set(targetItemIds);
+  const byproductFuelCandidates: LinearModelCandidate[] = uniqueSorted(recipeIds.flatMap((recipeId) => {
+    const recipe = recipeById[recipeId];
+    if (!recipe) return [];
+    return recipe.outputs
+      .filter((output) => !targetItemSet.has(output.itemId) && (itemById[output.itemId]?.fuelValue ?? 0) > EPS)
+      .map((output) => output.itemId);
+  })).map((itemId) => ({
+    itemId,
+    reasonJa: itemNameJa(itemId) + ' は余剰時に燃料候補になります。ただし副産物燃料利用はデフォルトOFFです。',
+    reasonEn: itemId + ' can be a byproduct fuel candidate, but byproduct fuel use is off by default.',
+  }));
+
+  return {
+    status: 'model-built-diagnostic-only',
+    activeRecipeIds: recipeIds,
+    activeItemIds: itemIds,
+    targetItemIds,
+    summary: {
+      variableCount: variables.length,
+      constraintCount: constraints.length,
+      variableCountsByKind,
+      constraintCountsByKind,
+      activeRecipeCount: recipeIds.length,
+      activeItemCount: itemIds.length,
+      liquidActiveItemCount: liquidSurplusCandidates.length,
+      targetCount: input.targets.filter((target) => Number(target.value) > EPS).length,
+    },
+    variables,
+    constraints,
+    candidates: {
+      cycleInput: cycleInputCandidates,
+      liquidSurplus: liquidSurplusCandidates,
+      alternateRecipe: alternateRecipeCandidates,
+      byproductFuel: byproductFuelCandidates,
+    },
+    objectivePlan: [
+      { priority: 1, objective: 'targetShortage=0', noteJa: '目標不足を最優先で0にします。', noteEn: 'Eliminate target shortage first.' },
+      { priority: 2, objective: 'liquidSurplus=0', noteJa: '液体余剰を0に寄せます。', noteEn: 'Prefer zero liquid surplus.' },
+      { priority: 3, objective: 'externalInput/cycleInput minimum', noteJa: '外部投入・循環補填を最小化します。', noteEn: 'Minimize external and cycle inputs.' },
+      { priority: 4, objective: 'solidSurplus/discard minimum', noteJa: '固体余剰・破棄を最小化します。', noteEn: 'Minimize solid surplus/discard.' },
+      { priority: 5, objective: 'recipeRuns minimum', noteJa: '余計なレシピ実行量を最小化します。', noteEn: 'Minimize unnecessary recipe runs.' },
+      { priority: 6, objective: 'machineCount after rounding minimum', noteJa: '設備整数丸め後の台数を最小化します。', noteEn: 'Minimize machine count after integer rounding.' },
+    ],
+  };
+}
+
 export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelDiagnostics {
   const activeGraph = buildDependencyGraph(input, 'active-plan');
   const allRecipeGraph = buildDependencyGraph(input, 'all-recipes');
   const activeDiagnostics = buildCycleDiagnostics(activeGraph);
   const allDiagnostics = buildCycleDiagnostics(allRecipeGraph);
+  const linearBalanceModel = buildLinearBalanceModelDiagnostics(input, activeGraph, activeDiagnostics.cycles);
 
   const liquidOutputRecipeIds = RECIPES.filter((recipe) =>
     recipe.outputs.some((output) => itemById[output.itemId]?.physicalState === 'liquid'),
@@ -461,9 +1010,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.7.0-alpha.1 では、通常計算時の診断モデル生成を止め、ログ出力時だけ旧solver/新solver比較と線形収支化に向けた診断を生成します。計算結果は互換性維持のため旧solverと同じです。',
+      'v0.7.0-alpha.3 では、通常計算結果は旧solver互換のまま、ログ出力時だけ線形収支モデルの変数・制約・候補診断を生成します。',
     noteEn:
-      'v0.7.0-alpha.1 avoids diagnostic model generation during normal calculation and only generates legacy/new solver comparison diagnostics during log export. Runtime results intentionally remain legacy-compatible.',
+      'v0.7.0-alpha.3 keeps runtime results legacy-compatible and only emits linear balance model variables, constraints, and candidate diagnostics during log export.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',
@@ -481,6 +1030,7 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
     activePlanCyclicComponents: activeDiagnostics.cycles,
     allRecipeCyclicComponents: allDiagnostics.cycles,
     liquidOutputRecipeIds: uniqueSorted(liquidOutputRecipeIds),
+    linearBalanceModel,
   };
 }
 
