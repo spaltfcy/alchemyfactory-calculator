@@ -435,7 +435,7 @@ function flowTransportForItem(
   conveyorItemsPerMinute: number,
 ): { belts: number; transportKind: FlowTransportKind; transportUnits: number } {
   if (isPipelineItem(itemId)) return { belts: 1, transportKind: 'pipeline', transportUnits: 1 };
-  const belts = safeCeil(rate / conveyorItemsPerMinute);
+  const belts = rate > EPS ? Math.max(1, safeCeil(rate / conveyorItemsPerMinute)) : 0;
   return { belts, transportKind: 'belt', transportUnits: belts };
 }
 

@@ -30,6 +30,10 @@ export function formatCopper(value: number): string {
 
 export function safeCeil(value: number): number {
   const eps = 1e-9;
-  return Math.ceil(value - eps);
+  if (!Number.isFinite(value)) return value;
+  if (value <= eps) return 0;
+  const rounded = Math.ceil(value - eps);
+  if (Object.is(rounded, -0)) return 0;
+  return Math.max(1, rounded);
 }
 
