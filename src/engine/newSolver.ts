@@ -10,17 +10,16 @@ import {
 } from '../data/abilityTables';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
-import { calculateAlphaLinear, type AlphaLinearSolveResult } from './alphaLinearSolver';
+import { calculateAlphaBalance, type AlphaBalanceSolveResult } from './alphaBalanceSolver';
 import {
   calculate as calculateLegacy,
-  calculateWithDebug as calculateLegacyWithDebug,
   type CalculateInput,
   type CalculationDebugResult,
   type CalculationResult,
   type CalculatedFlow,
 } from './legacyCalculate';
 
-export type SolverEngineId = 'legacy-v0610' | 'linear-v070-alpha';
+export type SolverEngineId = 'legacy-v0610' | 'balance-v070-alpha5';
 
 export type SolverRunSummary = {
   engineId: SolverEngineId;
@@ -225,10 +224,10 @@ export type NewSolverResult = {
   result: CalculationResult;
   engineId: SolverEngineId;
   linearModelDiagnostics?: LinearModelDiagnostics;
-  alphaLinearTrace?: AlphaLinearSolveResult['trace'];
+  alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
 };
 
-const ACTIVE_ENGINE: SolverEngineId = 'linear-v070-alpha';
+const ACTIVE_ENGINE: SolverEngineId = 'balance-v070-alpha5';
 const EPS = 1e-9;
 const MAX_CHANGED_ROWS = 60;
 
@@ -326,7 +325,7 @@ function makeFlowKey(flow: CalculatedFlow): string {
 
 function compareResults(legacy: CalculationResult, next: CalculationResult): SolverComparisonDiff {
   const legacySummary = summarizeResult('legacy-v0610', legacy);
-  const nextSummary = summarizeResult('linear-v070-alpha', next);
+  const nextSummary = summarizeResult('balance-v070-alpha5', next);
   const nonFiniteEntries: NonFiniteNumericEntry[] = [];
   const totalDeltas: Record<string, NumericDebugValue> = {};
   for (const key of Object.keys(legacySummary.totals) as Array<keyof SolverRunSummary['totals']>) {
@@ -1047,32 +1046,49 @@ export function buildNewSolverResultFromLegacy(
   };
 }
 
-export function calculateWithNewSolver(input: CalculateInput): NewSolverResult {
-  const diagnostics = buildLinearModelDiagnostics(input);
-  const alpha = calculateAlphaLinear(input, diagnostics);
+export function calculateWithNewSolver(input: CalculateInput, prebuiltDiagnostics?: LinearModelDiagnostics): NewSolverResult {
+  const diagnostics = prebuiltDiagnostics ?? buildLinearModelDiagnostics(input);
+  const alpha = calculateAlphaBalance(input, diagnostics);
   return {
     result: alpha.result,
     engineId: ACTIVE_ENGINE,
     linearModelDiagnostics: diagnostics,
-    alphaLinearTrace: alpha.trace,
+    alphaBalanceTrace: alpha.trace,
   };
 }
 
 export function calculateWithNewSolverDebug(input: CalculateInput): CalculationDebugResult {
-  const legacyDebug = calculateLegacyWithDebug(input);
   const linearModelDiagnostics = buildLinearModelDiagnostics(input);
-  const alpha = calculateAlphaLinear(input, linearModelDiagnostics);
+  const alpha = calculateAlphaBalance(input, linearModelDiagnostics);
   return {
     result: alpha.result,
     debugLog: {
-      ...legacyDebug.debugLog,
+      generatedAt: new Date().toISOString(),
+      input: JSON.parse(JSON.stringify(input)) as CalculateInput,
+      totals: alpha.result.totals,
+      warnings: alpha.result.warnings,
+      issues: [],
+      summary: {
+        itemCount: Object.keys(alpha.result.itemStats).length,
+        recipeCount: Object.keys(alpha.result.recipeStats).length,
+        flowCount: alpha.result.flows.length,
+        flowsByRole: {},
+        flowsByTransport: {},
+        purchasedAutoCraftableCount: 0,
+      },
+      initialInvestment: alpha.result.initialInvestment,
+      residualUnresolvedFlows: alpha.result.residualUnresolvedFlows ?? [],
+      purchasedAutoCraftableFlows: [],
+      flows: alpha.result.flows,
+      itemStats: Object.values(alpha.result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId)),
+      recipeStats: Object.values(alpha.result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId)),
       solverEngine: ACTIVE_ENGINE,
       linearModelDiagnostics,
-      alphaLinearTrace: alpha.trace,
+      alphaBalanceTrace: alpha.trace,
     } as CalculationDebugResult['debugLog'] & {
       solverEngine: SolverEngineId;
       linearModelDiagnostics: LinearModelDiagnostics;
-      alphaLinearTrace: AlphaLinearSolveResult['trace'];
+      alphaBalanceTrace: AlphaBalanceSolveResult['trace'];
     },
   };
 }
@@ -1086,7 +1102,7 @@ export function buildSolverComparisonFromResults(
     generatedAt: new Date().toISOString(),
     activeEngine: ACTIVE_ENGINE,
     legacy: summarizeResult('legacy-v0610', legacyResult),
-    next: summarizeResult('linear-v070-alpha', newResult),
+    next: summarizeResult('balance-v070-alpha5', newResult),
     diff: compareResults(legacyResult, newResult),
     linearModelDiagnostics,
   };
@@ -1095,6 +1111,6 @@ export function buildSolverComparisonFromResults(
 export function buildSolverComparison(input: CalculateInput): SolverComparison {
   const legacy = calculateLegacy(input);
   const diagnostics = buildLinearModelDiagnostics(input);
-  const next = calculateAlphaLinear(input, diagnostics).result;
+  const next = calculateAlphaBalance(input, diagnostics).result;
   return buildSolverComparisonFromResults(legacy, next, diagnostics);
 }

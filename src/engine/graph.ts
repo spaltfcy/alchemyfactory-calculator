@@ -270,9 +270,11 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const label = itemName(endpoint.itemId, lang);
     const modeLabel = endpoint.sourceMode === 'external'
       ? (lang === 'ja' ? '外部生産' : 'External')
-      : endpoint.sourceMode === 'buy'
-        ? (lang === 'ja' ? '購入' : 'Buy')
-        : (lang === 'ja' ? '未解決' : 'Unresolved');
+      : endpoint.sourceMode === 'cycleInput'
+        ? (lang === 'ja' ? '循環補填' : 'Cycle input')
+        : endpoint.sourceMode === 'buy'
+          ? (lang === 'ja' ? '購入' : 'Buy')
+          : (lang === 'ja' ? '未解決' : 'Unresolved');
     return {
       id,
       type: 'plannerNode',
