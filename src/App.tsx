@@ -17,7 +17,7 @@ import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 
-const APP_VERSION = '0.8.6';
+const APP_VERSION = '0.8.7';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -321,8 +321,16 @@ export function App() {
     });
   }
 
-  function setAbility(id: AbilityId, value: number) {
-    const nextValue = normalizeAbilityLevel(value);
+  function abilityInputValue(value: unknown): number {
+    if (typeof value === 'string') {
+      const digits = value.replace(/\D/g, '');
+      return normalizeAbilityLevel(digits ? Number(digits) : 0);
+    }
+    return normalizeAbilityLevel(value);
+  }
+
+  function setAbility(id: AbilityId, value: number | string) {
+    const nextValue = abilityInputValue(value);
     setState({
       ...state,
       abilities: {
@@ -401,13 +409,14 @@ export function App() {
               <input
                 id={`ability-${id}`}
                 name={`ability-${id}`}
-                type="number"
-                min={0}
-                max={ABILITY_MAX_LEVEL}
-                step={1}
-                value={state.abilities[id] ?? 0}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={String(ABILITY_MAX_LEVEL).length}
+                value={String(state.abilities[id] ?? 0)}
                 autoComplete="off"
-                onChange={(event: ChangeEvent<HTMLInputElement>) => setAbility(id, Number(event.target.value))}
+                onFocus={(event) => event.currentTarget.select()}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setAbility(id, event.target.value)}
               />
             </label>
           ))}
