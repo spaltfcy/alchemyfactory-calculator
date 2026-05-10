@@ -19,7 +19,7 @@ import type {
   CalculationResult,
 } from './calculationTypes';
 
-export type SolverEngineId = 'balance-v086';
+export type SolverEngineId = 'balance-v088';
 
 export type SelectedRecipeCycleDiagnostic = {
   id: string;
@@ -157,7 +157,7 @@ export type NewSolverResult = {
   alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
 };
 
-const ACTIVE_ENGINE: SolverEngineId = 'balance-v086';
+const ACTIVE_ENGINE: SolverEngineId = 'balance-v088';
 const EPS = 1e-9;
 
 function uniqueSorted(values: Iterable<string>): string[] {
@@ -810,9 +810,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.8.6 では、収支ベースsolver結果経路を通常計算に使い、肥料レシピ・設備グレード設定・厳格な状態形式を診断します。',
+      'v0.8.8 では、収支ベースsolver結果経路を通常計算に使い、燃料・肥料の特殊リソース解決、設備グレード設定、厳格な状態形式を診断します。',
     noteEn:
-      'v0.8.6 uses the balance-based solver result path at runtime and diagnoses fertilizer recipes, machine preference settings, and strict state format.',
+      'v0.8.8 uses the balance-based solver result path at runtime and diagnoses special fuel/fertilizer resource solving, machine preference settings, and strict state format.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',

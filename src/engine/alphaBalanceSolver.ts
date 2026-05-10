@@ -37,8 +37,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.8.6' as const;
-const BALANCE_SOLVER_MODE = 'balance-iterative-v086';
+const BALANCE_SOLVER_VERSION = '0.8.8' as const;
+const BALANCE_SOLVER_MODE = 'balance-special-resource-v088';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -68,7 +68,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-v086';
+  mode: 'balance-special-resource-v088';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   cycleInputItemIds?: string[];
@@ -88,6 +88,7 @@ type AlphaSolveTrace = {
     enabled: boolean;
     uses: ByproductFuelUse[];
   };
+  specialResourceSolution?: SpecialResourceSolutionTrace;
   notesJa: string[];
   notesEn: string[];
 };
@@ -334,33 +335,8 @@ function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultipl
     if (nutrientsPerRun > EPS) fertilizerNutrientsRequiredPerMin += nutrientsPerRun * runsPerMinute;
   }
 
-  if (input.settings.fuel?.enabled && heatRequiredPerMin > EPS) {
-    const fuelItemId = input.settings.fuel.fuelItemId;
-    const heatValue = (FUEL_HEAT_VALUE_BY_ITEM_ID[fuelItemId] ?? 0) * getFuelHeatValueMultiplier(input.abilities);
-    if (heatValue > EPS) {
-      const fuelRate = heatRequiredPerMin / heatValue;
-      for (const [recipeId, runsPerMinute] of runs.entries()) {
-        const recipe = recipeById[recipeId];
-        if (!recipe || runsPerMinute <= EPS) continue;
-        const recipeHeat = fuelHeatPerRun(recipe, input, productionSpeedMultiplier) * runsPerMinute;
-        if (recipeHeat > EPS) addDemand(recipe.id, fuelItemId, fuelRate * (recipeHeat / heatRequiredPerMin), 'fuel');
-      }
-    }
-  }
-
-  if (input.settings.fertilizer?.enabled && fertilizerNutrientsRequiredPerMin > EPS) {
-    const fertilizerItemId = input.settings.fertilizer.fertilizerItemId;
-    const nutrientValue = (FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[fertilizerItemId] ?? 0) * getFertilizerNutritionMultiplier(input.abilities);
-    if (nutrientValue > EPS) {
-      const fertilizerRate = fertilizerNutrientsRequiredPerMin / nutrientValue;
-      for (const [recipeId, runsPerMinute] of runs.entries()) {
-        const recipe = recipeById[recipeId];
-        if (!recipe || runsPerMinute <= EPS) continue;
-        const recipeNutrients = fertilizerNutrientsPerRun(recipe, input) * runsPerMinute;
-        if (recipeNutrients > EPS) addDemand(recipe.id, fertilizerItemId, fertilizerRate * (recipeNutrients / fertilizerNutrientsRequiredPerMin), 'fertilizer');
-      }
-    }
-  }
+  // Fuel and fertilizer are solved as special resources in v0.8.8.
+  // analyzeRuns() only returns material demands plus heat/nutrient requirements.
 
   return { produced, consumed, demandLots, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin };
 }
@@ -605,7 +581,8 @@ function chooseAlternateRecipeForItem(itemId: string, selectedRecipe: Recipe | u
   return alternatives.find((recipe) => !cycleRecipeIds.has(recipe.id)) ?? alternatives[0];
 }
 
-function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics): {
+
+type SolveRunMapResult = {
   runs: RunMap;
   targetRuns: Map<string, number>;
   targetRates: Map<string, number>;
@@ -619,7 +596,44 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
   selectedRecipeCycleBlocks: SelectedRecipeCycleBlock[];
   fuelRuns: RunMap;
   fertilizerRuns: RunMap;
-} {
+};
+
+type SpecialItemCost = {
+  itemId: string;
+  runs: RunMap;
+  sources: SourceBucket;
+  cycleInputs: CycleInputBucket;
+  unresolved: Set<string>;
+  heatPerItemPerMin: number;
+  nutrientsPerItemPerMin: number;
+  iterations: number;
+};
+
+type SpecialResourceSolutionTrace = {
+  mode: 'none' | 'fuel-only' | 'fertilizer-only' | 'linear-2x2';
+  finite: boolean;
+  baseHeatRequiredPerMin: number;
+  baseFertilizerNutrientsRequiredPerMin: number;
+  fuelItemId: string;
+  fertilizerItemId: string;
+  fuelHeatValue: number;
+  fertilizerNutritionValue: number;
+  fuelProductionHeatPerMinPerItem: number;
+  fuelProductionNutrientsPerMinPerItem: number;
+  fertilizerProductionHeatPerMinPerItem: number;
+  fertilizerProductionNutrientsPerMinPerItem: number;
+  determinant?: number;
+  fuelRequiredPerMin: number;
+  fertilizerRequiredPerMin: number;
+};
+
+type SpecialResourceApplication = {
+  solution: SpecialResourceSolutionTrace;
+  fuelCost?: SpecialItemCost;
+  fertilizerCost?: SpecialItemCost;
+};
+
+function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics): SolveRunMapResult {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
   const { runs, targetRuns, targetRates, invalidTargets } = initialRunsFromTargets(input, productionSpeedMultiplier, conveyorItemsPerMinute);
@@ -817,6 +831,233 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
   return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: MAX_ALPHA_ITERATIONS, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
 }
 
+
+function cloneRunMapValues(runs: RunMap): RunMap {
+  return new Map(runs);
+}
+
+function scaleRunMapInto(target: RunMap, source: RunMap, multiplier: number): void {
+  if (!Number.isFinite(multiplier) || multiplier <= EPS) return;
+  for (const [recipeId, rate] of source.entries()) addToMap(target, recipeId, rate * multiplier);
+}
+
+function scaleSourceBucketInto(target: SourceBucket, source: SourceBucket, multiplier: number): void {
+  if (!Number.isFinite(multiplier) || multiplier <= EPS) return;
+  for (const lot of source.values()) addSource(target, lot.sourceKind, lot.itemId, lot.role, lot.rate * multiplier, lot.sourceMode);
+}
+
+function scaleCycleInputBucketInto(target: CycleInputBucket, source: CycleInputBucket, multiplier: number): void {
+  if (!Number.isFinite(multiplier) || multiplier <= EPS) return;
+  for (const lot of source.values()) addCycleInput(target, lot.itemId, lot.rate * multiplier);
+}
+
+function specialCostForItem(itemId: string, input: CalculateInput, diagnostics: LinearModelDiagnostics): SpecialItemCost {
+  const recipe = chooseRecipeForItem(itemId, input.recipePreferences);
+  if (!recipe) {
+    const sources: SourceBucket = new Map();
+    const unresolved = new Set<string>();
+    if (isBuyableItem(itemId)) addSource(sources, 'materialBuy', itemId, 'material', 1, 'buy');
+    else unresolved.add(itemId);
+    return {
+      itemId,
+      runs: new Map(),
+      sources,
+      cycleInputs: new Map(),
+      unresolved,
+      heatPerItemPerMin: 0,
+      nutrientsPerItemPerMin: 0,
+      iterations: 0,
+    };
+  }
+
+  const costInput: CalculateInput = {
+    ...input,
+    targets: [{ id: 'special-cost-' + itemId, recipeId: recipe.id, outputItemId: itemId, mode: 'rate', value: 1 }],
+  };
+  const solved = solveRunMap(costInput, diagnostics);
+  const analysis = analyzeRuns(solved.runs, input, getProductionSpeedMultiplier(input.abilities));
+  return {
+    itemId,
+    runs: solved.runs,
+    sources: solved.sources,
+    cycleInputs: solved.cycleInputs,
+    unresolved: solved.unresolved,
+    heatPerItemPerMin: analysis.heatRequiredPerMin,
+    nutrientsPerItemPerMin: analysis.fertilizerNutrientsRequiredPerMin,
+    iterations: solved.iterations,
+  };
+}
+
+function solveSpecialResources(base: SolveRunMapResult, input: CalculateInput, diagnostics: LinearModelDiagnostics): SpecialResourceApplication {
+  const fuelItemId = input.settings.fuel?.fuelItemId ?? '';
+  const fertilizerItemId = input.settings.fertilizer?.fertilizerItemId ?? '';
+  const fuelEnabled = Boolean(input.settings.fuel?.enabled && fuelItemId);
+  const fertilizerEnabled = Boolean(input.settings.fertilizer?.enabled && fertilizerItemId);
+  const fuelHeatValueTotal = fuelEnabled ? (FUEL_HEAT_VALUE_BY_ITEM_ID[fuelItemId] ?? 0) * getFuelHeatValueMultiplier(input.abilities) : 0;
+  const fertilizerNutritionValueTotal = fertilizerEnabled ? (FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[fertilizerItemId] ?? 0) * getFertilizerNutritionMultiplier(input.abilities) : 0;
+  const baseHeat = fuelEnabled ? base.heatRequiredPerMin : 0;
+  const baseNutrients = fertilizerEnabled ? base.fertilizerNutrientsRequiredPerMin : 0;
+
+  let fuelCost: SpecialItemCost | undefined;
+  let fertilizerCost: SpecialItemCost | undefined;
+  if (fuelEnabled && input.settings.fuel?.sourceMode === 'internal' && baseHeat > EPS) {
+    fuelCost = specialCostForItem(fuelItemId, input, diagnostics);
+  }
+  if (fertilizerEnabled && input.settings.fertilizer?.sourceMode === 'internal' && baseNutrients > EPS) {
+    fertilizerCost = specialCostForItem(fertilizerItemId, input, diagnostics);
+  }
+
+  const hf = fuelCost?.heatPerItemPerMin ?? 0;
+  const nf = fuelCost?.nutrientsPerItemPerMin ?? 0;
+  const hg = fertilizerCost?.heatPerItemPerMin ?? 0;
+  const ng = fertilizerCost?.nutrientsPerItemPerMin ?? 0;
+
+  let mode: SpecialResourceSolutionTrace['mode'] = 'none';
+  let determinant: number | undefined;
+  let finite = true;
+  let fuelRequiredPerMin = 0;
+  let fertilizerRequiredPerMin = 0;
+
+  if (fuelEnabled && baseHeat > EPS && fuelHeatValueTotal <= EPS) finite = false;
+  if (fertilizerEnabled && baseNutrients > EPS && fertilizerNutritionValueTotal <= EPS) finite = false;
+
+  if (finite && fuelEnabled && fertilizerEnabled && (baseHeat > EPS || baseNutrients > EPS)) {
+    mode = 'linear-2x2';
+    const a11 = 1 - hf / Math.max(EPS, fuelHeatValueTotal);
+    const a12 = -hg / Math.max(EPS, fuelHeatValueTotal);
+    const a21 = -nf / Math.max(EPS, fertilizerNutritionValueTotal);
+    const a22 = 1 - ng / Math.max(EPS, fertilizerNutritionValueTotal);
+    const b1 = baseHeat / Math.max(EPS, fuelHeatValueTotal);
+    const b2 = baseNutrients / Math.max(EPS, fertilizerNutritionValueTotal);
+    determinant = a11 * a22 - a12 * a21;
+    if (Math.abs(determinant) <= 1e-12) finite = false;
+    else {
+      fuelRequiredPerMin = (b1 * a22 - a12 * b2) / determinant;
+      fertilizerRequiredPerMin = (a11 * b2 - b1 * a21) / determinant;
+    }
+  } else if (finite && fuelEnabled && baseHeat > EPS) {
+    mode = 'fuel-only';
+    const denominator = fuelHeatValueTotal - hf;
+    if (denominator <= EPS) finite = false;
+    else fuelRequiredPerMin = baseHeat / denominator;
+  } else if (finite && fertilizerEnabled && baseNutrients > EPS) {
+    mode = 'fertilizer-only';
+    const denominator = fertilizerNutritionValueTotal - ng;
+    if (denominator <= EPS) finite = false;
+    else fertilizerRequiredPerMin = baseNutrients / denominator;
+  }
+
+  if (!Number.isFinite(fuelRequiredPerMin) || fuelRequiredPerMin < -0.000001) finite = false;
+  if (!Number.isFinite(fertilizerRequiredPerMin) || fertilizerRequiredPerMin < -0.000001) finite = false;
+  if (!finite) {
+    fuelRequiredPerMin = 0;
+    fertilizerRequiredPerMin = 0;
+  } else {
+    fuelRequiredPerMin = Math.max(0, fuelRequiredPerMin);
+    fertilizerRequiredPerMin = Math.max(0, fertilizerRequiredPerMin);
+  }
+
+  return {
+    fuelCost,
+    fertilizerCost,
+    solution: {
+      mode,
+      finite,
+      baseHeatRequiredPerMin: baseHeat,
+      baseFertilizerNutrientsRequiredPerMin: baseNutrients,
+      fuelItemId,
+      fertilizerItemId,
+      fuelHeatValue: fuelHeatValueTotal,
+      fertilizerNutritionValue: fertilizerNutritionValueTotal,
+      fuelProductionHeatPerMinPerItem: hf,
+      fuelProductionNutrientsPerMinPerItem: nf,
+      fertilizerProductionHeatPerMinPerItem: hg,
+      fertilizerProductionNutrientsPerMinPerItem: ng,
+      determinant,
+      fuelRequiredPerMin,
+      fertilizerRequiredPerMin,
+    },
+  };
+}
+
+function applySpecialResourceApplication(base: SolveRunMapResult, input: CalculateInput, application: SpecialResourceApplication): SolveRunMapResult {
+  const runs = cloneRunMapValues(base.runs);
+  const sources = cloneSourceBucket(base.sources);
+  const cycleInputs = cloneCycleInputBucket(base.cycleInputs);
+  const unresolved = new Set(base.unresolved);
+  const solution = application.solution;
+
+  if (!solution.finite) unresolved.add('__special_resource_self_amplifying__');
+
+  for (const itemId of application.fuelCost?.unresolved ?? []) unresolved.add(itemId);
+  for (const itemId of application.fertilizerCost?.unresolved ?? []) unresolved.add(itemId);
+
+  if (solution.finite && input.settings.fuel?.enabled && solution.fuelRequiredPerMin > EPS) {
+    if (input.settings.fuel.sourceMode === 'external') addSource(sources, 'fuelExternal', solution.fuelItemId, 'fuel', solution.fuelRequiredPerMin, 'external');
+    else if (application.fuelCost) {
+      scaleRunMapInto(runs, application.fuelCost.runs, solution.fuelRequiredPerMin);
+      scaleSourceBucketInto(sources, application.fuelCost.sources, solution.fuelRequiredPerMin);
+      scaleCycleInputBucketInto(cycleInputs, application.fuelCost.cycleInputs, solution.fuelRequiredPerMin);
+    }
+  }
+
+  if (solution.finite && input.settings.fertilizer?.enabled && solution.fertilizerRequiredPerMin > EPS) {
+    if (input.settings.fertilizer.sourceMode === 'external') addSource(sources, 'fertilizerExternal', solution.fertilizerItemId, 'fertilizer', solution.fertilizerRequiredPerMin, 'external');
+    else if (application.fertilizerCost) {
+      scaleRunMapInto(runs, application.fertilizerCost.runs, solution.fertilizerRequiredPerMin);
+      scaleSourceBucketInto(sources, application.fertilizerCost.sources, solution.fertilizerRequiredPerMin);
+      scaleCycleInputBucketInto(cycleInputs, application.fertilizerCost.cycleInputs, solution.fertilizerRequiredPerMin);
+    }
+  }
+
+  const analysis = analyzeRuns(runs, input, getProductionSpeedMultiplier(input.abilities));
+  return {
+    ...base,
+    runs,
+    sources,
+    cycleInputs,
+    unresolved,
+    iterations: base.iterations + (application.fuelCost?.iterations ?? 0) + (application.fertilizerCost?.iterations ?? 0),
+    heatRequiredPerMin: analysis.heatRequiredPerMin,
+    fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
+  };
+}
+
+function buildSpecialDemandLots(runs: RunMap, input: CalculateInput, solution: SpecialResourceSolutionTrace, productionSpeedMultiplier: number): DemandLot[] {
+  const demands: DemandLot[] = [];
+  if (!solution.finite) return demands;
+  let totalHeat = 0;
+  let totalNutrients = 0;
+  const heatByRecipe = new Map<string, number>();
+  const nutrientsByRecipe = new Map<string, number>();
+  for (const [recipeId, runsPerMinute] of runs.entries()) {
+    const baseRecipe = recipeById[recipeId];
+    if (!baseRecipe || runsPerMinute <= EPS) continue;
+    const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
+    const heat = fuelHeatPerRun(recipe, input, productionSpeedMultiplier) * runsPerMinute;
+    const nutrients = fertilizerNutrientsPerRun(recipe, input) * runsPerMinute;
+    if (heat > EPS) {
+      heatByRecipe.set(recipeId, heat);
+      totalHeat += heat;
+    }
+    if (nutrients > EPS) {
+      nutrientsByRecipe.set(recipeId, nutrients);
+      totalNutrients += nutrients;
+    }
+  }
+  if (input.settings.fuel?.enabled && solution.fuelRequiredPerMin > EPS && totalHeat > EPS) {
+    for (const [recipeId, heat] of heatByRecipe.entries()) {
+      demands.push({ itemId: solution.fuelItemId, rate: solution.fuelRequiredPerMin * (heat / totalHeat), consumerRecipeId: recipeId, role: 'fuel' });
+    }
+  }
+  if (input.settings.fertilizer?.enabled && solution.fertilizerRequiredPerMin > EPS && totalNutrients > EPS) {
+    for (const [recipeId, nutrients] of nutrientsByRecipe.entries()) {
+      demands.push({ itemId: solution.fertilizerItemId, rate: solution.fertilizerRequiredPerMin * (nutrients / totalNutrients), consumerRecipeId: recipeId, role: 'fertilizer' });
+    }
+  }
+  return demands;
+}
+
 function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: ConveyorEdgeStat[]; outputEdges: OutputEdgeStat[] } {
   const conveyorEdges: ConveyorEdgeStat[] = [];
   const outputEdges: OutputEdgeStat[] = [];
@@ -853,7 +1094,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
   const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
-  const solved = solveRunMap(input, diagnostics);
+  const baseSolved = solveRunMap(input, diagnostics);
+  const specialApplication = solveSpecialResources(baseSolved, input, diagnostics);
+  const solved = applySpecialResourceApplication(baseSolved, input, specialApplication);
   const itemStats: Record<string, ItemStat> = {};
   const recipeStats: Record<string, RecipeStat> = {};
   const flows: CalculatedFlow[] = [];
@@ -915,9 +1158,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
 
 
   const analysis = analyzeRuns(solved.runs, input, productionSpeedMultiplier);
+  const specialDemandLots = buildSpecialDemandLots(solved.runs, input, specialApplication.solution, productionSpeedMultiplier);
   const supplyLotsByItem = buildSupplyLots(solved.runs);
-  const fuelSupplyLotsByItem = buildSupplyLots(solved.fuelRuns);
-  const fertilizerSupplyLotsByItem = buildSupplyLots(solved.fertilizerRuns);
 
   for (const [itemId, targetRate] of solved.targetRates.entries()) {
     const consumed = consumeRecipeLots(supplyLotsByItem.get(itemId), targetRate);
@@ -928,7 +1170,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
 
   const sourceAvailable = cloneSourceBucket(solved.sources);
   const cycleInputAvailable = cloneCycleInputBucket(solved.cycleInputs);
-  const sortedDemandLots = [...analysis.demandLots].sort((a, b) => {
+  const sortedDemandLots = [...analysis.demandLots, ...specialDemandLots].sort((a, b) => {
     const priority = (role: CalculatedFlowRole): number => role === 'material' ? 0 : role === 'fuel' ? 1 : role === 'fertilizer' ? 2 : 3;
     return priority(a.role) - priority(b.role);
   });
@@ -951,7 +1193,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         pushFlow(makeFlow({ type: 'recipe', recipeId: use.recipeId }, consumer, use.itemId, use.rate, 'material', conveyorItemsPerMinute));
       }
     } else if (demand.role === 'fuel') {
-      const recipeUse = consumeRecipeLots(fuelSupplyLotsByItem.get(demand.itemId), remaining);
+      const recipeUse = consumeRecipeLots(supplyLotsByItem.get(demand.itemId), remaining);
       remaining = recipeUse.remaining;
       for (const use of recipeUse.uses) {
         const fuelStat = stat(use.itemId);
@@ -960,7 +1202,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         pushFlow(makeFlow({ type: 'recipe', recipeId: use.recipeId }, consumer, use.itemId, use.rate, 'fuel', conveyorItemsPerMinute));
       }
 
-      if (solved.selectedRecipeCycleBlocks.length === 0 && solved.unresolved.size === 0 && input.settings.useByproductFuel) {
+      if (false && solved.selectedRecipeCycleBlocks.length === 0 && solved.unresolved.size === 0 && input.settings.useByproductFuel) {
         const byproductFuel = consumeByproductFuelLots(supplyLotsByItem, demand.itemId, remaining, input);
         remaining = byproductFuel.remainingPreferredFuelRate;
         for (const use of byproductFuel.uses) {
@@ -973,7 +1215,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         }
       }
     } else if (demand.role === 'fertilizer') {
-      const recipeUse = consumeRecipeLots(fertilizerSupplyLotsByItem.get(demand.itemId), remaining);
+      const recipeUse = consumeRecipeLots(supplyLotsByItem.get(demand.itemId), remaining);
       remaining = recipeUse.remaining;
       for (const use of recipeUse.uses) {
         pushFlow(makeFlow({ type: 'recipe', recipeId: use.recipeId }, consumer, use.itemId, use.rate, 'fertilizer', conveyorItemsPerMinute));
@@ -1043,10 +1285,14 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
   const invalidRootItemIds = [...solved.unresolved].filter((itemId) => !itemId.startsWith('__') && !blockedCycleItemIds.has(itemId));
   const errorSummaries: CalculationErrorSummary[] = [];
   if (invalidRootItemIds.length > 0) {
+    const shownRootItemIds = invalidRootItemIds.slice(0, 10);
+    const hiddenRootCount = Math.max(0, invalidRootItemIds.length - shownRootItemIds.length);
+    const suffixJa = hiddenRootCount > 0 ? ' ほか' + hiddenRootCount + '件' : '';
+    const suffixEn = hiddenRootCount > 0 ? ' and ' + hiddenRootCount + ' more' : '';
     errorSummaries.push({
       code: 'UNRESOLVED_ROOT_ITEM',
-      messageJa: invalidRootItemIds.map((itemId) => itemById[itemId]?.name.ja ?? itemId).join(' / ') + ' の入手方法がありません。',
-      messageEn: 'No source is available for: ' + invalidRootItemIds.join(' / '),
+      messageJa: shownRootItemIds.map((itemId) => itemById[itemId]?.name.ja ?? itemId).join(' / ') + suffixJa + ' の入手方法がありません。',
+      messageEn: 'No source is available for: ' + shownRootItemIds.join(' / ') + suffixEn,
       itemIds: invalidRootItemIds,
     });
   }
@@ -1080,6 +1326,13 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       code: 'INTERNAL_ERROR_NON_FINITE_RESULT',
       messageJa: '収支ベースsolverで有限ではない、または異常に大きい値が発生しました。',
       messageEn: 'The balance-based solver produced a non-finite or excessively large value.',
+    });
+  }
+  if (solved.unresolved.has('__special_resource_self_amplifying__')) {
+    errorSummaries.push({
+      code: 'SPECIAL_RESOURCE_SELF_AMPLIFYING',
+      messageJa: '燃料・肥料の内部生産が自己増幅しているため、有限解がありません。燃料または肥料を外部生産にしてください。',
+      messageEn: 'Internal fuel/fertilizer production is self-amplifying and has no finite solution. Use external production for fuel or fertilizer.',
     });
   }
 
@@ -1131,12 +1384,10 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       fuelHeatValueMultiplier: getFuelHeatValueMultiplier(input.abilities),
       fertilizerNutritionMultiplier: getFertilizerNutritionMultiplier(input.abilities),
       heatRequiredPerMin: analysis.heatRequiredPerMin,
-      fuelRequiredPerMin: actualFuelRequiredPerMin,
+      fuelRequiredPerMin: specialApplication.solution.fuelRequiredPerMin,
       fuelItemId: input.settings.fuel?.fuelItemId ?? '',
       fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
-      fertilizerRequiredPerMin: input.settings.fertilizer?.enabled && input.settings.fertilizer.fertilizerItemId
-        ? (analysis.fertilizerNutrientsRequiredPerMin / Math.max(EPS, (FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[input.settings.fertilizer.fertilizerItemId] ?? 0) * getFertilizerNutritionMultiplier(input.abilities)))
-        : 0,
+      fertilizerRequiredPerMin: specialApplication.solution.fertilizerRequiredPerMin,
       fertilizerItemId: input.settings.fertilizer?.fertilizerItemId ?? '',
       fuelIterations: 0,
       fuelConverged: true,
@@ -1173,8 +1424,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         enabled: input.settings.useByproductFuel,
         uses: byproductFuelUses,
       },
-      notesJa: ['v0.8.6 の収支ベース反復solver結果です。肥料レシピは栄養値モデルで計算し、設備グレード設定とパラドックス素材設定を反映します。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
-      notesEn: ['Balance-based iterative solver result for v0.8.6 with nutrient-based fertilizer recipes, machine preference settings, and paradox input settings. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
+      specialResourceSolution: specialApplication.solution,
+      notesJa: ['v0.8.8 の収支ベースsolver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。肥料レシピは栄養値モデルで計算し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Balance-based solver result for v0.8.8. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Nutrient-based fertilizer recipes, machine preferences, and paradox input settings are applied.'],
     },
   };
 }
