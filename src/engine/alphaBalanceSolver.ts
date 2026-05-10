@@ -37,8 +37,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.8.9' as const;
-const BALANCE_SOLVER_MODE = 'balance-special-resource-v088';
+const BALANCE_SOLVER_VERSION = '0.8.11' as const;
+const BALANCE_SOLVER_MODE = 'balance-special-resource-v0811';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -68,7 +68,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-special-resource-v088';
+  mode: 'balance-special-resource-v0811';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   cycleInputItemIds?: string[];
@@ -335,7 +335,7 @@ function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultipl
     if (nutrientsPerRun > EPS) fertilizerNutrientsRequiredPerMin += nutrientsPerRun * runsPerMinute;
   }
 
-  // Fuel and fertilizer are solved as special resources in v0.8.9.
+  // Fuel and fertilizer are solved as special resources.
   // analyzeRuns() only returns material demands plus heat/nutrient requirements.
 
   return { produced, consumed, demandLots, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin };
@@ -901,10 +901,11 @@ function solveSpecialResources(base: SolveRunMapResult, input: CalculateInput, d
 
   let fuelCost: SpecialItemCost | undefined;
   let fertilizerCost: SpecialItemCost | undefined;
-  if (fuelEnabled && input.settings.fuel?.sourceMode === 'internal') {
+  const hasBaseSpecialResourceDemand = baseHeat > EPS || baseNutrients > EPS;
+  if (hasBaseSpecialResourceDemand && fuelEnabled && input.settings.fuel?.sourceMode === 'internal') {
     fuelCost = specialCostForItem(fuelItemId, input, diagnostics);
   }
-  if (fertilizerEnabled && input.settings.fertilizer?.sourceMode === 'internal') {
+  if (hasBaseSpecialResourceDemand && fertilizerEnabled && input.settings.fertilizer?.sourceMode === 'internal') {
     fertilizerCost = specialCostForItem(fertilizerItemId, input, diagnostics);
   }
 
@@ -1003,8 +1004,23 @@ function applySpecialResourceApplication(base: SolveRunMapResult, input: Calcula
     else unresolved.add('__special_resource_self_amplifying__');
   }
 
-  for (const itemId of application.fuelCost?.unresolved ?? []) unresolved.add(itemId);
-  for (const itemId of application.fertilizerCost?.unresolved ?? []) unresolved.add(itemId);
+  const usesInternalFuelCost = solution.finite
+    && input.settings.fuel?.enabled
+    && input.settings.fuel.sourceMode === 'internal'
+    && solution.fuelRequiredPerMin > EPS
+    && Boolean(application.fuelCost);
+  const usesInternalFertilizerCost = solution.finite
+    && input.settings.fertilizer?.enabled
+    && input.settings.fertilizer.sourceMode === 'internal'
+    && solution.fertilizerRequiredPerMin > EPS
+    && Boolean(application.fertilizerCost);
+
+  if (usesInternalFuelCost) {
+    for (const itemId of application.fuelCost?.unresolved ?? []) unresolved.add(itemId);
+  }
+  if (usesInternalFertilizerCost) {
+    for (const itemId of application.fertilizerCost?.unresolved ?? []) unresolved.add(itemId);
+  }
 
   if (solution.finite && input.settings.fuel?.enabled && solution.fuelRequiredPerMin > EPS) {
     if (input.settings.fuel.sourceMode === 'external') addSource(sources, 'fuelExternal', solution.fuelItemId, 'fuel', solution.fuelRequiredPerMin, 'external');
@@ -1031,7 +1047,9 @@ function applySpecialResourceApplication(base: SolveRunMapResult, input: Calcula
     sources,
     cycleInputs,
     unresolved,
-    iterations: base.iterations + (application.fuelCost?.iterations ?? 0) + (application.fertilizerCost?.iterations ?? 0),
+    iterations: base.iterations
+      + (usesInternalFuelCost ? application.fuelCost?.iterations ?? 0 : 0)
+      + (usesInternalFertilizerCost ? application.fertilizerCost?.iterations ?? 0 : 0),
     heatRequiredPerMin: analysis.heatRequiredPerMin,
     fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
   };
@@ -1452,8 +1470,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         uses: byproductFuelUses,
       },
       specialResourceSolution: specialApplication.solution,
-      notesJa: ['v0.8.9 の収支ベースsolver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。肥料レシピは栄養値モデルで計算し、設備グレード設定とパラドックス素材設定を反映します。'],
-      notesEn: ['Balance-based solver result for v0.8.9. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Nutrient-based fertilizer recipes, machine preferences, and paradox input settings are applied.'],
+      notesJa: ['v0.8.11 の収支ベースsolver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Balance-based solver result for v0.8.11. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
     },
   };
 }
