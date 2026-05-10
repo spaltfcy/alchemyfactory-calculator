@@ -2,7 +2,7 @@ import type { ParadoxSettings } from '../types';
 import { ITEMS, itemById } from './items';
 
 export const DEFAULT_PARADOX_SETTINGS: ParadoxSettings = {
-  oblivionInputItemId: 'sage_seeds',
+  oblivionInputItemId: 'copper_ingot',
 };
 
 export function getParadoxSettings(settings?: { paradox?: Partial<ParadoxSettings> }): ParadoxSettings {
