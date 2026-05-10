@@ -10,7 +10,7 @@ import { createMessageRunId, verificationErrorMessage, withMessageRun, type User
 import { clearState, downloadJson } from '../utils/storage';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { DEFAULT_MACHINE_PREFERENCES, getMachinePreferences } from '../data/machinePreferences';
-import { DEFAULT_PARADOX_SETTINGS, getParadoxSettings, paradoxableItemIds } from '../data/paradox';
+import { DEFAULT_PARADOX_SETTINGS, getParadoxSettings, isParadoxableItem, paradoxableItemIds } from '../data/paradox';
 import { getEffectiveRecipeForCalculation, isItemRecipeInput } from '../data/effectiveRecipes';
 import { normalizeAbilitySettings } from '../data/abilityTables';
 
@@ -156,9 +156,7 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
         ...getMachinePreferences(current.settings),
         ...(imported.settings?.machinePreferences ?? {}),
       },
-      paradox: imported.settings?.paradox
-        ? getParadoxSettings(imported.settings)
-        : DEFAULT_PARADOX_SETTINGS,
+      paradox: getParadoxSettings(imported.settings),
       fuel: {
         ...getFuelSettings(current),
         ...(imported.settings?.fuel ?? {}),
@@ -194,24 +192,28 @@ function isUnsupportedImportedState(value: unknown): boolean {
     itemSourceModes?: unknown;
     stockOverrides?: unknown;
     settings?: {
+      paradox?: { oblivionInputItemId?: unknown };
       fuel?: { fuelSourceMode?: unknown };
       fertilizer?: { fertilizerSourceMode?: unknown };
     };
     version?: unknown;
   };
+  const paradoxItemId = candidate.settings?.paradox?.oblivionInputItemId;
   return (
     candidate.itemSourceModes !== undefined ||
     candidate.stockOverrides !== undefined ||
     candidate.settings?.fuel?.fuelSourceMode !== undefined ||
     candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
-    (typeof candidate.version !== 'number' || candidate.version < 22)
+    candidate.version !== DEFAULT_STATE.version ||
+    typeof paradoxItemId !== 'string' ||
+    !isParadoxableItem(paradoxItemId)
   );
 }
 
 function unsupportedImportMessage(lang: Lang): string {
   return lang === 'ja'
-    ? 'このJSONは旧形式のため読み込めません。v0.6.1以降の形式で保存し直してください。'
-    : 'This JSON uses an old format and cannot be imported. Please re-save it with v0.6.1 or later.';
+    ? 'このJSONは現行バージョン形式ではないため読み込めません。現行バージョンで保存したJSONを使用してください。'
+    : 'This JSON is not in the current version format and cannot be imported. Please use a JSON saved by the current version.';
 }
 
 function withImportRun(input: UserMessageInput, runId: string, sourceFileName: string): UserMessageInput {
@@ -288,7 +290,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 19,
+      debugSchemaVersion: 20,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,

@@ -1,11 +1,12 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import JSZip from 'jszip';
 import type { AppState, Lang } from '../types';
+import { DEFAULT_STATE } from '../defaultState';
 import { buildNegativeTargetWarningInput, filterPositiveTargets, sanitizeNegativeTargets, type NegativeTargetEntry } from '../engine/targetValidation';
 import { calculationInvalidPersistentError, createUserMessage, verificationErrorMessage, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { getMachinePreferences } from '../data/machinePreferences';
-import { DEFAULT_PARADOX_SETTINGS, getParadoxSettings } from '../data/paradox';
+import { getParadoxSettings, isParadoxableItem } from '../data/paradox';
 import { normalizeAbilitySettings } from '../data/abilityTables';
 import { buildFlowGraphSvg } from '../engine/graph';
 
@@ -311,24 +312,28 @@ function isUnsupportedImportedState(value: unknown): boolean {
     itemSourceModes?: unknown;
     stockOverrides?: unknown;
     settings?: {
+      paradox?: { oblivionInputItemId?: unknown };
       fuel?: { fuelSourceMode?: unknown };
       fertilizer?: { fertilizerSourceMode?: unknown };
     };
     version?: unknown;
   };
+  const paradoxItemId = candidate.settings?.paradox?.oblivionInputItemId;
   return (
     candidate.itemSourceModes !== undefined ||
     candidate.stockOverrides !== undefined ||
     candidate.settings?.fuel?.fuelSourceMode !== undefined ||
     candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
-    (typeof candidate.version !== 'number' || candidate.version < 22)
+    candidate.version !== DEFAULT_STATE.version ||
+    typeof paradoxItemId !== 'string' ||
+    !isParadoxableItem(paradoxItemId)
   );
 }
 
 function unsupportedImportMessage(lang: Lang): string {
   return lang === 'ja'
-    ? 'このJSONは旧形式のため読み込めません。v0.6.1以降の形式で保存し直してください。'
-    : 'This JSON uses an old format and cannot be imported. Please re-save it with v0.6.1 or later.';
+    ? 'このJSONは現行バージョン形式ではないため読み込めません。現行バージョンで保存したJSONを使用してください。'
+    : 'This JSON is not in the current version format and cannot be imported. Please use a JSON saved by the current version.';
 }
 
 function mergeImportedState(current: AppState, imported: Partial<AppState>): AppState {
@@ -344,9 +349,7 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
         ...getMachinePreferences(current.settings),
         ...(imported.settings?.machinePreferences ?? {}),
       },
-      paradox: imported.settings?.paradox
-        ? getParadoxSettings(imported.settings)
-        : DEFAULT_PARADOX_SETTINGS,
+      paradox: getParadoxSettings(imported.settings),
       fuel: {
         ...(current.settings.fuel ?? {}),
         ...(imported.settings?.fuel ?? {}),
@@ -527,7 +530,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 19,
+      debugSchemaVersion: 20,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -661,7 +664,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 19,
+      debugSchemaVersion: 20,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1150,7 +1153,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 19,
+      debugSchemaVersion: 20,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

@@ -15,9 +15,9 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
-import { getParadoxSettings } from './data/paradox';
+import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 
-const APP_VERSION = '0.8.5';
+const APP_VERSION = '0.8.6';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -74,17 +74,21 @@ function isUnsupportedSavedState(value: unknown): boolean {
     itemSourceModes?: unknown;
     stockOverrides?: unknown;
     settings?: {
+      paradox?: { oblivionInputItemId?: unknown };
       fuel?: { fuelSourceMode?: unknown };
       fertilizer?: { fertilizerSourceMode?: unknown };
     };
     version?: unknown;
   };
+  const paradoxItemId = candidate.settings?.paradox?.oblivionInputItemId;
   return (
     candidate.itemSourceModes !== undefined ||
     candidate.stockOverrides !== undefined ||
     candidate.settings?.fuel?.fuelSourceMode !== undefined ||
     candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
-    (typeof candidate.version !== 'number' || candidate.version < 22)
+    candidate.version !== DEFAULT_STATE.version ||
+    typeof paradoxItemId !== 'string' ||
+    !isParadoxableItem(paradoxItemId)
   );
 }
 
@@ -130,7 +134,7 @@ function mergeInitialState(safeMode: boolean): AppState {
   if (merged.settings.showInitialInvestmentLines === undefined) merged.settings.showInitialInvestmentLines = DEFAULT_STATE.settings.showInitialInvestmentLines;
 
   merged.targets = sanitizeNegativeTargets(merged.targets).targets;
-  merged.version = Math.max(DEFAULT_STATE.version, saved.version ?? 0);
+  merged.version = DEFAULT_STATE.version;
   return merged;
 }
 

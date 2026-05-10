@@ -1,7 +1,7 @@
 import type { AppSettings, ItemRecipeInput, Recipe, RecipeInput } from '../types';
 import { itemById } from './items';
 import { getMachinePreferences } from './machinePreferences';
-import { DEFAULT_PARADOX_SETTINGS, getParadoxSettings, isParadoxableItem } from './paradox';
+import { getParadoxSettings, isParadoxableItem } from './paradox';
 
 export type EffectiveRecipe = Omit<Recipe, 'inputs'> & { inputs: ItemRecipeInput[] };
 
@@ -15,7 +15,10 @@ export function isParadoxableRecipeInput(input: RecipeInput): boolean {
 
 export function getSelectedParadoxInputItemId(settings: AppSettings): string {
   const preferred = getParadoxSettings(settings).oblivionInputItemId;
-  return isParadoxableItem(preferred) ? preferred : DEFAULT_PARADOX_SETTINGS.oblivionInputItemId;
+  if (!isParadoxableItem(preferred)) {
+    throw new Error('Invalid paradox input item: ' + preferred);
+  }
+  return preferred;
 }
 
 function selectedParadoxTimeSec(settings: AppSettings): number {

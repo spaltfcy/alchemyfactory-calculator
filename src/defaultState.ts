@@ -4,7 +4,7 @@ import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
 import { DEFAULT_PARADOX_SETTINGS } from './data/paradox';
 
 export const DEFAULT_STATE: AppState = {
-  version: 25,
+  version: 26,
   language: 'ja',
   activeTab: 'graph',
   targets: [
