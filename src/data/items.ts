@@ -11,7 +11,8 @@ export const ITEMS: Item[] = [
       ja: 'こんごうせき'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0457875
   },
   {
     id: 'advanced_fertilizer',
@@ -24,6 +25,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fertilizer',
     physicalState: 'solid',
+    paradoxTimeSec: 26.7851375,
     fertilizerValue: 720,
     fertilizerNutrientsPerSec: 144
   },
@@ -50,6 +52,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 12.5126375,
     sellPriceCopper: 350
   },
   {
@@ -63,6 +66,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fertilizer',
     physicalState: 'solid',
+    paradoxTimeSec: 150.0126375,
     fertilizerValue: 144,
     fertilizerNutrientsPerSec: 12
   },
@@ -77,6 +81,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 10.0101375,
     sellPriceCopper: 330,
     fuelValue: 3000
   },
@@ -91,6 +96,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 1.2541375,
     sellPriceCopper: 2557,
     fuelValue: 24000
   },
@@ -117,6 +123,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 60.0051375,
     sellPriceCopper: 70
   },
   {
@@ -141,7 +148,8 @@ export const ITEMS: Item[] = [
       ja: 'はそんちっぷ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 1.4658875
   },
   {
     id: 'bronze_ingot',
@@ -153,7 +161,8 @@ export const ITEMS: Item[] = [
       ja: 'せいどういんごっと'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 9.8176375
   },
   {
     id: 'bronze_rivet',
@@ -166,6 +175,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 29.4251375,
     sellPriceCopper: 120
   },
   {
@@ -178,7 +188,8 @@ export const ITEMS: Item[] = [
       ja: 'かもみーる'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 24.9976375
   },
   {
     id: 'chamomile_powder',
@@ -190,7 +201,8 @@ export const ITEMS: Item[] = [
       ja: 'かもみーるのふんまつ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 24.9976375
   },
   {
     id: 'chamomile_seeds',
@@ -203,6 +215,7 @@ export const ITEMS: Item[] = [
     },
     category: 'seed',
     physicalState: 'solid',
+    paradoxTimeSec: 0.2501125,
     buyPriceCopper: 6000
   },
   {
@@ -216,6 +229,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 750.0076375,
     fuelValue: 40
   },
   {
@@ -229,6 +243,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 750.0076375,
     fuelValue: 48
   },
   {
@@ -241,7 +256,8 @@ export const ITEMS: Item[] = [
       ja: 'ねんど'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 74.9926375
   },
   {
     id: 'clay_powder',
@@ -253,7 +269,8 @@ export const ITEMS: Item[] = [
       ja: 'ねんどふんまつ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 74.9926375
   },
   {
     id: 'coal',
@@ -266,6 +283,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 37.5101375,
     fuelValue: 540
   },
   {
@@ -279,6 +297,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 0.3136375,
     buyPriceCopper: 4800,
     fuelValue: 30000
   },
@@ -293,6 +312,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 49.9951375,
     fuelValue: 600
   },
   {
@@ -306,6 +326,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 49.9951375,
     fuelValue: 660
   },
   {
@@ -332,6 +353,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 10.2301375,
     sellPriceCopper: 300
   },
   {
@@ -345,6 +367,7 @@ export const ITEMS: Item[] = [
     },
     category: 'intermediate',
     physicalState: 'solid',
+    paradoxTimeSec: 1535.8476375,
     buyPriceCopper: 1,
     sellPriceCopper: 1
   },
@@ -358,7 +381,8 @@ export const ITEMS: Item[] = [
       ja: 'どういんごっと'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 5.1151375
   },
   {
     id: 'copper_powder',
@@ -370,7 +394,8 @@ export const ITEMS: Item[] = [
       ja: 'どうふん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 5.1701375
   },
   {
     id: 'crown',
@@ -383,6 +408,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0017875,
     sellPriceCopper: 1600000
   },
   {
@@ -395,7 +421,8 @@ export const ITEMS: Item[] = [
       ja: 'あらいしょうせき'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.1832875
   },
   {
     id: 'crude_gold_dust',
@@ -407,7 +434,8 @@ export const ITEMS: Item[] = [
       ja: 'そあくなさきん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.1390125
   },
   {
     id: 'crude_shard',
@@ -419,7 +447,8 @@ export const ITEMS: Item[] = [
       ja: 'そあくなちっぷ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 2.9426375
   },
   {
     id: 'crude_silver_powder',
@@ -431,7 +460,8 @@ export const ITEMS: Item[] = [
       ja: 'そあくなぎんぷん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 1.1771375
   },
   {
     id: 'diamond',
@@ -444,6 +474,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0229625,
     sellPriceCopper: 100000
   },
   {
@@ -456,7 +487,8 @@ export const ITEMS: Item[] = [
       ja: 'くすんだちっぷ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.7316375
   },
   {
     id: 'emerald',
@@ -469,6 +501,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0026125,
     sellPriceCopper: 700000
   },
   {
@@ -481,7 +514,8 @@ export const ITEMS: Item[] = [
       ja: 'えいえんのしょくばい'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0015125
   },
   {
     id: 'fairy_dust',
@@ -493,7 +527,8 @@ export const ITEMS: Item[] = [
       ja: 'せいれいのふんまつ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.4896375
   },
   {
     id: 'fairy_tear',
@@ -518,6 +553,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fertilizer',
     physicalState: 'solid',
+    paradoxTimeSec: 0.7261375,
     fertilizerValue: 24000,
     fertilizerNutrientsPerSec: 6000
   },
@@ -531,7 +567,8 @@ export const ITEMS: Item[] = [
       ja: 'あま'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 750.0076375
   },
   {
     id: 'flax_fiber',
@@ -543,7 +580,8 @@ export const ITEMS: Item[] = [
       ja: 'あませんい'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 750.0076375
   },
   {
     id: 'flax_seeds',
@@ -556,6 +594,7 @@ export const ITEMS: Item[] = [
     },
     category: 'seed',
     physicalState: 'solid',
+    paradoxTimeSec: 5.3626375,
     buyPriceCopper: 280
   },
   {
@@ -580,7 +619,8 @@ export const ITEMS: Item[] = [
       ja: 'かんぺきなせいれんすな'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 5.8576375
   },
   {
     id: 'gentian',
@@ -592,7 +632,8 @@ export const ITEMS: Item[] = [
       ja: 'りんどう'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 2.9976375
   },
   {
     id: 'gentian_nectar',
@@ -604,7 +645,8 @@ export const ITEMS: Item[] = [
       ja: 'りんどうのみつ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 2.9976375
   },
   {
     id: 'gentian_powder',
@@ -616,7 +658,8 @@ export const ITEMS: Item[] = [
       ja: 'りんどうのふんまつ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 2.9976375
   },
   {
     id: 'gentian_seeds',
@@ -629,6 +672,7 @@ export const ITEMS: Item[] = [
     },
     category: 'seed',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0235125,
     buyPriceCopper: 64000
   },
   {
@@ -642,6 +686,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 51.7276375,
     sellPriceCopper: 75
   },
   {
@@ -654,7 +699,8 @@ export const ITEMS: Item[] = [
       ja: 'ゆうあんきのこ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 32.6151375
   },
   {
     id: 'gloom_spores',
@@ -666,7 +712,8 @@ export const ITEMS: Item[] = [
       ja: 'ゆうあんほうし'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 8.3326375
   },
   {
     id: 'gold_coin',
@@ -679,6 +726,7 @@ export const ITEMS: Item[] = [
     },
     category: 'intermediate',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0177375,
     buyPriceCopper: 100000,
     sellPriceCopper: 100000
   },
@@ -692,7 +740,8 @@ export const ITEMS: Item[] = [
       ja: 'さきん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0356125
   },
   {
     id: 'gold_ingot',
@@ -704,7 +753,8 @@ export const ITEMS: Item[] = [
       ja: 'きんいんごっと'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0177375
   },
   {
     id: 'growth_potion',
@@ -717,6 +767,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fertilizer',
     physicalState: 'solid',
+    paradoxTimeSec: 2.9976375,
     sellPriceCopper: 1224,
     fertilizerValue: 6480,
     fertilizerNutrientsPerSec: 2160
@@ -732,6 +783,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 49.9951375,
     sellPriceCopper: 85
   },
   {
@@ -744,7 +796,8 @@ export const ITEMS: Item[] = [
       ja: 'ふじゅんどうふん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 10.0101375
   },
   {
     id: 'impure_gold_dust',
@@ -756,7 +809,8 @@ export const ITEMS: Item[] = [
       ja: 'ふじゅんさきん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0694375
   },
   {
     id: 'impure_silver_powder',
@@ -768,7 +822,8 @@ export const ITEMS: Item[] = [
       ja: 'ふじゅんぎんぷん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.5886375
   },
   {
     id: 'iron_ingot',
@@ -780,7 +835,8 @@ export const ITEMS: Item[] = [
       ja: 'てついんごっと'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 99.9901375
   },
   {
     id: 'iron_nails',
@@ -793,6 +849,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 299.9976375,
     sellPriceCopper: 16
   },
   {
@@ -806,6 +863,7 @@ export const ITEMS: Item[] = [
     },
     category: 'raw',
     physicalState: 'solid',
+    paradoxTimeSec: 1.2513875,
     buyPriceCopper: 1200
   },
   {
@@ -818,7 +876,8 @@ export const ITEMS: Item[] = [
       ja: 'さてつ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 99.9901375
   },
   {
     id: 'jupiter',
@@ -831,6 +890,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.1472625,
     sellPriceCopper: 30000
   },
   {
@@ -844,6 +904,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0950125,
     sellPriceCopper: 32000
   },
   {
@@ -857,6 +918,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 1499.9876375,
     sellPriceCopper: 5
   },
   {
@@ -869,7 +931,8 @@ export const ITEMS: Item[] = [
       ja: 'らべんだー'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 8.3326375
   },
   {
     id: 'lavender_essential_oil',
@@ -894,6 +957,7 @@ export const ITEMS: Item[] = [
     },
     category: 'seed',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0939125,
     buyPriceCopper: 16000
   },
   {
@@ -907,6 +971,7 @@ export const ITEMS: Item[] = [
     },
     category: 'raw',
     physicalState: 'solid',
+    paradoxTimeSec: 2.4998875,
     buyPriceCopper: 600
   },
   {
@@ -932,6 +997,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 24.9976375,
     sellPriceCopper: 165
   },
   {
@@ -945,6 +1011,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 124.9876375,
     sellPriceCopper: 36
   },
   {
@@ -957,7 +1024,8 @@ export const ITEMS: Item[] = [
       ja: 'あさいと'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 250.0026375
   },
   {
     id: 'linseed_oil',
@@ -982,6 +1050,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 7.5076375,
     buyPriceCopper: 200,
     fuelValue: 2000
   },
@@ -996,6 +1065,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0001375,
     sellPriceCopper: 18500000
   },
   {
@@ -1009,6 +1079,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 4.0976375,
     sellPriceCopper: 1020
   },
   {
@@ -1022,6 +1093,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0119625,
     sellPriceCopper: 280000
   },
   {
@@ -1035,6 +1107,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0006875,
     sellPriceCopper: 5200000
   },
   {
@@ -1048,6 +1121,7 @@ export const ITEMS: Item[] = [
     },
     category: 'raw',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0009625,
     buyPriceCopper: 2000000
   },
   {
@@ -1073,6 +1147,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0031625,
     sellPriceCopper: 900000
   },
   {
@@ -1086,6 +1161,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 74.9926375,
     sellPriceCopper: 48
   },
   {
@@ -1098,7 +1174,8 @@ export const ITEMS: Item[] = [
       ja: 'しょうめつえっせんす'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 2.4998875
   },
   {
     id: 'obsidian',
@@ -1111,6 +1188,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.2833875,
     sellPriceCopper: 11000
   },
   {
@@ -1124,6 +1202,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fertilizer',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0980375,
     sellPriceCopper: 30000,
     fuelValue: 320000,
     fertilizerValue: 200000,
@@ -1139,7 +1218,8 @@ export const ITEMS: Item[] = [
       ja: 'かんぺきなだいやもんど'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0116875
   },
   {
     id: 'perfumed_soap',
@@ -1152,6 +1232,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 1.2321375,
     sellPriceCopper: 2590
   },
   {
@@ -1164,7 +1245,8 @@ export const ITEMS: Item[] = [
       ja: 'ふんまつかおりせっけん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 1.2321375
   },
   {
     id: 'philosophers_stone',
@@ -1176,7 +1258,8 @@ export const ITEMS: Item[] = [
       ja: 'けんじゃのいし'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0015125
   },
   {
     id: 'plank',
@@ -1189,6 +1272,7 @@ export const ITEMS: Item[] = [
     },
     category: 'fuel',
     physicalState: 'solid',
+    paradoxTimeSec: 1499.9876375,
     fuelValue: 20
   },
   {
@@ -1201,7 +1285,8 @@ export const ITEMS: Item[] = [
       ja: 'そうもくばい'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 374.9901375
   },
   {
     id: 'pocket_watch',
@@ -1214,6 +1299,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 1.9003875,
     sellPriceCopper: 1950
   },
   {
@@ -1226,7 +1312,8 @@ export const ITEMS: Item[] = [
       ja: 'けんましょうせき'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0917125
   },
   {
     id: 'pure_gold_dust',
@@ -1238,7 +1325,8 @@ export const ITEMS: Item[] = [
       ja: 'じゅんすいさきん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0177375
   },
   {
     id: 'pyrite_ore',
@@ -1251,6 +1339,7 @@ export const ITEMS: Item[] = [
     },
     category: 'raw',
     physicalState: 'solid',
+    paradoxTimeSec: 0.1340625,
     buyPriceCopper: 11000
   },
   {
@@ -1264,6 +1353,7 @@ export const ITEMS: Item[] = [
     },
     category: 'raw',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0342375,
     buyPriceCopper: 44000
   },
   {
@@ -1276,7 +1366,8 @@ export const ITEMS: Item[] = [
       ja: 'せいせっかい'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 250.0026375
   },
   {
     id: 'quicklime_powder',
@@ -1288,7 +1379,8 @@ export const ITEMS: Item[] = [
       ja: 'せっかいふん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 250.0026375
   },
   {
     id: 'quicksilver',
@@ -1312,7 +1404,8 @@ export const ITEMS: Item[] = [
       ja: 'れっどからんと'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 124.9876375
   },
   {
     id: 'redcurrant_seeds',
@@ -1325,6 +1418,7 @@ export const ITEMS: Item[] = [
     },
     category: 'seed',
     physicalState: 'solid',
+    paradoxTimeSec: 1.1551375,
     buyPriceCopper: 1300
   },
   {
@@ -1337,7 +1431,8 @@ export const ITEMS: Item[] = [
       ja: 'せいれんすな1'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 187.4951375
   },
   {
     id: 'refined_sand_2',
@@ -1349,7 +1444,8 @@ export const ITEMS: Item[] = [
       ja: 'せいれんすな2'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 93.7476375
   },
   {
     id: 'refined_sand_3',
@@ -1361,7 +1457,8 @@ export const ITEMS: Item[] = [
       ja: 'せいれんすな3'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 46.8876375
   },
   {
     id: 'refined_sand_4',
@@ -1373,7 +1470,8 @@ export const ITEMS: Item[] = [
       ja: 'せいれんすな4'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 23.4301375
   },
   {
     id: 'refined_sand_5',
@@ -1385,7 +1483,8 @@ export const ITEMS: Item[] = [
       ja: 'せいれんすな5'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 11.7151375
   },
   {
     id: 'resonant_catalyst',
@@ -1397,7 +1496,8 @@ export const ITEMS: Item[] = [
       ja: 'きょうしんしょくばい'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.1167375
   },
   {
     id: 'rock_salt',
@@ -1410,6 +1510,7 @@ export const ITEMS: Item[] = [
     },
     category: 'raw',
     physicalState: 'solid',
+    paradoxTimeSec: 0.1667875,
     buyPriceCopper: 9000
   },
   {
@@ -1423,6 +1524,7 @@ export const ITEMS: Item[] = [
     },
     category: 'raw',
     physicalState: 'solid',
+    paradoxTimeSec: 0.7508875,
     buyPriceCopper: 2000
   },
   {
@@ -1436,6 +1538,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0075625,
     sellPriceCopper: 250000
   },
   {
@@ -1448,7 +1551,8 @@ export const ITEMS: Item[] = [
       ja: 'せーじ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 500.0051375
   },
   {
     id: 'sage_powder',
@@ -1460,7 +1564,8 @@ export const ITEMS: Item[] = [
       ja: 'せーじのふんまつ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 500.0051375
   },
   {
     id: 'sage_seeds',
@@ -1473,6 +1578,7 @@ export const ITEMS: Item[] = [
     },
     category: 'seed',
     physicalState: 'solid',
+    paradoxTimeSec: 4.1801375,
     buyPriceCopper: 360
   },
   {
@@ -1486,6 +1592,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 23.0726375,
     sellPriceCopper: 100
   },
   {
@@ -1498,7 +1605,8 @@ export const ITEMS: Item[] = [
       ja: 'すな'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 374.9901375
   },
   {
     id: 'sapphire',
@@ -1511,6 +1619,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0039875,
     sellPriceCopper: 480000
   },
   {
@@ -1524,6 +1633,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0210375,
     sellPriceCopper: 150000
   },
   {
@@ -1536,7 +1646,8 @@ export const ITEMS: Item[] = [
       ja: 'くだけたしょうせき'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.3658875
   },
   {
     id: 'silver_amulet',
@@ -1549,6 +1660,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0592625,
     sellPriceCopper: 48000
   },
   {
@@ -1562,6 +1674,7 @@ export const ITEMS: Item[] = [
     },
     category: 'intermediate',
     physicalState: 'solid',
+    paradoxTimeSec: 1.5813875,
     buyPriceCopper: 1000,
     sellPriceCopper: 1000
   },
@@ -1575,7 +1688,8 @@ export const ITEMS: Item[] = [
       ja: 'ぎんいんごっと'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.3163875
   },
   {
     id: 'silver_powder',
@@ -1587,7 +1701,8 @@ export const ITEMS: Item[] = [
       ja: 'ぎんぷん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.3163875
   },
   {
     id: 'small_wooden_gear',
@@ -1600,6 +1715,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 4499.9901375,
     sellPriceCopper: 8
   },
   {
@@ -1613,6 +1729,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 74.9926375,
     sellPriceCopper: 60
   },
   {
@@ -1625,7 +1742,8 @@ export const ITEMS: Item[] = [
       ja: 'ふんまつせっけん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 74.9926375
   },
   {
     id: 'sol',
@@ -1638,6 +1756,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0001375,
     sellPriceCopper: 42000000
   },
   {
@@ -1650,7 +1769,8 @@ export const ITEMS: Item[] = [
       ja: 'ほしのすな'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.3603875
   },
   {
     id: 'steel_gear',
@@ -1663,6 +1783,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 9.3226375,
     sellPriceCopper: 450
   },
   {
@@ -1675,7 +1796,8 @@ export const ITEMS: Item[] = [
       ja: 'はがねいんごっと'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 9.3226375
   },
   {
     id: 'stone',
@@ -1687,7 +1809,8 @@ export const ITEMS: Item[] = [
       ja: 'さいせき'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 374.9901375
   },
   {
     id: 'sulfur',
@@ -1699,7 +1822,8 @@ export const ITEMS: Item[] = [
       ja: 'いおう'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 6.1051375
   },
   {
     id: 'sulfur_powder',
@@ -1711,7 +1835,8 @@ export const ITEMS: Item[] = [
       ja: 'いおうふん'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 6.1051375
   },
   {
     id: 'sulfuric_acid',
@@ -1736,6 +1861,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 1.2431375,
     sellPriceCopper: 2800
   },
   {
@@ -1749,6 +1875,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 6.2426375,
     sellPriceCopper: 620
   },
   {
@@ -1762,6 +1889,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 13.8876375,
     sellPriceCopper: 290
   },
   {
@@ -1774,7 +1902,8 @@ export const ITEMS: Item[] = [
       ja: 'ふあんていなしょくばい'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 3.0801375
   },
   {
     id: 'venus',
@@ -1787,6 +1916,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 0.0031625,
     sellPriceCopper: 1000000
   },
   {
@@ -1799,7 +1929,8 @@ export const ITEMS: Item[] = [
       ja: 'せいめいのえっせんす'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 1.6666375
   },
   {
     id: 'vitality_potion',
@@ -1812,6 +1943,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 12.5126375,
     sellPriceCopper: 330
   },
   {
@@ -1824,7 +1956,8 @@ export const ITEMS: Item[] = [
       ja: 'かざんばい'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.2833875
   },
   {
     id: 'wooden_pulley',
@@ -1837,6 +1970,7 @@ export const ITEMS: Item[] = [
     },
     category: 'product',
     physicalState: 'solid',
+    paradoxTimeSec: 107.1401375,
     sellPriceCopper: 44
   },
   {
@@ -1849,7 +1983,8 @@ export const ITEMS: Item[] = [
       ja: 'せかいじゅのたね'
     },
     category: 'seed',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0004125
   },
   {
     id: 'world_tree_core',
@@ -1861,7 +1996,8 @@ export const ITEMS: Item[] = [
       ja: 'せかいじゅのかく'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.0061875
   },
   {
     id: 'world_tree_leaf',
@@ -1873,7 +2009,8 @@ export const ITEMS: Item[] = [
       ja: 'せかいじゅのは'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 0.5996375
   },
   {
     id: 'yeast_powder',
@@ -1885,7 +2022,8 @@ export const ITEMS: Item[] = [
       ja: 'こうぼふんまつ'
     },
     category: 'intermediate',
-    physicalState: 'solid'
+    physicalState: 'solid',
+    paradoxTimeSec: 17.0501375
   },
   {
     id: 'steam',

@@ -5,6 +5,8 @@ import { buildNegativeTargetWarningInput, filterPositiveTargets, sanitizeNegativ
 import { calculationInvalidPersistentError, createUserMessage, verificationErrorMessage, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { getMachinePreferences } from '../data/machinePreferences';
+import { getParadoxSettings } from '../data/paradox';
+import { normalizeAbilitySettings } from '../data/abilityTables';
 import { buildFlowGraphSvg } from '../engine/graph';
 
 type DebugTabProps = {
@@ -342,6 +344,10 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
         ...getMachinePreferences(current.settings),
         ...(imported.settings?.machinePreferences ?? {}),
       },
+      paradox: {
+        ...getParadoxSettings(current.settings),
+        ...(imported.settings?.paradox ?? {}),
+      },
       fuel: {
         ...(current.settings.fuel ?? {}),
         ...(imported.settings?.fuel ?? {}),
@@ -351,10 +357,7 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
         ...(imported.settings?.fertilizer ?? {}),
       },
     },
-    abilities: {
-      ...current.abilities,
-      ...(imported.abilities ?? {}),
-    },
+    abilities: normalizeAbilitySettings({ ...current.abilities, ...(imported.abilities ?? {}) }),
     recipePreferences: imported.recipePreferences ?? {},
     surplusPolicies: imported.surplusPolicies ?? {},
     completedGraphNodeIds: imported.completedGraphNodeIds ?? {},
@@ -525,7 +528,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 18,
+      debugSchemaVersion: 19,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -659,7 +662,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 18,
+      debugSchemaVersion: 19,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1148,7 +1151,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 18,
+      debugSchemaVersion: 19,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

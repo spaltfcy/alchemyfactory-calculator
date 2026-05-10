@@ -3,7 +3,7 @@ import { recipeById } from '../data/recipes';
 import { itemById } from '../data/items';
 import { resolveItemSource } from './itemSourceResolver';
 import { safeCeil } from '../utils/format';
-import { getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/machinePreferences';
+import { getEffectiveRecipeForCalculation, getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec, isItemRecipeInput } from '../data/effectiveRecipes';
 import type {
   CalculateInput,
   CalculationResult,
@@ -33,7 +33,7 @@ function outputRatePerMachine(recipe: Recipe, itemId: string, input: CalculateIn
 }
 
 function inputAmountPerRun(recipe: Recipe, itemId: string): number {
-  return recipe.inputs.filter((entry) => entry.itemId === itemId).reduce((sum, entry) => sum + entry.amount, 0);
+  return recipe.inputs.filter((entry) => isItemRecipeInput(entry) && entry.itemId === itemId).reduce((sum, entry) => sum + entry.amount, 0);
 }
 
 function isSelfSustainingForItem(recipe: Recipe, itemId: string): boolean {
@@ -56,7 +56,7 @@ function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMin
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
   const inputRates: Record<string, number> = {};
   const outputRates: Record<string, number> = {};
-  for (const entry of recipe.inputs) inputRates[entry.itemId] = (inputRates[entry.itemId] ?? 0) + entry.amount * runsPerMinute;
+  for (const entry of recipe.inputs) if (isItemRecipeInput(entry)) inputRates[entry.itemId] = (inputRates[entry.itemId] ?? 0) + entry.amount * runsPerMinute;
   for (const entry of recipe.outputs) outputRates[entry.itemId] = (outputRates[entry.itemId] ?? 0) + entry.amount * (entry.probability ?? 1) * runsPerMinute;
 
   const existing = group.recipeStats[recipe.id];
@@ -163,7 +163,7 @@ function buildStartupSupply(
     return;
   }
 
-  const recipe = resolved.recipe;
+  const recipe = getEffectiveRecipeForCalculation(resolved.recipe, input.settings);
 
   const key = recipe.id + ':' + itemId;
   if (visitedKeys.has(key)) {
@@ -246,9 +246,10 @@ export function buildInitialInvestment(
 
   for (const recipeStat of Object.values(baseResult.recipeStats)) {
     if ((recipeStat.runsPerMinute ?? 0) <= EPS) continue;
-    const recipe = recipeById[recipeStat.recipeId];
-    if (!recipe) continue;
-    const requiredItemIds = [...new Set(recipe.inputs.map((entry) => entry.itemId))].filter((itemId) => isSelfSustainingForItem(recipe, itemId));
+    const baseRecipe = recipeById[recipeStat.recipeId];
+    if (!baseRecipe) continue;
+    const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
+    const requiredItemIds = [...new Set(recipe.inputs.filter(isItemRecipeInput).map((entry) => entry.itemId))].filter((itemId) => isSelfSustainingForItem(recipe, itemId));
     if (requiredItemIds.length === 0) continue;
 
     data.requiredByRecipe[recipe.id] = requiredItemIds;

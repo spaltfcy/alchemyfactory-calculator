@@ -1,9 +1,10 @@
 import type { AppState } from './types';
 import { DEFAULT_ABILITIES } from './data/abilityTables';
 import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
+import { DEFAULT_PARADOX_SETTINGS } from './data/paradox';
 
 export const DEFAULT_STATE: AppState = {
-  version: 24,
+  version: 25,
   language: 'ja',
   activeTab: 'graph',
   targets: [
@@ -25,6 +26,7 @@ export const DEFAULT_STATE: AppState = {
     allowAlternateRecipeCompletion: false,
     useByproductFuel: false,
     machinePreferences: DEFAULT_MACHINE_PREFERENCES,
+    paradox: DEFAULT_PARADOX_SETTINGS,
     fuel: {
       enabled: true,
       fuelItemId: 'charcoal_powder',

@@ -1928,10 +1928,10 @@ export const RECIPES: Recipe[] = [
       en: 'Oblivion Essence'
     },
     machineId: 'paradox_crucible',
-    timeSec: 8.7,
+    timeSec: 0,
     inputs: [
       {
-        itemId: 'sage_seeds',
+        kind: 'paradoxableItem',
         amount: 1
       }
     ],

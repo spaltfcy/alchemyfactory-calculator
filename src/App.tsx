@@ -6,7 +6,7 @@ import { DEFAULT_STATE } from './defaultState';
 import { calculate } from './engine/calculate';
 import { loadState, saveState } from './utils/storage';
 import { t } from './i18n';
-import { ABILITY_IDS } from './data/abilityTables';
+import { ABILITY_IDS, ABILITY_MAX_LEVEL, normalizeAbilityLevel, normalizeAbilitySettings } from './data/abilityTables';
 import { TargetEditor } from './components/TargetEditor';
 import { GraphTab } from './components/GraphTab';
 import { TableTab } from './components/TableTab';
@@ -15,8 +15,9 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
+import { getParadoxSettings } from './data/paradox';
 
-const APP_VERSION = '0.8.3';
+const APP_VERSION = '0.8.4';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -109,6 +110,7 @@ function mergeInitialState(safeMode: boolean): AppState {
       ...DEFAULT_STATE.settings,
       ...saved.settings,
       machinePreferences: getMachinePreferences(saved.settings ?? DEFAULT_STATE.settings),
+      paradox: getParadoxSettings(saved.settings ?? DEFAULT_STATE.settings),
       fuel: {
         ...DEFAULT_STATE.settings.fuel,
         ...(saved.settings?.fuel ?? {}),
@@ -118,7 +120,7 @@ function mergeInitialState(safeMode: boolean): AppState {
         ...(saved.settings?.fertilizer ?? {}),
       },
     },
-    abilities: { ...DEFAULT_STATE.abilities, ...saved.abilities },
+    abilities: normalizeAbilitySettings(saved.abilities),
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
     surplusPolicies: { ...DEFAULT_STATE.surplusPolicies, ...saved.surplusPolicies },
     completedGraphNodeIds: { ...DEFAULT_STATE.completedGraphNodeIds, ...saved.completedGraphNodeIds },
@@ -316,7 +318,7 @@ export function App() {
   }
 
   function setAbility(id: AbilityId, value: number) {
-    const nextValue = Math.max(0, Math.min(13, Math.floor(Number.isFinite(value) ? value : 0)));
+    const nextValue = normalizeAbilityLevel(value);
     setState({
       ...state,
       abilities: {
@@ -397,7 +399,7 @@ export function App() {
                 name={`ability-${id}`}
                 type="number"
                 min={0}
-                max={13}
+                max={ABILITY_MAX_LEVEL}
                 step={1}
                 value={state.abilities[id] ?? 0}
                 autoComplete="off"

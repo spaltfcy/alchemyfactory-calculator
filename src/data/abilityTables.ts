@@ -28,7 +28,7 @@ export const DEFAULT_ABILITIES: AbilitySettings = {
 
 // Lv0〜Lv13 の各レベルで加算される値。
 // Lv0 は初期値なので 0。Codex の∞表記は実装上は Lv13 として扱う。
-export const ABILITY_MAX_LEVEL = 13;
+export const ABILITY_MAX_LEVEL = 9999;
 
 export const ABILITY_TABLES = {
   logisticsEfficiency: {
@@ -78,13 +78,31 @@ export const ABILITY_BASE_VALUES = {
   questUrgentMultiplier: 2,
 } as const;
 
-function sumLevels(values: readonly number[], level: number): number {
-  const safeLevel = Math.max(0, Math.min(Math.floor(level), ABILITY_MAX_LEVEL));
-  let total = 0;
+export function normalizeAbilityLevel(value: unknown): number {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return 0;
+  return Math.max(0, Math.min(Math.floor(numberValue), ABILITY_MAX_LEVEL));
+}
 
-  for (let i = 0; i <= safeLevel; i += 1) total += values[i] ?? 0;
+function sumLevels(values: readonly number[], level: number): number {
+  const safeLevel = normalizeAbilityLevel(level);
+  if (values.length === 0) return 0;
+
+  const lastIndex = values.length - 1;
+  const lastValue = values[lastIndex] ?? 0;
+  let total = 0;
+  const definedMax = Math.min(safeLevel, lastIndex);
+
+  for (let i = 0; i <= definedMax; i += 1) total += values[i] ?? 0;
+  if (safeLevel > lastIndex) total += (safeLevel - lastIndex) * lastValue;
 
   return total;
+}
+
+export function normalizeAbilitySettings(input: Partial<AbilitySettings> | undefined): AbilitySettings {
+  return Object.fromEntries(
+    ABILITY_IDS.map((id) => [id, normalizeAbilityLevel(input?.[id] ?? DEFAULT_ABILITIES[id])]),
+  ) as AbilitySettings;
 }
 
 export function getConveyorItemsPerMinute(abilities: AbilitySettings): number {

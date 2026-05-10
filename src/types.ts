@@ -37,6 +37,7 @@ export type Item = {
   fuelValue?: number; // 燃料値。定義ありなら燃料候補
   fertilizerValue?: number; // 肥料値。定義ありなら肥料候補
   fertilizerNutrientsPerSec?: number; // 肥料投入速度。定義ありなら肥料候補
+  paradoxTimeSec?: number; // パラドックス坩堝で消滅エッセンス素材にした場合の基準時間秒
   internal?: boolean; // 内部用。ターゲット・売却候補には出さない
 };
 
@@ -73,7 +74,18 @@ export type RecipeIO = {
   probability?: number; // 出力確率。未定義なら1
 };
 
-export type RecipeInput = RecipeIO;
+export type ItemRecipeInput = {
+  kind?: 'item';
+  itemId: string; // アイテムID
+  amount: number; // 数量
+};
+
+export type ParadoxableRecipeInput = {
+  kind: 'paradoxableItem';
+  amount: number; // 数量
+};
+
+export type RecipeInput = ItemRecipeInput | ParadoxableRecipeInput;
 export type RecipeOutput = RecipeIO;
 
 export type NutrientRunRateMode = 'logisticsCap' | 'fixedTime';
@@ -108,6 +120,10 @@ export type ExternalSourceMode = 'internal' | 'external';
 export type HeatingMode = 'direct' | 'steam';
 export type CrucibleMachinePreference = 'crucible' | 'stackable_crucible';
 export type GrinderMachinePreference = 'grinder' | 'enhanced_grinder';
+
+export type ParadoxSettings = {
+  oblivionInputItemId: string;
+};
 
 export type MachinePreferences = {
   crucible: CrucibleMachinePreference;
@@ -153,6 +169,7 @@ export type AppSettings = {
   allowAlternateRecipeCompletion: boolean;
   useByproductFuel: boolean;
   machinePreferences: MachinePreferences;
+  paradox: ParadoxSettings;
   fuel: FuelSettings;
   fertilizer: FertilizerSettings;
 };

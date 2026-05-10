@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent } from 'react';
-import type { AppSettings, AppState, Lang, MachinePreferences, Recipe, SurplusPolicy } from '../types';
+import type { AppSettings, AppState, ItemRecipeInput, Lang, MachinePreferences, ParadoxSettings, Recipe, RecipeInput, SurplusPolicy } from '../types';
 import { DEFAULT_STATE } from '../defaultState';
 import { ITEMS, fuelItemIds, fertilizerItemIds, itemById } from '../data/items';
 import { machineById } from '../data/machines';
@@ -10,6 +10,9 @@ import { createMessageRunId, verificationErrorMessage, withMessageRun, type User
 import { clearState, downloadJson } from '../utils/storage';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { DEFAULT_MACHINE_PREFERENCES, getMachinePreferences } from '../data/machinePreferences';
+import { DEFAULT_PARADOX_SETTINGS, getParadoxSettings, paradoxableItemIds } from '../data/paradox';
+import { getEffectiveRecipeForCalculation, isItemRecipeInput } from '../data/effectiveRecipes';
+import { normalizeAbilitySettings } from '../data/abilityTables';
 
 export type SettingsTabProps = {
   state: AppState;
@@ -46,6 +49,10 @@ function getFuelSettings(state: AppState): AppSettings['fuel'] {
 
 function getMachinePreferenceSettings(state: AppState): MachinePreferences {
   return { ...DEFAULT_MACHINE_PREFERENCES, ...(state.settings.machinePreferences ?? {}) };
+}
+
+function getParadoxSettingValues(state: AppState): ParadoxSettings {
+  return { ...DEFAULT_PARADOX_SETTINGS, ...(state.settings.paradox ?? {}) };
 }
 
 function padDatePart(value: number): string {
@@ -91,9 +98,19 @@ function joinRecipeItemNames(entries: Array<{ itemId: string }>, lang: Lang): st
   return entries.map((entry) => recipeItemName(entry.itemId, lang)).join(separator);
 }
 
+function recipeInputItemName(input: RecipeInput, lang: Lang, state: AppState): string {
+  if (isItemRecipeInput(input)) return recipeItemName(input.itemId, lang);
+  return recipeItemName(getParadoxSettingValues(state).oblivionInputItemId, lang);
+}
+
+function joinRecipeInputNames(entries: RecipeInput[], lang: Lang, state: AppState): string {
+  const separator = lang === 'ja' ? '・' : ', ';
+  return entries.map((entry) => recipeInputItemName(entry, lang, state)).join(separator);
+}
+
 function isMeteorCrusherRecipe(recipe: Recipe): boolean {
   const idText = recipe.id.toLowerCase();
-  const hasMeteorInput = recipe.inputs.some((input) => input.itemId.includes('meteor'));
+  const hasMeteorInput = recipe.inputs.some((input) => isItemRecipeInput(input) && input.itemId.includes('meteor'));
   const hasManyStoneCrusherOutputs = recipe.machineId === 'stone_crusher' && recipe.outputs.length >= 3;
 
   return hasMeteorInput || idText.includes('meteor') || hasManyStoneCrusherOutputs;
@@ -107,13 +124,23 @@ function recipeOutputNames(recipe: Recipe, lang: Lang): string {
   return recipe.outputs.length ? joinRecipeItemNames(recipe.outputs, lang) : text(recipe.name, lang);
 }
 
-function recipeOptionLabel(itemId: string, recipe: Recipe, lang: Lang): string {
-  const machine = machineById[recipe.machineId];
-  const inputNames = recipe.inputs.length ? joinRecipeItemNames(recipe.inputs, lang) : recipeItemName(itemId, lang);
-  const machineName = machine ? text(machine.name, lang) : recipe.machineId;
+function recipeOptionLabel(itemId: string, recipe: Recipe, lang: Lang, state: AppState): string {
+  const effectiveRecipe = getEffectiveRecipeForCalculation(recipe, state.settings);
+  const machine = machineById[effectiveRecipe.machineId] ?? machineById[recipe.machineId];
+  const inputNames = recipe.inputs.length ? joinRecipeInputNames(recipe.inputs, lang, state) : recipeItemName(itemId, lang);
+  const machineName = machine ? text(machine.name, lang) : effectiveRecipe.machineId;
   const outputNames = recipeOutputNames(recipe, lang);
 
   return `${inputNames} → ${machineName} → ${outputNames}`;
+}
+
+
+function formatParadoxTime(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  if (value < 0.01) return value.toFixed(7).replace(/0+$/, '').replace(/\.$/, '');
+  if (value < 10) return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+  if (value < 100) return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return value.toFixed(1).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 function mergeState(current: AppState, imported: Partial<AppState>): AppState {
@@ -129,13 +156,17 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
         ...getMachinePreferences(current.settings),
         ...(imported.settings?.machinePreferences ?? {}),
       },
+      paradox: {
+        ...getParadoxSettings(current.settings),
+        ...(imported.settings?.paradox ?? {}),
+      },
       fuel: {
         ...getFuelSettings(current),
         ...(imported.settings?.fuel ?? {}),
       },
       fertilizer: { ...getFertilizerSettings(current), ...(imported.settings?.fertilizer ?? {}) },
     },
-    abilities: { ...current.abilities, ...imported.abilities },
+    abilities: normalizeAbilitySettings({ ...current.abilities, ...imported.abilities }),
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
     surplusPolicies: { ...current.surplusPolicies, ...imported.surplusPolicies },
     completedGraphNodeIds: { ...current.completedGraphNodeIds, ...imported.completedGraphNodeIds },
@@ -193,6 +224,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
   const fuel = getFuelSettings(state);
   const fertilizer = getFertilizerSettings(state);
   const machinePreferences = getMachinePreferenceSettings(state);
+  const paradox = getParadoxSettingValues(state);
   const [importError, setImportError] = useState('');
 
   function patchSettings(patch: Partial<AppSettings>) {
@@ -206,6 +238,19 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
         ...state.settings,
         machinePreferences: {
           ...machinePreferences,
+          ...patch,
+        },
+      },
+    });
+  }
+
+  function patchParadoxSettings(patch: Partial<ParadoxSettings>) {
+    setState({
+      ...state,
+      settings: {
+        ...state.settings,
+        paradox: {
+          ...paradox,
           ...patch,
         },
       },
@@ -244,7 +289,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 18,
+      debugSchemaVersion: 19,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,
@@ -374,7 +419,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                   >
                     {recipes.map((recipe) => (
                       <option key={recipe.id} value={recipe.id}>
-                        {recipeOptionLabel(item.id, recipe, lang)}
+                        {recipeOptionLabel(item.id, recipe, lang, state)}
                       </option>
                     ))}
                   </select>
@@ -435,6 +480,22 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                 >
                   <option value="grinder">{text(machineById.grinder.name, lang)}</option>
                   <option value="enhanced_grinder">{text(machineById.enhanced_grinder.name, lang)}</option>
+                </select>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '消滅エッセンス素材' : 'Oblivion essence input'}</span>
+                <select
+                  id="paradox-oblivion-input-item"
+                  name="paradox-oblivion-input-item"
+                  value={paradox.oblivionInputItemId}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) => patchParadoxSettings({ oblivionInputItemId: event.target.value })}
+                >
+                  {paradoxableItemIds.map((itemId) => (
+                    <option key={itemId} value={itemId}>
+                      {recipeItemName(itemId, lang)} ({formatParadoxTime(itemById[itemId]?.paradoxTimeSec ?? 0)}s)
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="form-field">

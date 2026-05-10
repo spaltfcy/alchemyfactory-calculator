@@ -11,7 +11,7 @@ import {
 } from '../data/abilityTables';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
-import { getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/machinePreferences';
+import { getEffectiveRecipeForCalculation, getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/effectiveRecipes';
 import { calculateAlphaBalance, type AlphaBalanceSolveResult } from './alphaBalanceSolver';
 import type {
   CalculateInput,
@@ -19,7 +19,7 @@ import type {
   CalculationResult,
 } from './calculationTypes';
 
-export type SolverEngineId = 'balance-v083';
+export type SolverEngineId = 'balance-v084';
 
 export type SelectedRecipeCycleDiagnostic = {
   id: string;
@@ -157,7 +157,7 @@ export type NewSolverResult = {
   alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
 };
 
-const ACTIVE_ENGINE: SolverEngineId = 'balance-v083';
+const ACTIVE_ENGINE: SolverEngineId = 'balance-v084';
 const EPS = 1e-9;
 
 function uniqueSorted(values: Iterable<string>): string[] {
@@ -184,8 +184,9 @@ type DependencyGraphData = {
 };
 
 function buildSelectedDependencyEdge(recipeId: string, input: CalculateInput): DependencyEdge[] {
-  const recipe = recipeById[recipeId];
-  if (!recipe) return [];
+  const baseRecipe = recipeById[recipeId];
+  if (!baseRecipe) return [];
+  const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
   return recipe.inputs.flatMap((recipeInput) => {
     const selectedProducer = chooseRecipeForItem(recipeInput.itemId, input.recipePreferences);
     if (!selectedProducer) return [];
@@ -434,8 +435,9 @@ function targetDemandByItem(input: CalculateInput): Map<string, number> {
 function activeItemIdsForModel(recipeIds: string[], input: CalculateInput): string[] {
   const itemIds = new Set<string>();
   for (const recipeId of recipeIds) {
-    const recipe = recipeById[recipeId];
-    if (!recipe) continue;
+    const baseRecipe = recipeById[recipeId];
+    if (!baseRecipe) continue;
+    const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
     for (const recipeInput of recipe.inputs) itemIds.add(recipeInput.itemId);
     for (const output of recipe.outputs) itemIds.add(output.itemId);
   }
@@ -623,8 +625,9 @@ function buildLinearBalanceModelDiagnostics(
     const isLiquid = item?.physicalState === 'liquid';
     const terms: LinearModelConstraintTerm[] = [];
     for (const recipeId of recipeIds) {
-      const recipe = recipeById[recipeId];
-      if (!recipe) continue;
+      const baseRecipe = recipeById[recipeId];
+      if (!baseRecipe) continue;
+      const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
       const outputAmount = outputPerRunForRecipe(recipe, itemId);
       if (outputAmount > EPS) terms.push({ variableId: variableId('recipeRun', recipe.id), coefficient: outputAmount });
       const inputAmount = recipe.inputs
@@ -807,9 +810,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.8.3 では、収支ベースsolver結果経路を通常計算に使い、肥料レシピと設備グレード設定を診断します。',
+      'v0.8.4 では、収支ベースsolver結果経路を通常計算に使い、肥料レシピと設備グレード設定を診断します。',
     noteEn:
-      'v0.8.3 uses the balance-based solver result path at runtime and diagnoses fertilizer recipes and machine preference settings.',
+      'v0.8.4 uses the balance-based solver result path at runtime and diagnoses fertilizer recipes and machine preference settings.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',
