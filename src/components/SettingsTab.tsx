@@ -156,10 +156,9 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
         ...getMachinePreferences(current.settings),
         ...(imported.settings?.machinePreferences ?? {}),
       },
-      paradox: {
-        ...getParadoxSettings(current.settings),
-        ...(imported.settings?.paradox ?? {}),
-      },
+      paradox: imported.settings?.paradox
+        ? getParadoxSettings(imported.settings)
+        : DEFAULT_PARADOX_SETTINGS,
       fuel: {
         ...getFuelSettings(current),
         ...(imported.settings?.fuel ?? {}),

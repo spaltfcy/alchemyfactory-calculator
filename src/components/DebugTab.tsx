@@ -5,7 +5,7 @@ import { buildNegativeTargetWarningInput, filterPositiveTargets, sanitizeNegativ
 import { calculationInvalidPersistentError, createUserMessage, verificationErrorMessage, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { getMachinePreferences } from '../data/machinePreferences';
-import { getParadoxSettings } from '../data/paradox';
+import { DEFAULT_PARADOX_SETTINGS, getParadoxSettings } from '../data/paradox';
 import { normalizeAbilitySettings } from '../data/abilityTables';
 import { buildFlowGraphSvg } from '../engine/graph';
 
@@ -344,10 +344,9 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
         ...getMachinePreferences(current.settings),
         ...(imported.settings?.machinePreferences ?? {}),
       },
-      paradox: {
-        ...getParadoxSettings(current.settings),
-        ...(imported.settings?.paradox ?? {}),
-      },
+      paradox: imported.settings?.paradox
+        ? getParadoxSettings(imported.settings)
+        : DEFAULT_PARADOX_SETTINGS,
       fuel: {
         ...(current.settings.fuel ?? {}),
         ...(imported.settings?.fuel ?? {}),
