@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent } from 'react';
-import type { AppSettings, AppState, Lang, Recipe, SurplusPolicy } from '../types';
+import type { AppSettings, AppState, Lang, MachinePreferences, Recipe, SurplusPolicy } from '../types';
 import { DEFAULT_STATE } from '../defaultState';
 import { ITEMS, fuelItemIds, fertilizerItemIds, itemById } from '../data/items';
 import { machineById } from '../data/machines';
@@ -9,6 +9,7 @@ import { sanitizeNegativeTargets, buildNegativeTargetWarningInput, filterPositiv
 import { createMessageRunId, verificationErrorMessage, withMessageRun, type UserMessageInput } from '../utils/userMessages';
 import { clearState, downloadJson } from '../utils/storage';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
+import { DEFAULT_MACHINE_PREFERENCES, getMachinePreferences } from '../data/machinePreferences';
 
 export type SettingsTabProps = {
   state: AppState;
@@ -41,6 +42,10 @@ function getFertilizerSettings(state: AppState): AppSettings['fertilizer'] {
 
 function getFuelSettings(state: AppState): AppSettings['fuel'] {
   return { ...DEFAULT_FUEL_SETTINGS, ...(state.settings.fuel ?? {}) };
+}
+
+function getMachinePreferenceSettings(state: AppState): MachinePreferences {
+  return { ...DEFAULT_MACHINE_PREFERENCES, ...(state.settings.machinePreferences ?? {}) };
 }
 
 function padDatePart(value: number): string {
@@ -120,6 +125,10 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
     settings: {
       ...current.settings,
       ...imported.settings,
+      machinePreferences: {
+        ...getMachinePreferences(current.settings),
+        ...(imported.settings?.machinePreferences ?? {}),
+      },
       fuel: {
         ...getFuelSettings(current),
         ...(imported.settings?.fuel ?? {}),
@@ -183,10 +192,24 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
   const lang = state.language;
   const fuel = getFuelSettings(state);
   const fertilizer = getFertilizerSettings(state);
+  const machinePreferences = getMachinePreferenceSettings(state);
   const [importError, setImportError] = useState('');
 
   function patchSettings(patch: Partial<AppSettings>) {
     setState({ ...state, settings: { ...state.settings, ...patch } });
+  }
+
+  function patchMachinePreferences(patch: Partial<MachinePreferences>) {
+    setState({
+      ...state,
+      settings: {
+        ...state.settings,
+        machinePreferences: {
+          ...machinePreferences,
+          ...patch,
+        },
+      },
+    });
   }
 
   function patchFuelSettings(patch: Partial<AppSettings['fuel']>) {
@@ -221,7 +244,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 17,
+      debugSchemaVersion: 18,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,
@@ -382,6 +405,36 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                   <option value="none">{t('roundingNone', lang)}</option>
                   <option value="intermediate">{t('roundingIntermediate', lang)}</option>
                   <option value="all">{t('roundingAll', lang)}</option>
+                </select>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '坩堝系設備' : 'Crucible machine'}</span>
+                <select
+                  id="preferred-crucible-machine"
+                  name="preferred-crucible-machine"
+                  value={machinePreferences.crucible}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchMachinePreferences({ crucible: event.target.value as MachinePreferences['crucible'] })
+                  }
+                >
+                  <option value="crucible">{text(machineById.crucible.name, lang)}</option>
+                  <option value="stackable_crucible">{text(machineById.stackable_crucible.name, lang)}</option>
+                </select>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '研磨系設備' : 'Grinding machine'}</span>
+                <select
+                  id="preferred-grinder-machine"
+                  name="preferred-grinder-machine"
+                  value={machinePreferences.grinder}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchMachinePreferences({ grinder: event.target.value as MachinePreferences['grinder'] })
+                  }
+                >
+                  <option value="grinder">{text(machineById.grinder.name, lang)}</option>
+                  <option value="enhanced_grinder">{text(machineById.enhanced_grinder.name, lang)}</option>
                 </select>
               </label>
               <label className="form-field">

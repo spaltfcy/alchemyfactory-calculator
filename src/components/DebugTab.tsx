@@ -4,6 +4,7 @@ import type { AppState, Lang } from '../types';
 import { buildNegativeTargetWarningInput, filterPositiveTargets, sanitizeNegativeTargets, type NegativeTargetEntry } from '../engine/targetValidation';
 import { calculationInvalidPersistentError, createUserMessage, verificationErrorMessage, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
+import { getMachinePreferences } from '../data/machinePreferences';
 import { buildFlowGraphSvg } from '../engine/graph';
 
 type DebugTabProps = {
@@ -337,6 +338,10 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
     settings: {
       ...current.settings,
       ...(imported.settings ?? {}),
+      machinePreferences: {
+        ...getMachinePreferences(current.settings),
+        ...(imported.settings?.machinePreferences ?? {}),
+      },
       fuel: {
         ...(current.settings.fuel ?? {}),
         ...(imported.settings?.fuel ?? {}),
@@ -520,7 +525,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 17,
+      debugSchemaVersion: 18,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -654,7 +659,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 17,
+      debugSchemaVersion: 18,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1143,7 +1148,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 17,
+      debugSchemaVersion: 18,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

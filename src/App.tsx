@@ -14,8 +14,9 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
+import { getMachinePreferences } from './data/machinePreferences';
 
-const APP_VERSION = '0.8.2';
+const APP_VERSION = '0.8.3';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -107,6 +108,7 @@ function mergeInitialState(safeMode: boolean): AppState {
     settings: {
       ...DEFAULT_STATE.settings,
       ...saved.settings,
+      machinePreferences: getMachinePreferences(saved.settings ?? DEFAULT_STATE.settings),
       fuel: {
         ...DEFAULT_STATE.settings.fuel,
         ...(saved.settings?.fuel ?? {}),

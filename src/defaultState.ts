@@ -1,8 +1,9 @@
 import type { AppState } from './types';
 import { DEFAULT_ABILITIES } from './data/abilityTables';
+import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
 
 export const DEFAULT_STATE: AppState = {
-  version: 23,
+  version: 24,
   language: 'ja',
   activeTab: 'graph',
   targets: [
@@ -23,6 +24,7 @@ export const DEFAULT_STATE: AppState = {
     showInitialInvestmentLines: true,
     allowAlternateRecipeCompletion: false,
     useByproductFuel: false,
+    machinePreferences: DEFAULT_MACHINE_PREFERENCES,
     fuel: {
       enabled: true,
       fuelItemId: 'charcoal_powder',

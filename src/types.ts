@@ -106,6 +106,13 @@ export type MachineRoundingMode = 'none' | 'intermediate' | 'all';
 export type SurplusPolicy = 'reuse' | 'discard';
 export type ExternalSourceMode = 'internal' | 'external';
 export type HeatingMode = 'direct' | 'steam';
+export type CrucibleMachinePreference = 'crucible' | 'stackable_crucible';
+export type GrinderMachinePreference = 'grinder' | 'enhanced_grinder';
+
+export type MachinePreferences = {
+  crucible: CrucibleMachinePreference;
+  grinder: GrinderMachinePreference;
+};
 
 export type FuelSettings = {
   enabled: boolean; // 燃料計算を有効にするか
@@ -145,6 +152,7 @@ export type AppSettings = {
   showInitialInvestmentLines: boolean;
   allowAlternateRecipeCompletion: boolean;
   useByproductFuel: boolean;
+  machinePreferences: MachinePreferences;
   fuel: FuelSettings;
   fertilizer: FertilizerSettings;
 };

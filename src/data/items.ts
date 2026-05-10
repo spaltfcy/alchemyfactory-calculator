@@ -1840,6 +1840,18 @@ export const ITEMS: Item[] = [
     sellPriceCopper: 44
   },
   {
+    id: 'world_tree_seed',
+    name: {
+      ja: '世界樹の種',
+      en: 'World Tree Seed'
+    },
+    sortName: {
+      ja: 'せかいじゅのたね'
+    },
+    category: 'seed',
+    physicalState: 'solid'
+  },
+  {
     id: 'world_tree_core',
     name: {
       ja: '世界樹の核',

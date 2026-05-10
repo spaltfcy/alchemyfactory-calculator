@@ -3,6 +3,7 @@ import { recipeById } from '../data/recipes';
 import { itemById } from '../data/items';
 import { resolveItemSource } from './itemSourceResolver';
 import { safeCeil } from '../utils/format';
+import { getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/machinePreferences';
 import type {
   CalculateInput,
   CalculationResult,
@@ -17,8 +18,8 @@ import type {
 const EPS = 1e-9;
 const MAX_DEPTH = 24;
 
-function runRatePerMachine(recipe: Recipe, productionSpeedMultiplier: number): number {
-  return (60 / recipe.timeSec) * productionSpeedMultiplier;
+function runRatePerMachine(recipe: Recipe, input: CalculateInput, productionSpeedMultiplier: number): number {
+  return (60 / getEffectiveRecipeTimeSec(recipe, input.settings)) * productionSpeedMultiplier;
 }
 
 function outputPerRun(recipe: Recipe, itemId: string): number {
@@ -27,8 +28,8 @@ function outputPerRun(recipe: Recipe, itemId: string): number {
   return output.amount * (output.probability ?? 1);
 }
 
-function outputRatePerMachine(recipe: Recipe, itemId: string, productionSpeedMultiplier: number): number {
-  return outputPerRun(recipe, itemId) * runRatePerMachine(recipe, productionSpeedMultiplier);
+function outputRatePerMachine(recipe: Recipe, itemId: string, input: CalculateInput, productionSpeedMultiplier: number): number {
+  return outputPerRun(recipe, itemId) * runRatePerMachine(recipe, input, productionSpeedMultiplier);
 }
 
 function inputAmountPerRun(recipe: Recipe, itemId: string): number {
@@ -50,8 +51,8 @@ function transportKindForItem(itemId: string): InitialInvestmentTransportKind {
 }
 
 
-function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMinute: number, productionSpeedMultiplier: number): void {
-  const machineRunRate = runRatePerMachine(recipe, productionSpeedMultiplier);
+function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMinute: number, input: CalculateInput, productionSpeedMultiplier: number): void {
+  const machineRunRate = runRatePerMachine(recipe, input, productionSpeedMultiplier);
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
   const inputRates: Record<string, number> = {};
   const outputRates: Record<string, number> = {};
@@ -62,7 +63,7 @@ function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMin
   if (!existing) {
     group.recipeStats[recipe.id] = {
       recipeId: recipe.id,
-      machineId: recipe.machineId,
+      machineId: getEffectiveRecipeMachineId(recipe, input.settings),
       theoreticalMachines,
       actualMachines: theoreticalMachines,
       runsPerMinute,
@@ -147,7 +148,7 @@ function buildStartupSupply(
   const resolved = resolveItemSource(itemId, {
     recipePreferences: input.recipePreferences,
     blockedRecipeIds,
-    isRecipeAllowed: (candidate) => !isSelfSustainingForItem(candidate, itemId) && outputRatePerMachine(candidate, itemId, 1) > EPS,
+    isRecipeAllowed: (candidate) => !isSelfSustainingForItem(candidate, itemId) && outputRatePerMachine(candidate, itemId, input, 1) > EPS,
   });
 
   if (resolved.kind === 'purchase') {
@@ -171,7 +172,7 @@ function buildStartupSupply(
     return;
   }
 
-  const outputRate = outputRatePerMachine(recipe, itemId, productionSpeedMultiplier);
+  const outputRate = outputRatePerMachine(recipe, itemId, input, productionSpeedMultiplier);
   if (outputRate <= EPS) {
     addUnresolvedStartupItem(group, itemId);
     addFlow(group, { type: 'itemSource', itemId, sourceMode: 'unresolved' }, consumer, itemId, demandRate, conveyorItemsPerMinute);
@@ -179,8 +180,8 @@ function buildStartupSupply(
   }
 
   const machineCount = Math.max(1, safeCeil(demandRate / outputRate));
-  const runsPerMinute = machineCount * runRatePerMachine(recipe, productionSpeedMultiplier);
-  addRecipeStat(group, recipe, runsPerMinute, productionSpeedMultiplier);
+  const runsPerMinute = machineCount * runRatePerMachine(recipe, input, productionSpeedMultiplier);
+  addRecipeStat(group, recipe, runsPerMinute, input, productionSpeedMultiplier);
   addFlow(group, { type: 'recipe', recipeId: recipe.id }, consumer, itemId, outputPerRun(recipe, itemId) * runsPerMinute, conveyorItemsPerMinute);
 
   visitedKeys.add(key);
@@ -262,7 +263,7 @@ export function buildInitialInvestment(
     };
     const blocked = new Set<string>([recipe.id]);
     for (const itemId of requiredItemIds) {
-      const startupRate = inputAmountPerRun(recipe, itemId) * runRatePerMachine(recipe, productionSpeedMultiplier);
+      const startupRate = inputAmountPerRun(recipe, itemId) * runRatePerMachine(recipe, input, productionSpeedMultiplier);
       buildStartupSupply(
         itemId,
         startupRate,

@@ -11,6 +11,7 @@ import {
 } from '../data/abilityTables';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
+import { getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/machinePreferences';
 import { calculateAlphaBalance, type AlphaBalanceSolveResult } from './alphaBalanceSolver';
 import type {
   CalculateInput,
@@ -18,7 +19,7 @@ import type {
   CalculationResult,
 } from './calculationTypes';
 
-export type SolverEngineId = 'balance-v082';
+export type SolverEngineId = 'balance-v083';
 
 export type SelectedRecipeCycleDiagnostic = {
   id: string;
@@ -156,7 +157,7 @@ export type NewSolverResult = {
   alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
 };
 
-const ACTIVE_ENGINE: SolverEngineId = 'balance-v082';
+const ACTIVE_ENGINE: SolverEngineId = 'balance-v083';
 const EPS = 1e-9;
 
 function uniqueSorted(values: Iterable<string>): string[] {
@@ -354,7 +355,7 @@ function recipeTotalOutputAmount(recipe: Recipe): number {
 
 function runRateForDiagnosticRecipe(recipe: Recipe, input: CalculateInput): number {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
-  const baseRunRate = 60 / recipe.timeSec;
+  const baseRunRate = 60 / getEffectiveRecipeTimeSec(recipe, input.settings);
   const nutrientInputPerRun = Math.max(0, recipe.nutrientInputPerRun ?? 0);
   if (!input.settings.fertilizer?.enabled || nutrientInputPerRun <= EPS) return baseRunRate * productionSpeedMultiplier;
 
@@ -447,7 +448,7 @@ function activeItemIdsForModel(recipeIds: string[], input: CalculateInput): stri
 }
 
 function heatPerRunForRecipe(recipe: Recipe, input: CalculateInput): number {
-  const heatPerSec = HEAT_CONSUMER_BY_MACHINE_ID[recipe.machineId]?.heatPerSec ?? 0;
+  const heatPerSec = HEAT_CONSUMER_BY_MACHINE_ID[getEffectiveRecipeMachineId(recipe, input.settings)]?.heatPerSec ?? 0;
   if (heatPerSec <= EPS) return 0;
   const heatConsumptionMultiplier = getHeatConsumptionMultiplier(input.abilities);
   const runRate = runRateForDiagnosticRecipe(recipe, input);
@@ -806,9 +807,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.8.2 では、収支ベースsolver結果経路を通常計算に使い、肥料レシピは栄養値モデルで診断します。',
+      'v0.8.3 では、収支ベースsolver結果経路を通常計算に使い、肥料レシピと設備グレード設定を診断します。',
     noteEn:
-      'v0.8.2 uses the balance-based solver result path at runtime and diagnoses fertilizer recipes with the nutrient model.',
+      'v0.8.3 uses the balance-based solver result path at runtime and diagnoses fertilizer recipes and machine preference settings.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',

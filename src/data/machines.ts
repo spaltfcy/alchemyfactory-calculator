@@ -3,492 +3,308 @@ import type { Machine } from '../types';
 export const MACHINES: Machine[] = [
   {
     id: 'steam_boiler',
-    name: {
-      ja: '蒸気ボイラー',
-      en: 'Steam Boiler'
-    },
+    name: { ja: '蒸気ボイラー', en: 'Steam Boiler' },
     category: 'steam',
     buildCost: [
-      {
-        itemId: 'steel_ingot',
-        amount: 5
-      },
-      {
-        itemId: 'glass',
-        amount: 5
-      }
+      { itemId: 'iron_ingot', amount: 20 },
+      { itemId: 'steel_ingot', amount: 5 },
     ],
-    ports: {
-      solidInputs: 0,
-      liquidInputs: 0,
-      solidOutputs: 0,
-      liquidOutputs: 1
-    }
+    ports: { solidInputs: 0, liquidInputs: 0, solidOutputs: 0, liquidOutputs: 1 },
   },
   {
     id: 'advanced_alembic',
-    name: {
-      ja: '上級アランビック',
-      en: 'Advanced Alembic'
-    },
+    name: { ja: '高性能蒸留装置', en: 'Advanced Alembic' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 2,
-      liquidInputs: 1,
-      solidOutputs: 0,
-      liquidOutputs: 1
-    },
-    heatConsumptionPerSec: 270
+    buildCost: [
+      { itemId: 'steel_ingot', amount: 8 },
+      { itemId: 'glass', amount: 16 },
+      { itemId: 'copper_bearing', amount: 4 },
+    ],
+    ports: { solidInputs: 2, liquidInputs: 1, solidOutputs: 0, liquidOutputs: 1 },
+    heatConsumptionPerSec: 270,
   },
   {
     id: 'advanced_assembler',
-    name: {
-      ja: '上級アセンブラー',
-      en: 'Advanced Assembler'
-    },
+    name: { ja: '高性能組立機', en: 'Advanced Assembler' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 3,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'steel_ingot', amount: 12 },
+      { itemId: 'steel_gear', amount: 16 },
+      { itemId: 'copper_bearing', amount: 8 },
+    ],
+    ports: { solidInputs: 3, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'advanced_athanor',
-    name: {
-      ja: '上級アタノール',
-      en: 'Advanced Athanor'
-    },
+    name: { ja: '高性能錬金炉', en: 'Advanced Athanor' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 3,
-      liquidInputs: 1,
-      solidOutputs: 3,
-      liquidOutputs: 0
-    },
-    heatConsumptionPerSec: 360
+    buildCost: [
+      { itemId: 'steel_ingot', amount: 12 },
+      { itemId: 'copper_ingot', amount: 12 },
+    ],
+    ports: { solidInputs: 3, liquidInputs: 1, solidOutputs: 3, liquidOutputs: 0 },
+    heatConsumptionPerSec: 360,
   },
   {
     id: 'advanced_blender',
-    name: {
-      ja: '上級ブレンダー',
-      en: 'Advanced Blender'
-    },
+    name: { ja: '高性能ミキサー', en: 'Advanced Blender' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 2,
-      liquidInputs: 1,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'steel_ingot', amount: 8 },
+      { itemId: 'glass', amount: 16 },
+      { itemId: 'copper_bearing', amount: 4 },
+    ],
+    ports: { solidInputs: 2, liquidInputs: 1, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'advanced_shaper',
-    name: {
-      ja: '上級シェイパー',
-      en: 'Advanced Shaper'
-    },
+    name: { ja: '高性能彫刻機', en: 'Advanced Shaper' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 5,
-      liquidInputs: 1,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'steel_ingot', amount: 8 },
+      { itemId: 'steel_gear', amount: 16 },
+    ],
+    ports: { solidInputs: 5, liquidInputs: 1, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'alembic',
-    name: {
-      ja: 'アランビック',
-      en: 'Alembic'
-    },
+    name: { ja: '蒸留装置', en: 'Alembic' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 1,
-      solidOutputs: 0,
-      liquidOutputs: 1
-    },
-    heatConsumptionPerSec: 108
+    buildCost: [
+      { itemId: 'steel_ingot', amount: 4 },
+      { itemId: 'copper_ingot', amount: 4 },
+      { itemId: 'glass', amount: 8 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 1, solidOutputs: 0, liquidOutputs: 1 },
+    heatConsumptionPerSec: 108,
   },
   {
     id: 'arcane_processor',
-    name: {
-      ja: '秘術プロセッサー',
-      en: 'Arcane Processor'
-    },
+    name: { ja: '秘術プロセッサー', en: 'Arcane Processor' },
     category: 'production',
     buildCost: [],
-    ports: {
-      solidInputs: 3,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    ports: { solidInputs: 3, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'arcane_shaper',
-    name: {
-      ja: '秘術シェイパー',
-      en: 'Arcane Shaper'
-    },
+    name: { ja: '秘術シェイパー', en: 'Arcane Shaper' },
     category: 'production',
     buildCost: [],
-    ports: {
-      solidInputs: 9,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    ports: { solidInputs: 9, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'assembler',
-    name: {
-      ja: 'アセンブラー',
-      en: 'Assembler'
-    },
+    name: { ja: '組立機', en: 'Assembler' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 2,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'plank', amount: 10 },
+      { itemId: 'large_wooden_gear', amount: 5 },
+      { itemId: 'small_wooden_gear', amount: 15 },
+    ],
+    ports: { solidInputs: 2, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'athanor',
-    name: {
-      ja: 'アタノール',
-      en: 'Athanor'
-    },
+    name: { ja: '錬金炉', en: 'Athanor' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 2,
-      liquidInputs: 0,
-      solidOutputs: 2,
-      liquidOutputs: 0
-    },
-    heatConsumptionPerSec: 32
+    buildCost: [
+      { itemId: 'iron_ingot', amount: 10 },
+      { itemId: 'iron_nails', amount: 15 },
+    ],
+    ports: { solidInputs: 2, liquidInputs: 0, solidOutputs: 2, liquidOutputs: 0 },
+    heatConsumptionPerSec: 32,
   },
   {
     id: 'blender',
-    name: {
-      ja: 'ブレンダー',
-      en: 'Blender'
-    },
+    name: { ja: 'ミキサー', en: 'Blender' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 1,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'iron_ingot', amount: 8 },
+      { itemId: 'glass', amount: 8 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 1, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'cauldron',
-    name: {
-      ja: '錬金釜',
-      en: 'Cauldron'
-    },
+    name: { ja: '錬金釜', en: 'Cauldron' },
     category: 'production',
-    buildCost: [
-      {
-        itemId: 'bronze_ingot',
-        amount: 20
-      }
-    ],
-    ports: {
-      solidInputs: 3,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [{ itemId: 'bronze_ingot', amount: 20 }],
+    ports: { solidInputs: 3, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'crucible',
-    name: {
-      ja: 'るつぼ',
-      en: 'Crucible'
-    },
+    name: { ja: '坩堝', en: 'Crucible' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    },
-    heatConsumptionPerSec: 4
+    buildCost: [{ itemId: 'stone', amount: 4 }],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
+    heatConsumptionPerSec: 4,
   },
   {
     id: 'extractor',
-    name: {
-      ja: '抽出機',
-      en: 'Extractor'
-    },
+    name: { ja: '抽出機', en: 'Extractor' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 0,
-      liquidOutputs: 1
-    }
+    buildCost: [
+      { itemId: 'iron_ingot', amount: 5 },
+      { itemId: 'glass', amount: 5 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 0, liquidOutputs: 1 },
   },
   {
     id: 'grinder',
-    name: {
-      ja: 'グラインダー',
-      en: 'Grinder'
-    },
+    name: { ja: '研磨機', en: 'Grinder' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [{ itemId: 'plank', amount: 6 }],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
+  },
+  {
+    id: 'enhanced_grinder',
+    name: { ja: '強化研磨機', en: 'Enhanced Grinder' },
+    category: 'production',
+    buildCost: [
+      { itemId: 'plank', amount: 12 },
+      { itemId: 'steel_gear', amount: 3 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'iron_smelter',
-    name: {
-      ja: '鉄製錬炉',
-      en: 'Iron Smelter'
-    },
+    name: { ja: '製鉄炉', en: 'Iron Smelter' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 2,
-      liquidOutputs: 0
-    },
-    heatConsumptionPerSec: 9
+    buildCost: [{ itemId: 'stone', amount: 15 }],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 2, liquidOutputs: 0 },
+    heatConsumptionPerSec: 9,
   },
   {
     id: 'kiln',
-    name: {
-      ja: '窯',
-      en: 'Kiln'
-    },
+    name: { ja: '土窯', en: 'Kiln' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    },
-    heatConsumptionPerSec: 15
+    buildCost: [
+      { itemId: 'stone', amount: 20 },
+      { itemId: 'brick', amount: 10 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
+    heatConsumptionPerSec: 15,
   },
   {
     id: 'nursery',
-    name: {
-      ja: '苗床',
-      en: 'Nursery'
-    },
+    name: { ja: '苗床', en: 'Nursery' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 2,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'iron_ingot', amount: 8 },
+      { itemId: 'brick', amount: 4 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 2, liquidOutputs: 0 },
   },
   {
     id: 'paradox_crucible',
-    name: {
-      ja: 'パラドックスるつぼ',
-      en: 'Paradox Crucible'
-    },
+    name: { ja: 'パラドックス坩堝', en: 'Paradox Crucible' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    },
-    heatConsumptionPerSec: 1200
+    buildCost: [
+      { itemId: 'steel_ingot', amount: 8 },
+      { itemId: 'copper_ingot', amount: 8 },
+      { itemId: 'iron_nails', amount: 16 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
+    heatConsumptionPerSec: 1200,
   },
   {
     id: 'processor',
-    name: {
-      ja: 'プロセッサー',
-      en: 'Processor'
-    },
+    name: { ja: '加工機', en: 'Processor' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'plank', amount: 12 },
+      { itemId: 'large_wooden_gear', amount: 3 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'refiner',
-    name: {
-      ja: '精製機',
-      en: 'Refiner'
-    },
+    name: { ja: '精錬機', en: 'Refiner' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'plank', amount: 8 },
+      { itemId: 'steel_gear', amount: 4 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'shaper',
-    name: {
-      ja: 'シェイパー',
-      en: 'Shaper'
-    },
+    name: { ja: '彫刻機', en: 'Shaper' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 4,
-      liquidInputs: 0,
-      solidOutputs: 1,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'iron_ingot', amount: 8 },
+      { itemId: 'iron_nails', amount: 16 },
+    ],
+    ports: { solidInputs: 4, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'stone_crusher',
-    name: {
-      ja: 'ストーンクラッシャー',
-      en: 'Stone Crusher'
-    },
+    name: { ja: '粉砕機', en: 'Stone Crusher' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 9,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'plank', amount: 6 },
+      { itemId: 'small_wooden_gear', amount: 6 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 9, liquidOutputs: 0 },
   },
   {
     id: 'table_saw',
-    name: {
-      ja: 'テーブルソー',
-      en: 'Table Saw'
-    },
+    name: { ja: '製材機', en: 'Table Saw' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 1,
-      liquidInputs: 0,
-      solidOutputs: 2,
-      liquidOutputs: 0
-    }
+    buildCost: [{ itemId: 'plank', amount: 5 }],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 2, liquidOutputs: 0 },
   },
   {
     id: 'world_tree_nursery',
-    name: {
-      ja: '世界樹の苗床',
-      en: 'World Tree Nursery'
-    },
+    name: { ja: '世界樹の苗床', en: 'World Tree Nursery' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 0,
-      liquidInputs: 0,
-      solidOutputs: 2,
-      liquidOutputs: 0
-    }
+    buildCost: [
+      { itemId: 'world_tree_seed', amount: 1 },
+      { itemId: 'brick', amount: 100 },
+      { itemId: 'iron_ingot', amount: 100 },
+    ],
+    ports: { solidInputs: 0, liquidInputs: 0, solidOutputs: 2, liquidOutputs: 0 },
   },
   {
     id: 'stackable_crucible',
-    name: {
-      ja: 'stackable_crucible',
-      en: 'stackable_crucible'
-    },
+    name: { ja: 'スタック式坩堝', en: 'Stackable Crucible' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 0,
-      liquidInputs: 0,
-      solidOutputs: 0,
-      liquidOutputs: 0
-    },
-    heatConsumptionPerSec: 6
+    buildCost: [
+      { itemId: 'stone', amount: 6 },
+      { itemId: 'steel_ingot', amount: 2 },
+      { itemId: 'iron_nails', amount: 2 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
+    heatConsumptionPerSec: 6,
   },
   {
     id: 'thermal_extractor',
-    name: {
-      ja: 'thermal_extractor',
-      en: 'thermal_extractor'
-    },
+    name: { ja: '熱エネルギー抽出機', en: 'Thermal Extractor' },
     category: 'production',
-    buildCost: [],
-    ports: {
-      solidInputs: 0,
-      liquidInputs: 0,
-      solidOutputs: 0,
-      liquidOutputs: 0
-    },
-    heatConsumptionPerSec: 80
+    buildCost: [
+      { itemId: 'steel_ingot', amount: 5 },
+      { itemId: 'glass', amount: 5 },
+    ],
+    ports: { solidInputs: 1, liquidInputs: 0, solidOutputs: 0, liquidOutputs: 1 },
+    heatConsumptionPerSec: 80,
   },
   {
     id: 'advanced_cauldron',
-    name: {
-      ja: '高性能錬金釜',
-      en: 'Advanced Cauldron'
-    },
+    name: { ja: '高性能錬金釜', en: 'Advanced Cauldron' },
     category: 'production',
-    buildCost: [
-      {
-        itemId: 'silver_ingot',
-        amount: 20
-      }
-    ],
-    ports: {
-      solidInputs: 0,
-      liquidInputs: 0,
-      solidOutputs: 0,
-      liquidOutputs: 0
-    }
+    buildCost: [{ itemId: 'silver_ingot', amount: 20 }],
+    ports: { solidInputs: 3, liquidInputs: 0, solidOutputs: 1, liquidOutputs: 0 },
   },
   {
     id: 'steam_heating_pad',
-    name: {
-      ja: '蒸気加熱パッド',
-      en: 'Steam Heating Pad'
-    },
+    name: { ja: '蒸気加熱パッド', en: 'Steam Heating Pad' },
     category: 'steam',
     buildCost: [
-      {
-        itemId: 'steel_ingot',
-        amount: 3
-      },
-      {
-        itemId: 'copper_ingot',
-        amount: 3
-      }
+      { itemId: 'steel_ingot', amount: 3 },
+      { itemId: 'copper_ingot', amount: 3 },
     ],
-    ports: {
-      solidInputs: 0,
-      liquidInputs: 0,
-      solidOutputs: 0,
-      liquidOutputs: 0
-    },
-    internal: true
+    ports: { solidInputs: 0, liquidInputs: 0, solidOutputs: 0, liquidOutputs: 0 },
+    internal: true,
   },
 ];
 

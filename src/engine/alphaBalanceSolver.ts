@@ -15,6 +15,7 @@ import {
 } from '../data/abilityTables';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
+import { getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/machinePreferences';
 import { safeCeil } from '../utils/format';
 import { chooseRecipeForItem, isBuyableItem } from './itemSourceResolver';
 import type {
@@ -36,8 +37,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.8.2' as const;
-const BALANCE_SOLVER_MODE = 'balance-iterative-v082';
+const BALANCE_SOLVER_VERSION = '0.8.3' as const;
+const BALANCE_SOLVER_MODE = 'balance-iterative-v083';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -67,7 +68,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-v082';
+  mode: 'balance-iterative-v083';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   cycleInputItemIds?: string[];
@@ -134,7 +135,7 @@ function createRecipeStat(recipe: Recipe, runsPerMinute: number, input: Calculat
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
   return {
     recipeId: recipe.id,
-    machineId: recipe.machineId,
+    machineId: getEffectiveRecipeMachineId(recipe, input.settings),
     theoreticalMachines,
     actualMachines: theoreticalMachines,
     runsPerMinute,
@@ -151,7 +152,7 @@ function recipeTotalOutputAmount(recipe: Recipe): number {
 }
 
 function runRateForRecipe(recipe: Recipe, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): number {
-  const baseRunRate = 60 / recipe.timeSec;
+  const baseRunRate = 60 / getEffectiveRecipeTimeSec(recipe, input.settings);
   const nutrientInputPerRun = Math.max(0, recipe.nutrientInputPerRun ?? 0);
   if (!input.settings.fertilizer?.enabled || nutrientInputPerRun <= EPS) return baseRunRate * productionSpeedMultiplier;
 
@@ -237,7 +238,7 @@ function cycleInputItemIds(diagnostics: LinearModelDiagnostics): Set<string> {
 
 function fuelHeatPerRun(recipe: Recipe, input: CalculateInput, productionSpeedMultiplier: number): number {
   if (!input.settings.fuel?.enabled) return 0;
-  const heatPerSec = HEAT_CONSUMER_BY_MACHINE_ID[recipe.machineId]?.heatPerSec ?? 0;
+  const heatPerSec = HEAT_CONSUMER_BY_MACHINE_ID[getEffectiveRecipeMachineId(recipe, input.settings)]?.heatPerSec ?? 0;
   if (heatPerSec <= EPS) return 0;
   const runsPerMachine = runRateForRecipe(recipe, input, productionSpeedMultiplier, getConveyorItemsPerMinute(input.abilities));
   if (runsPerMachine <= EPS) return 0;
@@ -1170,8 +1171,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         enabled: input.settings.useByproductFuel,
         uses: byproductFuelUses,
       },
-      notesJa: ['v0.8.2 の収支ベース反復solver結果です。肥料レシピは栄養値モデルで計算します。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
-      notesEn: ['Balance-based iterative solver result for v0.8.2 with nutrient-based fertilizer recipes. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
+      notesJa: ['v0.8.3 の収支ベース反復solver結果です。肥料レシピは栄養値モデルで計算し、設備グレード設定を反映します。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
+      notesEn: ['Balance-based iterative solver result for v0.8.3 with nutrient-based fertilizer recipes and machine preference settings. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
     },
   };
 }
