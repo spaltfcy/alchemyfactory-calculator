@@ -5,7 +5,6 @@ import { buildNegativeTargetWarningInput, filterPositiveTargets, sanitizeNegativ
 import { calculationInvalidPersistentError, createUserMessage, verificationErrorMessage, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { buildFlowGraphSvg } from '../engine/graph';
-import { DEBUG_SCHEMA_VERSION, isUnsupportedStateSchema, unsupportedStateMessage } from '../appMetadata';
 
 type DebugTabProps = {
   lang: Lang;
@@ -304,19 +303,37 @@ function normalizeDebugIssues(issues: unknown): unknown[] {
 }
 
 function isUnsupportedImportedState(value: unknown): boolean {
-  return isUnsupportedStateSchema(value, { requireObject: true });
+  if (!value || typeof value !== 'object') return true;
+  const candidate = value as {
+    itemSourceModes?: unknown;
+    stockOverrides?: unknown;
+    settings?: {
+      fuel?: { fuelSourceMode?: unknown };
+      fertilizer?: { fertilizerSourceMode?: unknown };
+    };
+    version?: unknown;
+  };
+  return (
+    candidate.itemSourceModes !== undefined ||
+    candidate.stockOverrides !== undefined ||
+    candidate.settings?.fuel?.fuelSourceMode !== undefined ||
+    candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
+    (typeof candidate.version !== 'number' || candidate.version < 22)
+  );
 }
 
 function unsupportedImportMessage(lang: Lang): string {
-  return unsupportedStateMessage(lang);
+  return lang === 'ja'
+    ? 'このJSONは旧形式のため読み込めません。v0.6.1以降の形式で保存し直してください。'
+    : 'This JSON uses an old format and cannot be imported. Please re-save it with v0.6.1 or later.';
 }
 
 function mergeImportedState(current: AppState, imported: Partial<AppState>): AppState {
   return {
-    version: current.version,
-    language: imported.language ?? current.language,
+    ...current,
+    ...imported,
+    // Verification/log import must never move the visible tab.
     activeTab: current.activeTab,
-    targets: imported.targets ?? current.targets,
     settings: {
       ...current.settings,
       ...(imported.settings ?? {}),
@@ -333,10 +350,10 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
       ...current.abilities,
       ...(imported.abilities ?? {}),
     },
-    recipePreferences: imported.recipePreferences ?? current.recipePreferences,
-    surplusPolicies: imported.surplusPolicies ?? current.surplusPolicies,
-    completedGraphNodeIds: imported.completedGraphNodeIds ?? current.completedGraphNodeIds,
-    nodeNotes: imported.nodeNotes ?? current.nodeNotes,
+    recipePreferences: imported.recipePreferences ?? {},
+    surplusPolicies: imported.surplusPolicies ?? {},
+    completedGraphNodeIds: imported.completedGraphNodeIds ?? {},
+    nodeNotes: imported.nodeNotes ?? {},
   };
 }
 
@@ -503,7 +520,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: DEBUG_SCHEMA_VERSION,
+      debugSchemaVersion: 16,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -637,7 +654,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: DEBUG_SCHEMA_VERSION,
+      debugSchemaVersion: 16,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1126,7 +1143,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: DEBUG_SCHEMA_VERSION,
+      debugSchemaVersion: 16,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

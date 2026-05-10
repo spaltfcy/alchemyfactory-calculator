@@ -1,9 +1,8 @@
 import type { AppState } from './types';
-import { STATE_SCHEMA_VERSION } from './appMetadata';
 import { DEFAULT_ABILITIES } from './data/abilityTables';
 
 export const DEFAULT_STATE: AppState = {
-  version: STATE_SCHEMA_VERSION,
+  version: 23,
   language: 'ja',
   activeTab: 'graph',
   targets: [

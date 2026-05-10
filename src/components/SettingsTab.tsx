@@ -9,7 +9,6 @@ import { sanitizeNegativeTargets, buildNegativeTargetWarningInput, filterPositiv
 import { createMessageRunId, verificationErrorMessage, withMessageRun, type UserMessageInput } from '../utils/userMessages';
 import { clearState, downloadJson } from '../utils/storage';
 import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
-import { DEBUG_SCHEMA_VERSION, isUnsupportedStateSchema, unsupportedStateMessage } from '../appMetadata';
 
 export type SettingsTabProps = {
   state: AppState;
@@ -115,24 +114,24 @@ function recipeOptionLabel(itemId: string, recipe: Recipe, lang: Lang): string {
 
 function mergeState(current: AppState, imported: Partial<AppState>): AppState {
   return {
-    version: DEFAULT_STATE.version,
-    language: imported.language ?? current.language,
+    ...current,
+    ...imported,
+    // Imported settings may contain an activeTab, but importing must not navigate.
     activeTab: current.activeTab,
-    targets: imported.targets ?? current.targets,
     settings: {
       ...current.settings,
-      ...(imported.settings ?? {}),
+      ...imported.settings,
       fuel: {
         ...getFuelSettings(current),
         ...(imported.settings?.fuel ?? {}),
       },
       fertilizer: { ...getFertilizerSettings(current), ...(imported.settings?.fertilizer ?? {}) },
     },
-    abilities: { ...current.abilities, ...(imported.abilities ?? {}) },
-    recipePreferences: { ...current.recipePreferences, ...(imported.recipePreferences ?? {}) },
-    surplusPolicies: { ...current.surplusPolicies, ...(imported.surplusPolicies ?? {}) },
-    completedGraphNodeIds: { ...current.completedGraphNodeIds, ...(imported.completedGraphNodeIds ?? {}) },
-    nodeNotes: { ...current.nodeNotes, ...(imported.nodeNotes ?? {}) },
+    abilities: { ...current.abilities, ...imported.abilities },
+    recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
+    surplusPolicies: { ...current.surplusPolicies, ...imported.surplusPolicies },
+    completedGraphNodeIds: { ...current.completedGraphNodeIds, ...imported.completedGraphNodeIds },
+    nodeNotes: { ...current.nodeNotes, ...imported.nodeNotes },
   };
 }
 
@@ -152,11 +151,29 @@ function buildInputFromState(sourceState: AppState): CalculateInput {
 }
 
 function isUnsupportedImportedState(value: unknown): boolean {
-  return isUnsupportedStateSchema(value, { requireObject: true });
+  if (!value || typeof value !== 'object') return true;
+  const candidate = value as {
+    itemSourceModes?: unknown;
+    stockOverrides?: unknown;
+    settings?: {
+      fuel?: { fuelSourceMode?: unknown };
+      fertilizer?: { fertilizerSourceMode?: unknown };
+    };
+    version?: unknown;
+  };
+  return (
+    candidate.itemSourceModes !== undefined ||
+    candidate.stockOverrides !== undefined ||
+    candidate.settings?.fuel?.fuelSourceMode !== undefined ||
+    candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
+    (typeof candidate.version !== 'number' || candidate.version < 22)
+  );
 }
 
 function unsupportedImportMessage(lang: Lang): string {
-  return unsupportedStateMessage(lang);
+  return lang === 'ja'
+    ? 'このJSONは旧形式のため読み込めません。v0.6.1以降の形式で保存し直してください。'
+    : 'This JSON uses an old format and cannot be imported. Please re-save it with v0.6.1 or later.';
 }
 
 function withImportRun(input: UserMessageInput, runId: string, sourceFileName: string): UserMessageInput {
@@ -205,7 +222,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: DEBUG_SCHEMA_VERSION,
+      debugSchemaVersion: 16,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,
