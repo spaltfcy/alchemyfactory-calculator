@@ -1,7 +1,6 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
 import type { AppSettings, Lang } from '../types';
-import type { CalculatedEndpoint, CalculatedFlow, CalculationResult, CalculatedFlowRole } from './calculate';
-import type { InitialInvestmentEndpoint, InitialInvestmentFlow } from './initialInvestment';
+import type { CalculatedEndpoint, CalculatedFlow, CalculationResult, CalculatedFlowRole, InitialInvestmentEndpoint, InitialInvestmentFlow } from './calculate';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';

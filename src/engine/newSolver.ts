@@ -11,77 +11,13 @@ import {
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
 import { calculateAlphaBalance, type AlphaBalanceSolveResult } from './alphaBalanceSolver';
-import {
-  calculate as calculateLegacy,
-  type CalculateInput,
-  type CalculationDebugResult,
-  type CalculationResult,
-  type CalculatedFlow,
-} from './legacyCalculate';
+import type {
+  CalculateInput,
+  CalculationDebugResult,
+  CalculationResult,
+} from './calculationTypes';
 
-export type SolverEngineId = 'legacy-v0610' | 'balance-v070-alpha9';
-
-export type SolverRunSummary = {
-  engineId: SolverEngineId;
-  calculationStatus: CalculationResult['calculationStatus'];
-  errorCodes: string[];
-  flowCount: number;
-  itemStatCount: number;
-  recipeStatCount: number;
-  residualUnresolvedFlowCount: number;
-  totals: Pick<
-    CalculationResult['totals'],
-    | 'initialCostCopper'
-    | 'runningCostCopperPerMin'
-    | 'purchaseCostCopperPerMin'
-    | 'revenueCopperPerMin'
-    | 'profitCopperPerMin'
-    | 'heatRequiredPerMin'
-    | 'fuelRequiredPerMin'
-    | 'fertilizerNutrientsRequiredPerMin'
-    | 'fertilizerRequiredPerMin'
-  >;
-};
-
-export type NumericDebugValue = number | 'NaN' | 'Infinity' | '-Infinity';
-
-export type NonFiniteNumericEntry = {
-  path: string;
-  legacyValue: NumericDebugValue;
-  newValue: NumericDebugValue;
-  sameNonFinite: boolean;
-};
-
-export type SolverComparisonDiff = {
-  calculationStatusChanged: boolean;
-  errorCodesChanged: boolean;
-  flowCountDelta: number;
-  itemStatCountDelta: number;
-  recipeStatCountDelta: number;
-  residualUnresolvedFlowCountDelta: number;
-  totalDeltas: Record<string, NumericDebugValue>;
-  nonFiniteNumericSummary: {
-    count: number;
-    entries: NonFiniteNumericEntry[];
-  };
-  changedRecipeRuns: Array<{
-    recipeId: string;
-    legacyRunsPerMinute: NumericDebugValue;
-    newRunsPerMinute: NumericDebugValue;
-    delta: NumericDebugValue;
-  }>;
-  changedItemRates: Array<{
-    itemId: string;
-    field: 'requested' | 'produced' | 'consumed' | 'purchased' | 'surplus' | 'discarded';
-    legacyRate: NumericDebugValue;
-    newRate: NumericDebugValue;
-    delta: NumericDebugValue;
-  }>;
-  flowKeyDelta: {
-    onlyInLegacy: string[];
-    onlyInNew: string[];
-  };
-};
+export type SolverEngineId = 'balance-v080-pre';
 
 export type SelectedRecipeCycleDiagnostic = {
   id: string;
@@ -211,14 +147,6 @@ export type LinearModelDiagnostics = {
   linearBalanceModel: LinearBalanceModelDiagnostics;
 };
 
-export type SolverComparison = {
-  generatedAt: string;
-  activeEngine: SolverEngineId;
-  legacy: SolverRunSummary;
-  next: SolverRunSummary;
-  diff: SolverComparisonDiff;
-  linearModelDiagnostics: LinearModelDiagnostics;
-};
 
 export type NewSolverResult = {
   result: CalculationResult;
@@ -227,9 +155,8 @@ export type NewSolverResult = {
   alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
 };
 
-const ACTIVE_ENGINE: SolverEngineId = 'balance-v070-alpha9';
+const ACTIVE_ENGINE: SolverEngineId = 'balance-v080-pre';
 const EPS = 1e-9;
-const MAX_CHANGED_ROWS = 60;
 
 function uniqueSorted(values: Iterable<string>): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
@@ -243,147 +170,6 @@ function itemNameJa(itemId: string): string {
   return itemById[itemId]?.name.ja ?? itemId;
 }
 
-function collectErrorCodes(result: CalculationResult): string[] {
-  return uniqueSorted((result.errorSummaries ?? []).map((summary) => summary.code));
-}
-
-function summarizeResult(engineId: SolverEngineId, result: CalculationResult): SolverRunSummary {
-  return {
-    engineId,
-    calculationStatus: result.calculationStatus ?? 'ok',
-    errorCodes: collectErrorCodes(result),
-    flowCount: result.flows.length,
-    itemStatCount: Object.keys(result.itemStats).length,
-    recipeStatCount: Object.keys(result.recipeStats).length,
-    residualUnresolvedFlowCount: result.residualUnresolvedFlows?.length ?? 0,
-    totals: {
-      initialCostCopper: result.totals.initialCostCopper,
-      runningCostCopperPerMin: result.totals.runningCostCopperPerMin,
-      purchaseCostCopperPerMin: result.totals.purchaseCostCopperPerMin,
-      revenueCopperPerMin: result.totals.revenueCopperPerMin,
-      profitCopperPerMin: result.totals.profitCopperPerMin,
-      heatRequiredPerMin: result.totals.heatRequiredPerMin,
-      fuelRequiredPerMin: result.totals.fuelRequiredPerMin,
-      fertilizerNutrientsRequiredPerMin: result.totals.fertilizerNutrientsRequiredPerMin,
-      fertilizerRequiredPerMin: result.totals.fertilizerRequiredPerMin,
-    },
-  };
-}
-
-function encodeNumber(value: number): NumericDebugValue {
-  if (Number.isNaN(value)) return 'NaN';
-  if (value === Infinity) return 'Infinity';
-  if (value === -Infinity) return '-Infinity';
-  return value;
-}
-
-function sameNumericKind(a: NumericDebugValue, b: NumericDebugValue): boolean {
-  return a === b;
-}
-
-function compareNumeric(a: number, b: number): { changed: boolean; delta: NumericDebugValue; legacyValue: NumericDebugValue; newValue: NumericDebugValue; nonFinite?: NonFiniteNumericEntry } {
-  const legacyValue = encodeNumber(a);
-  const newValue = encodeNumber(b);
-  const legacyFinite = typeof legacyValue === 'number' && Number.isFinite(legacyValue);
-  const newFinite = typeof newValue === 'number' && Number.isFinite(newValue);
-
-  if (!legacyFinite || !newFinite) {
-    const sameNonFinite = sameNumericKind(legacyValue, newValue);
-    return {
-      changed: !sameNonFinite,
-      delta: sameNonFinite ? 0 : 'NaN',
-      legacyValue,
-      newValue,
-      nonFinite: { path: '', legacyValue, newValue, sameNonFinite },
-    };
-  }
-
-  const value = newValue - legacyValue;
-  const normalizedDelta = Math.abs(value) <= EPS ? 0 : value;
-  return { changed: normalizedDelta !== 0, delta: normalizedDelta, legacyValue, newValue };
-}
-
-function compareNumericAt(path: string, a: number, b: number, entries: NonFiniteNumericEntry[]): ReturnType<typeof compareNumeric> {
-  const compared = compareNumeric(a, b);
-  if (compared.nonFinite) entries.push({ ...compared.nonFinite, path });
-  return compared;
-}
-
-function makeFlowKey(flow: CalculatedFlow): string {
-  const from = flow.from.type === 'recipe'
-    ? 'recipe:' + flow.from.recipeId
-    : flow.from.type === 'itemSource'
-      ? 'source:' + flow.from.sourceMode + ':' + flow.from.itemId
-      : 'sink:' + flow.from.sinkMode + ':' + flow.from.itemId;
-  const to = flow.to.type === 'recipe'
-    ? 'recipe:' + flow.to.recipeId
-    : flow.to.type === 'itemSource'
-      ? 'source:' + flow.to.sourceMode + ':' + flow.to.itemId
-      : 'sink:' + flow.to.sinkMode + ':' + flow.to.itemId;
-  return from + '->' + to + ':' + flow.itemId + ':' + flow.role;
-}
-
-function compareResults(legacy: CalculationResult, next: CalculationResult): SolverComparisonDiff {
-  const legacySummary = summarizeResult('legacy-v0610', legacy);
-  const nextSummary = summarizeResult('balance-v070-alpha9', next);
-  const nonFiniteEntries: NonFiniteNumericEntry[] = [];
-  const totalDeltas: Record<string, NumericDebugValue> = {};
-  for (const key of Object.keys(legacySummary.totals) as Array<keyof SolverRunSummary['totals']>) {
-    totalDeltas[key] = compareNumericAt('totals.' + key, legacySummary.totals[key], nextSummary.totals[key], nonFiniteEntries).delta;
-  }
-
-  const recipeIds = uniqueSorted([...Object.keys(legacy.recipeStats), ...Object.keys(next.recipeStats)]);
-  const changedRecipeRuns = recipeIds.flatMap((recipeId) => {
-    const legacyRunsPerMinute = legacy.recipeStats[recipeId]?.runsPerMinute ?? 0;
-    const newRunsPerMinute = next.recipeStats[recipeId]?.runsPerMinute ?? 0;
-    const compared = compareNumericAt('recipeStats.' + recipeId + '.runsPerMinute', legacyRunsPerMinute, newRunsPerMinute, nonFiniteEntries);
-    return compared.changed ? [{ recipeId, legacyRunsPerMinute: compared.legacyValue, newRunsPerMinute: compared.newValue, delta: compared.delta }] : [];
-  }).slice(0, MAX_CHANGED_ROWS);
-
-  const fields: Array<'requested' | 'produced' | 'consumed' | 'purchased' | 'surplus' | 'discarded'> = [
-    'requested',
-    'produced',
-    'consumed',
-    'purchased',
-    'surplus',
-    'discarded',
-  ];
-  const itemIds = uniqueSorted([...Object.keys(legacy.itemStats), ...Object.keys(next.itemStats)]);
-  const changedItemRates = itemIds.flatMap((itemId) => {
-    return fields.flatMap((field) => {
-      const legacyRate = legacy.itemStats[itemId]?.[field] ?? 0;
-      const newRate = next.itemStats[itemId]?.[field] ?? 0;
-      const compared = compareNumericAt('itemStats.' + itemId + '.' + field, legacyRate, newRate, nonFiniteEntries);
-      return compared.changed ? [{ itemId, field, legacyRate: compared.legacyValue, newRate: compared.newValue, delta: compared.delta }] : [];
-    });
-  }).slice(0, MAX_CHANGED_ROWS);
-
-  const legacyFlowKeys = new Set(legacy.flows.map(makeFlowKey));
-  const newFlowKeys = new Set(next.flows.map(makeFlowKey));
-  const onlyInLegacy = [...legacyFlowKeys].filter((key) => !newFlowKeys.has(key)).slice(0, MAX_CHANGED_ROWS);
-  const onlyInNew = [...newFlowKeys].filter((key) => !legacyFlowKeys.has(key)).slice(0, MAX_CHANGED_ROWS);
-
-  return {
-    calculationStatusChanged: legacySummary.calculationStatus !== nextSummary.calculationStatus,
-    errorCodesChanged: legacySummary.errorCodes.join('\n') !== nextSummary.errorCodes.join('\n'),
-    flowCountDelta: nextSummary.flowCount - legacySummary.flowCount,
-    itemStatCountDelta: nextSummary.itemStatCount - legacySummary.itemStatCount,
-    recipeStatCountDelta: nextSummary.recipeStatCount - legacySummary.recipeStatCount,
-    residualUnresolvedFlowCountDelta:
-      nextSummary.residualUnresolvedFlowCount - legacySummary.residualUnresolvedFlowCount,
-    totalDeltas,
-    nonFiniteNumericSummary: {
-      count: nonFiniteEntries.length,
-      entries: nonFiniteEntries.slice(0, MAX_CHANGED_ROWS),
-    },
-    changedRecipeRuns,
-    changedItemRates,
-    flowKeyDelta: {
-      onlyInLegacy,
-      onlyInNew,
-    },
-  };
-}
 
 type DependencyEdge = { fromRecipeId: string; toRecipeId: string; itemId: string; selected: boolean };
 
@@ -1011,9 +797,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.7.0-alpha.9 では、収支ベースsolver結果経路を通常計算に使い、ログ出力時は旧solver比較も併記します。',
+      'v0.8.0-pre では、収支ベースsolver結果経路を通常計算に使い、ログ出力時はbalance solver単独の診断ログを出力します。',
     noteEn:
-      'v0.7.0-alpha.9 uses the balance-based solver result path at runtime and keeps the legacy comparison in debug/log output.',
+      'v0.8.0-pre uses the balance-based solver result path at runtime and emits balance-solver-only debug/log output.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',
@@ -1032,17 +818,6 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
     allRecipeCyclicComponents: allDiagnostics.cycles,
     liquidOutputRecipeIds: uniqueSorted(liquidOutputRecipeIds),
     linearBalanceModel,
-  };
-}
-
-export function buildNewSolverResultFromLegacy(
-  legacyResult: CalculationResult,
-  diagnostics?: LinearModelDiagnostics,
-): NewSolverResult {
-  return {
-    result: legacyResult,
-    engineId: ACTIVE_ENGINE,
-    linearModelDiagnostics: diagnostics,
   };
 }
 
@@ -1093,24 +868,3 @@ export function calculateWithNewSolverDebug(input: CalculateInput): CalculationD
   };
 }
 
-export function buildSolverComparisonFromResults(
-  legacyResult: CalculationResult,
-  newResult: CalculationResult,
-  linearModelDiagnostics: LinearModelDiagnostics,
-): SolverComparison {
-  return {
-    generatedAt: new Date().toISOString(),
-    activeEngine: ACTIVE_ENGINE,
-    legacy: summarizeResult('legacy-v0610', legacyResult),
-    next: summarizeResult('balance-v070-alpha9', newResult),
-    diff: compareResults(legacyResult, newResult),
-    linearModelDiagnostics,
-  };
-}
-
-export function buildSolverComparison(input: CalculateInput): SolverComparison {
-  const legacy = calculateLegacy(input);
-  const diagnostics = buildLinearModelDiagnostics(input);
-  const next = calculateAlphaBalance(input, diagnostics).result;
-  return buildSolverComparisonFromResults(legacy, next, diagnostics);
-}

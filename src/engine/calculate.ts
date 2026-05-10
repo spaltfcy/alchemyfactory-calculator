@@ -1,12 +1,10 @@
-export * from './legacyCalculate';
+export * from './calculationTypes';
 
 import {
   buildLinearModelDiagnostics,
-  buildSolverComparisonFromResults,
   calculateWithNewSolver,
 } from './newSolver';
 import {
-  calculateWithDebug as calculateLegacyWithDebug,
   type CalculateInput,
   type CalculationDebugIssue,
   type CalculationDebugLog,
@@ -15,7 +13,7 @@ import {
   type CalculatedFlow,
   type ItemStat,
   type RecipeStat,
-} from './legacyCalculate';
+} from './calculationTypes';
 import { itemById } from '../data/items';
 import { recipeById } from '../data/recipes';
 import { chooseRecipeForItem } from './itemSourceResolver';
@@ -275,16 +273,9 @@ function buildDebugLogFromResult(input: CalculateInput, result: CalculationResul
 }
 
 export function calculateWithDebug(input: CalculateInput): CalculationDebugResult {
-  const legacyDebug = calculateLegacyWithDebug(input);
   const linearModelDiagnostics = buildLinearModelDiagnostics(input);
   const newSolverResult = calculateWithNewSolver(input, linearModelDiagnostics);
   const newDebugLog = buildDebugLogFromResult(input, newSolverResult.result);
-  const solverComparison = buildSolverComparisonFromResults(
-    legacyDebug.result,
-    newSolverResult.result,
-    linearModelDiagnostics,
-  );
-
   return {
     result: newSolverResult.result,
     debugLog: {
@@ -292,26 +283,12 @@ export function calculateWithDebug(input: CalculateInput): CalculationDebugResul
       resultEngine: newSolverResult.engineId,
       solverEngine: newSolverResult.engineId,
       linearModelDiagnostics,
-      solverComparison,
       alphaBalanceTrace: newSolverResult.alphaBalanceTrace,
-      legacyDebugLog: {
-        summary: legacyDebug.debugLog.summary,
-        issues: legacyDebug.debugLog.issues,
-        totals: legacyDebug.debugLog.totals,
-        residualUnresolvedFlows: legacyDebug.debugLog.residualUnresolvedFlows,
-      },
     } as CalculationDebugResult['debugLog'] & {
       resultEngine: typeof newSolverResult.engineId;
       solverEngine: typeof newSolverResult.engineId;
       linearModelDiagnostics: typeof linearModelDiagnostics;
-      solverComparison: typeof solverComparison;
       alphaBalanceTrace: typeof newSolverResult.alphaBalanceTrace;
-      legacyDebugLog: {
-        summary: typeof legacyDebug.debugLog.summary;
-        issues: typeof legacyDebug.debugLog.issues;
-        totals: typeof legacyDebug.debugLog.totals;
-        residualUnresolvedFlows: typeof legacyDebug.debugLog.residualUnresolvedFlows;
-      };
     },
   };
 }

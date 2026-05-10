@@ -3,43 +3,16 @@ import { recipeById } from '../data/recipes';
 import { itemById } from '../data/items';
 import { resolveItemSource } from './itemSourceResolver';
 import { safeCeil } from '../utils/format';
-import type { CalculateInput, CalculationResult, RecipeStat } from './calculate';
-
-export type InitialInvestmentEndpoint =
-  | { type: 'recipe'; recipeId: string }
-  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'unresolved' }
-  | { type: 'itemSink'; itemId: string; sinkMode: 'initial' };
-
-export type InitialInvestmentTransportKind = 'belt' | 'pipeline';
-
-export type InitialInvestmentFlow = {
-  id: string;
-  from: InitialInvestmentEndpoint;
-  to: InitialInvestmentEndpoint;
-  itemId: string;
-  rate: number;
-  belts: number;
-  transportKind: InitialInvestmentTransportKind;
-  transportUnits: number;
-  role: 'material';
-};
-
-export type InitialInvestmentGroup = {
-  id: string;
-  targetRecipeId: string;
-  requiredItemIds: string[];
-  flows: InitialInvestmentFlow[];
-  recipeStats: Record<string, RecipeStat>;
-  purchasedItemIds: string[];
-  unresolvedItemIds: string[];
-};
-
-export type InitialInvestmentData = {
-  groups: InitialInvestmentGroup[];
-  requiredByRecipe: Record<string, string[]>;
-  purchasedItemIds: string[];
-  unresolvedItemIds: string[];
-};
+import type {
+  CalculateInput,
+  CalculationResult,
+  RecipeStat,
+  InitialInvestmentEndpoint,
+  InitialInvestmentFlow,
+  InitialInvestmentTransportKind,
+  InitialInvestmentGroup,
+  InitialInvestmentData,
+} from './calculationTypes';
 
 const EPS = 1e-9;
 const MAX_DEPTH = 24;

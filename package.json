@@ -1,6 +1,6 @@
 {
   "name": "alchemyfactory-calculator",
-  "version": "0.7.0-alpha.9",
+  "version": "0.8.0-pre",
   "private": true,
   "type": "module",
   "scripts": {

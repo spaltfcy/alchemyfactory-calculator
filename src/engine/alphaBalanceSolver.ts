@@ -17,7 +17,6 @@ import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID } from '../data/fertilizer';
 import { safeCeil } from '../utils/format';
 import { chooseRecipeForItem, isBuyableItem } from './itemSourceResolver';
-import { calculate as calculateLegacy } from './legacyCalculate';
 import type {
   CalculatedEndpoint,
   CalculatedFlow,
@@ -31,14 +30,14 @@ import type {
   OutputEdgeStat,
   PlanWarning,
   RecipeStat,
-} from './legacyCalculate';
+} from './calculationTypes';
 import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './newSolver';
 
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.7.0-alpha.9' as const;
-const BALANCE_SOLVER_MODE = 'balance-iterative-alpha9';
+const BALANCE_SOLVER_VERSION = '0.8.0-pre' as const;
+const BALANCE_SOLVER_MODE = 'balance-iterative-v080-pre';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -68,9 +67,8 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-alpha9' | 'legacy-fallback';
+  mode: 'balance-iterative-v080-pre';
   version: typeof BALANCE_SOLVER_VERSION;
-  fallbackReason?: string;
   iterations?: number;
   cycleInputItemIds?: string[];
   cycleInputRates?: Record<string, number>;
@@ -789,39 +787,6 @@ function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: 
 }
 
 export function calculateAlphaBalance(input: CalculateInput, diagnostics: LinearModelDiagnostics): AlphaBalanceSolveResult {
-  // The alpha.9 balance solver handles ordinary material/source/cycle-input balances.
-  // Internal fuel/fertilizer self-dependency still falls back to the legacy-compatible engine until the full v0.8 replacement.
-  const fallbackTraceBase = {
-    version: BALANCE_SOLVER_VERSION,
-    alternateRecipeCompletion: { enabled: input.settings.allowAlternateRecipeCompletion, uses: [] as AlternateRecipeUse[], blockedCycles: [] as SelectedRecipeCycleBlock[] },
-    byproductFuel: { enabled: input.settings.useByproductFuel, uses: [] as ByproductFuelUse[] },
-  };
-
-  if (input.settings.fuel?.enabled && input.settings.fuel.sourceMode === 'internal') {
-    return {
-      result: calculateLegacy(input),
-      trace: {
-        ...fallbackTraceBase,
-        mode: 'legacy-fallback',
-        fallbackReason: 'internal_fuel_not_yet_active_in_alpha9',
-        notesJa: ['v0.7.0-alpha.9 では内部燃料の完全な収支solver化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.9 still uses the legacy-compatible fallback for internal fuel.'],
-      },
-    };
-  }
-  if (input.settings.fertilizer?.enabled && input.settings.fertilizer.sourceMode === 'internal') {
-    return {
-      result: calculateLegacy(input),
-      trace: {
-        ...fallbackTraceBase,
-        mode: 'legacy-fallback',
-        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha9',
-        notesJa: ['v0.7.0-alpha.9 では内部肥料の完全な収支solver化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.9 still uses the legacy-compatible fallback for internal fertilizer.'],
-      },
-    };
-  }
-
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
   const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
@@ -1127,8 +1092,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         enabled: input.settings.useByproductFuel,
         uses: byproductFuelUses,
       },
-      notesJa: ['v0.7.0-alpha.9 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
-      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.9. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
+      notesJa: ['v0.8.0-pre の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
+      notesEn: ['Balance-based iterative solver result for v0.8.0-pre. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
     },
   };
 }
