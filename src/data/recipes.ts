@@ -3586,8 +3586,15 @@ for (const group of Object.values(recipesProducingByItemId)) {
   group.sort((a, b) => (RECIPE_ORDER[a.id] ?? 999999) - (RECIPE_ORDER[b.id] ?? 999999) || a.id.localeCompare(b.id));
 }
 
+const DEFAULT_RECIPE_OVERRIDES_BY_ITEM_ID: Record<string, string> = {
+  steam: 'steam_boiler_high',
+};
+
 export const DEFAULT_RECIPE_BY_ITEM_ID: Record<string, string> = Object.fromEntries(
-  Object.entries(recipesProducingByItemId).map(([itemId, recipes]) => [itemId, recipes[0]?.id ?? '']),
+  Object.entries(recipesProducingByItemId).map(([itemId, recipes]) => [
+    itemId,
+    DEFAULT_RECIPE_OVERRIDES_BY_ITEM_ID[itemId] ?? recipes[0]?.id ?? '',
+  ]),
 );
 
 export function getRecipesProducing(itemId: string): Recipe[] {

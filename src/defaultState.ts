@@ -56,7 +56,7 @@ export const DEFAULT_STATE: AppState = {
     copper_powder: 'copper_powder_and_impure_copper_powder',
     gold_dust: 'gold_dust',
     impure_gold_dust: 'impure_gold_dust',
-    steam: 'steam_boiler_low',
+    steam: 'steam_boiler_high',
   },
   surplusPolicies: {},
   completedGraphNodeIds: {},

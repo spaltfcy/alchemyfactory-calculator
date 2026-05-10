@@ -124,14 +124,34 @@ function recipeOutputNames(recipe: Recipe, lang: Lang): string {
   return recipe.outputs.length ? joinRecipeItemNames(recipe.outputs, lang) : text(recipe.name, lang);
 }
 
+function formatCompactRecipeNumber(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  if (Math.abs(value) >= 1000) return value.toFixed(0);
+  if (Math.abs(value) >= 100) return value.toFixed(1).replace(/\.0$/, '');
+  if (Math.abs(value) >= 10) return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function recipeOptionDetail(recipe: Recipe, lang: Lang): string {
+  if (recipe.machineId !== 'steam_boiler') return '';
+  const steamOutput = recipe.outputs.find((output) => output.itemId === 'steam');
+  const steamPerMinute = steamOutput && recipe.timeSec > 0 ? (steamOutput.amount * 60) / recipe.timeSec : 0;
+  const heatPerSec = recipe.heatInputPerSec ?? 0;
+  if (steamPerMinute <= 0 && heatPerSec <= 0) return '';
+  return lang === 'ja'
+    ? `（蒸気 ${formatCompactRecipeNumber(steamPerMinute)}/min・熱 ${formatCompactRecipeNumber(heatPerSec)}P/s）`
+    : ` (steam ${formatCompactRecipeNumber(steamPerMinute)}/min, heat ${formatCompactRecipeNumber(heatPerSec)}P/s)`;
+}
+
 function recipeOptionLabel(itemId: string, recipe: Recipe, lang: Lang, state: AppState): string {
   const effectiveRecipe = getEffectiveRecipeForCalculation(recipe, state.settings);
   const machine = machineById[effectiveRecipe.machineId] ?? machineById[recipe.machineId];
-  const inputNames = recipe.inputs.length ? joinRecipeInputNames(recipe.inputs, lang, state) : recipeItemName(itemId, lang);
+  const inputNames = recipe.inputs.length ? joinRecipeInputNames(recipe.inputs, lang, state) : text(recipe.name, lang);
   const machineName = machine ? text(machine.name, lang) : effectiveRecipe.machineId;
   const outputNames = recipeOutputNames(recipe, lang);
+  const detail = recipeOptionDetail(recipe, lang);
 
-  return `${inputNames} → ${machineName} → ${outputNames}`;
+  return `${inputNames} → ${machineName} → ${outputNames}${detail}`;
 }
 
 
