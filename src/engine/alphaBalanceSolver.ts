@@ -37,8 +37,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.7.0-alpha.8' as const;
-const BALANCE_SOLVER_MODE = 'balance-iterative-alpha8';
+const BALANCE_SOLVER_VERSION = '0.7.0-alpha.9' as const;
+const BALANCE_SOLVER_MODE = 'balance-iterative-alpha9';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -68,7 +68,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-alpha8' | 'legacy-fallback';
+  mode: 'balance-iterative-alpha9' | 'legacy-fallback';
   version: typeof BALANCE_SOLVER_VERSION;
   fallbackReason?: string;
   iterations?: number;
@@ -425,6 +425,23 @@ function cloneCycleInputBucket(cycleInputs: CycleInputBucket): CycleInputBucket 
   return new Map([...cycleInputs.entries()].map(([key, lot]) => [key, { ...lot }]));
 }
 
+function sourceUseCostCopper(use: SourceUse): number {
+  if (use.sourceKind === 'fuelExternal' || use.sourceKind === 'fertilizerExternal') return 0;
+  return use.rate * (itemById[use.itemId]?.buyPriceCopper ?? 0);
+}
+
+function sourceUseRatesByKind(sourceUses: SourceUse[], kind: SourceKind | 'cycleInput'): Record<string, number> {
+  const record: Record<string, number> = {};
+  for (const use of sourceUses) {
+    if (use.sourceKind === kind) addToRecord(record, use.itemId, use.rate);
+  }
+  return record;
+}
+
+function sourceUseRate(sourceUses: SourceUse[], itemId: string, role: SourceRole, sourceKind: SourceKind | 'cycleInput'): number {
+  return sourceUses.reduce((sum, use) => sum + (use.itemId === itemId && use.role === role && use.sourceKind === sourceKind ? use.rate : 0), 0);
+}
+
 type SourceUse = { itemId: string; rate: number; sourceMode: Extract<SourceMode, 'buy' | 'external' | 'cycleInput'>; sourceKind: SourceKind | 'cycleInput'; role: SourceRole };
 
 function consumeSourceBucket(
@@ -772,7 +789,7 @@ function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: 
 }
 
 export function calculateAlphaBalance(input: CalculateInput, diagnostics: LinearModelDiagnostics): AlphaBalanceSolveResult {
-  // The alpha.8 balance solver handles ordinary material/source/cycle-input balances.
+  // The alpha.9 balance solver handles ordinary material/source/cycle-input balances.
   // Internal fuel/fertilizer self-dependency still falls back to the legacy-compatible engine until the full v0.8 replacement.
   const fallbackTraceBase = {
     version: BALANCE_SOLVER_VERSION,
@@ -786,9 +803,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       trace: {
         ...fallbackTraceBase,
         mode: 'legacy-fallback',
-        fallbackReason: 'internal_fuel_not_yet_active_in_alpha8',
-        notesJa: ['v0.7.0-alpha.8 では内部燃料の完全な収支solver化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.8 still uses the legacy-compatible fallback for internal fuel.'],
+        fallbackReason: 'internal_fuel_not_yet_active_in_alpha9',
+        notesJa: ['v0.7.0-alpha.9 では内部燃料の完全な収支solver化はまだ比較用フォールバックです。'],
+        notesEn: ['v0.7.0-alpha.9 still uses the legacy-compatible fallback for internal fuel.'],
       },
     };
   }
@@ -798,9 +815,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       trace: {
         ...fallbackTraceBase,
         mode: 'legacy-fallback',
-        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha8',
-        notesJa: ['v0.7.0-alpha.8 では内部肥料の完全な収支solver化はまだ比較用フォールバックです。'],
-        notesEn: ['v0.7.0-alpha.8 still uses the legacy-compatible fallback for internal fertilizer.'],
+        fallbackReason: 'internal_fertilizer_not_yet_active_in_alpha9',
+        notesJa: ['v0.7.0-alpha.9 では内部肥料の完全な収支solver化はまだ比較用フォールバックです。'],
+        notesEn: ['v0.7.0-alpha.9 still uses the legacy-compatible fallback for internal fertilizer.'],
       },
     };
   }
@@ -815,6 +832,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
   const warnings: PlanWarning[] = [];
   const purchaseCostByItem = new Map<string, number>();
   const byproductFuelUses: ByproductFuelUse[] = [];
+  const actualSourceUses: SourceUse[] = [];
 
   function stat(itemId: string): ItemStat {
     itemStats[itemId] ??= createItemStat(itemId);
@@ -866,20 +884,6 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
     return lot.rate * (itemById[lot.itemId]?.buyPriceCopper ?? 0);
   }
 
-  for (const source of solved.sources.values()) {
-    const s = stat(source.itemId);
-    s.purchased += source.rate;
-    const cost = sourceCostCopper(source);
-    s.purchaseCostCopperPerMin += cost;
-    addToMap(purchaseCostByItem, source.itemId, cost);
-  }
-  for (const cycleInput of solved.cycleInputs.values()) {
-    const s = stat(cycleInput.itemId);
-    s.purchased += cycleInput.rate;
-    const cost = sourceCostCopper(cycleInput);
-    s.purchaseCostCopperPerMin += cost;
-    addToMap(purchaseCostByItem, cycleInput.itemId, cost);
-  }
 
   const analysis = analyzeRuns(solved.runs, input, productionSpeedMultiplier);
   const supplyLotsByItem = buildSupplyLots(solved.runs);
@@ -900,14 +904,21 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
 
   for (const demand of sortedDemandLots) {
     const s = stat(demand.itemId);
-    s.requested += demand.rate;
-    s.consumed += demand.rate;
+    if (demand.role !== 'fuel') {
+      s.requested += demand.rate;
+      s.consumed += demand.rate;
+    }
     const consumer = { type: 'recipe', recipeId: demand.consumerRecipeId } as const;
 
     const recipeUse = consumeRecipeLots(supplyLotsByItem.get(demand.itemId), demand.rate);
     let remaining = recipeUse.remaining;
     for (const use of recipeUse.uses) {
       if (demand.role === 'material') s.reused += use.rate;
+      if (demand.role === 'fuel') {
+        const fuelStat = stat(use.itemId);
+        fuelStat.requested += use.rate;
+        fuelStat.consumed += use.rate;
+      }
       pushFlow(makeFlow({ type: 'recipe', recipeId: use.recipeId }, consumer, use.itemId, use.rate, demand.role, conveyorItemsPerMinute));
     }
 
@@ -918,6 +929,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         const fuelUse = { ...use, consumerRecipeId: demand.consumerRecipeId };
         byproductFuelUses.push(fuelUse);
         const fuelStat = stat(use.itemId);
+        fuelStat.requested += use.rate;
         fuelStat.consumed += use.rate;
         pushFlow(makeFlow({ type: 'recipe', recipeId: 'byproduct-fuel' }, consumer, use.itemId, use.rate, 'fuel', conveyorItemsPerMinute));
       }
@@ -927,29 +939,44 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       const cycleUse = consumeCycleInputBucket(cycleInputAvailable, demand.itemId, remaining);
       remaining = cycleUse.remaining;
       for (const use of cycleUse.uses) {
+        actualSourceUses.push(use);
         pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: 'cycleInput' }, consumer, use.itemId, use.rate, 'material', conveyorItemsPerMinute));
       }
 
       const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'material', ['materialBuy'], remaining);
       remaining = sourceUse.remaining;
       for (const use of sourceUse.uses) {
+        actualSourceUses.push(use);
         pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: use.sourceMode }, consumer, use.itemId, use.rate, 'material', conveyorItemsPerMinute));
       }
     } else if (demand.role === 'fuel') {
       const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'fuel', ['fuelExternal'], remaining);
       remaining = sourceUse.remaining;
       for (const use of sourceUse.uses) {
+        actualSourceUses.push(use);
+        const fuelStat = stat(use.itemId);
+        fuelStat.requested += use.rate;
+        fuelStat.consumed += use.rate;
         pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: 'external' }, consumer, use.itemId, use.rate, 'fuel', conveyorItemsPerMinute));
       }
     } else if (demand.role === 'fertilizer') {
       const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'fertilizer', ['fertilizerExternal'], remaining);
       remaining = sourceUse.remaining;
       for (const use of sourceUse.uses) {
+        actualSourceUses.push(use);
         pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: 'external' }, consumer, use.itemId, use.rate, 'fertilizer', conveyorItemsPerMinute));
       }
     }
 
     if (remaining > 0.000001) solved.unresolved.add(demand.itemId);
+  }
+
+  for (const use of actualSourceUses) {
+    const s = stat(use.itemId);
+    s.purchased += use.rate;
+    const cost = sourceUseCostCopper(use);
+    s.purchaseCostCopperPerMin += cost;
+    addToMap(purchaseCostByItem, use.itemId, cost);
   }
 
   for (const [itemId, lots] of supplyLotsByItem.entries()) {
@@ -1011,7 +1038,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
     });
   }
 
-  const cycleInputRates = ratesByItem(solved.cycleInputs);
+  const cycleInputRates = sourceUseRatesByKind(actualSourceUses, 'cycleInput');
   if (Object.keys(cycleInputRates).length > 0) {
     warnings.push({
       messageJa: '循環補填として ' + Object.keys(cycleInputRates).map((itemId) => itemById[itemId]?.name.ja ?? itemId).join(' / ') + ' を投入します。',
@@ -1057,7 +1084,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       fertilizerNutritionMultiplier: getFertilizerNutritionMultiplier(input.abilities),
       heatRequiredPerMin: analysis.heatRequiredPerMin,
       fuelRequiredPerMin: input.settings.fuel?.enabled && input.settings.fuel.fuelItemId
-        ? (analysis.heatRequiredPerMin / Math.max(EPS, (FUEL_HEAT_VALUE_BY_ITEM_ID[input.settings.fuel.fuelItemId] ?? 0) * getFuelHeatValueMultiplier(input.abilities)))
+        ? sourceUseRate(actualSourceUses, input.settings.fuel.fuelItemId, 'fuel', 'fuelExternal')
         : 0,
       fuelItemId: input.settings.fuel?.fuelItemId ?? '',
       fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
@@ -1087,9 +1114,9 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
       cycleInputRates,
       unresolvedItemIds: invalidRootItemIds,
       sourceBuckets: {
-        materialBuy: sourceRatesByKind(solved.sources, 'materialBuy'),
-        fuelExternal: sourceRatesByKind(solved.sources, 'fuelExternal'),
-        fertilizerExternal: sourceRatesByKind(solved.sources, 'fertilizerExternal'),
+        materialBuy: sourceUseRatesByKind(actualSourceUses, 'materialBuy'),
+        fuelExternal: sourceUseRatesByKind(actualSourceUses, 'fuelExternal'),
+        fertilizerExternal: sourceUseRatesByKind(actualSourceUses, 'fertilizerExternal'),
       },
       alternateRecipeCompletion: {
         enabled: input.settings.allowAlternateRecipeCompletion,
@@ -1100,8 +1127,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         enabled: input.settings.useByproductFuel,
         uses: byproductFuelUses,
       },
-      notesJa: ['v0.7.0-alpha.8 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
-      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.8. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
+      notesJa: ['v0.7.0-alpha.9 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
+      notesEn: ['Balance-based iterative solver result for v0.7.0-alpha.9. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
     },
   };
 }

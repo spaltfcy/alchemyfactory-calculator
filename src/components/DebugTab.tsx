@@ -520,7 +520,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 14,
+      debugSchemaVersion: 15,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -654,7 +654,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 14,
+      debugSchemaVersion: 15,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1143,7 +1143,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 14,
+      debugSchemaVersion: 15,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
