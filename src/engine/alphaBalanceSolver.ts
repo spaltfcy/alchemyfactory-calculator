@@ -36,8 +36,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.8.0-pre' as const;
-const BALANCE_SOLVER_MODE = 'balance-iterative-v080-pre';
+const BALANCE_SOLVER_VERSION = '0.8.1' as const;
+const BALANCE_SOLVER_MODE = 'balance-iterative-v081';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -67,7 +67,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-v080-pre';
+  mode: 'balance-iterative-v081';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   cycleInputItemIds?: string[];
@@ -1092,8 +1092,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         enabled: input.settings.useByproductFuel,
         uses: byproductFuelUses,
       },
-      notesJa: ['v0.8.0-pre の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
-      notesEn: ['Balance-based iterative solver result for v0.8.0-pre. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
+      notesJa: ['v0.8.1 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
+      notesEn: ['Balance-based iterative solver result for v0.8.1. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
     },
   };
 }

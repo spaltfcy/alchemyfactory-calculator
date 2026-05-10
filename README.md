@@ -2,28 +2,54 @@
 
 Alchemy Factory 向けの生産計画ツールです。
 
-このプロジェクトは、ブラウザ上で使うことを想定した React + TypeScript 製の静的 Web アプリです。
+React + TypeScript + Vite で作成した、ブラウザ上で動く静的 Web アプリです。
 
-## 機能
+## 現在のバージョン
 
-- 日本語 / 英語切り替え
-- グラフ / 表 / 設定 / About タブ
+- App: v0.8.1
+- Game data target: 0.4.4.4323
+- State schema: 23
+- Debug schema: 16
+- Solver engine: `balance-v081`
+
+## 主な機能
+
+- 日本語 / 英語表示切り替え
+- グラフ / 表 / 設定 / About / DEBUG タブ
 - 複数の最終出力指定
-- 生産数/min または 機械台数指定
-- 同一最終出力の合算
-- デフォルトは自作、作れない素材は購入扱い
-- 副産物の再利用 / 破棄
-- 設備数丸め
-  - 無効
-  - 中間設備のみ整数化
-  - 全設備整数化
-- 過剰生産量の表示
-- ベルトコンベア本数の逆算
-- 原材料購入コスト/min、売上/min、利益/min
-- アビリティ全項目の保存
-- グラフノードのダブルクリックによる作成済み表示
+- 出力/min または 設備台数指定
+- レシピ選択の固定
+- 収支ベースの非再帰 balance solver
+- 購入可能アイテムによる循環補填 `cycleInput`
+- 選択レシピ循環の検出
+- 代替レシピ補完 ON / OFF
+- 燃料と肥料の内部生産 / 外部生産
+- 副産物燃料の利用 ON / OFF
+- role/source 分離
+  - 通常素材購入
+  - 外部燃料
+  - 外部肥料
+  - 循環補填
+- 余剰 / 破棄 / 最終出力ノードのグラフ表示
+- 液体・蒸気をパイプ搬送として扱う表示
 - localStorage 自動保存
-- JSON エクスポート / インポート
+- Safe mode: `#SAFE` または `#SAFEMODE`
+- DEBUG mode: `#DEBUG=ON`
+- JSON設定保存 / 読み込み
+- DEBUGログ保存
+- 検証JSON読み込み & ログ保存
+
+## v0.8.1 の整理内容
+
+- `v0.8.0-pre` 表記を `v0.8.1` に統一しました。
+- solver engine ID を `balance-v081` に更新しました。
+- app / game / state / debug schema の定数を `src/appMetadata.ts` に集約しました。
+- 保存データ・インポートJSONの旧形式判定を共通化しました。
+- import / load 時に未知の古いトップレベル項目を state へ再混入させないよう、明示的な AppState 正規化へ寄せました。
+- `DebugTab` の import merge にあった重複プロパティを整理しました。
+- 旧solver比較経路は復活させていません。
+- `itemSourceModes` / `stockOverrides` は旧JSON拒否判定用の検出名としてのみ残します。
+- 数量丸め設定とグラフ詳細度設定は復活させません。表示上の極小正値は 0.01/min 表示へ切り上げる方針です。
 
 ## 開発環境
 
@@ -56,119 +82,50 @@ npm run preview
 
 ## データ差し替え場所
 
-### レシピ
-
-`src/data/recipes.ts`
-
-### アイテム
-
-`src/data/items.ts`
-
-### 設備
-
-`src/data/machines.ts`
-
-### 価格
-
-`src/data/economy.ts`
+| 種類 | ファイル |
+| --- | --- |
+| レシピ | `src/data/recipes.ts` |
+| アイテム | `src/data/items.ts` |
+| 設備 | `src/data/machines.ts` |
+| 価格 | `src/data/economy.ts` |
+| アビリティ | `src/data/abilityTables.ts` |
+| 燃料値 / 熱需要 | `src/data/heat.ts` |
+| 肥料値 | `src/data/fertilizer.ts` |
 
 売れないアイテムは `sellPriceCopper` を定義しません。購入できない、または価格未確認のものは `buyPriceCopper` を定義しません。
 
-```ts
-{ itemId: 'logs', buyPriceCopper: 200 }
-{ itemId: 'charcoal', sellPriceCopper: 8 }
-```
+## 保存形式
 
-### アビリティ変動値
+v0.8.1 では `state.version = 23` を現在形式として扱います。
 
-`src/data/abilityTables.ts`
-
-配列は「レベルごとの加算値」です。ゲーム内最新値と違う場合は、このファイルを修正してください。
+読み込み可能な範囲は `src/appMetadata.ts` の以下で管理します。
 
 ```ts
-logisticsEfficiency: {
-  conveyorItemsPerMinuteAdd: [0.0, 15.0, 15.0, 15.0]
-}
+export const STATE_SCHEMA_VERSION = 23;
+export const MIN_SUPPORTED_STATE_SCHEMA_VERSION = 22;
 ```
 
-## 収録データ
+旧形式として拒否する代表例です。
 
-Codex のレシピ一覧を元に、現在は以下のデータを収録しています。
+- `itemSourceModes` を含むJSON
+- `stockOverrides` を含むJSON
+- `settings.fuel.fuelSourceMode` を含むJSON
+- `settings.fertilizer.fertilizerSourceMode` を含むJSON
+- state schema が未定義、古すぎる、または未来版のJSON
 
-- レシピ: 142 件
-- アイテム: 148 件
-- 設備: 25 件
+## 既知の保留事項
 
+- 肥料レシピ / 肥料消費のゲーム内値との照合
+- 一部マシン名の日本語名確認
+- 液体余剰のさらに厳密な制御
+- 完全な線形計画ソルバ化は未実装です。現在は balance iterative solver です。
 
-## 注意事項
+## GitHub Pages
 
-- 初期レシピ数は少なめです。
-- 循環レシピや完全最適化は未対応です。
-- 副産物再利用は現在の計算順に依存します。
-- 価格・アビリティ値・レシピ値は、後でゲーム内最新情報に合わせて差し替える前提です。
-- 売れないアイテムは `sellPriceCopper` 未定義として扱います。
+`vite.config.ts` の `base` は `/alchemyfactory-calculator/` です。
 
-## 更新履歴
-
-### v0.1.6
-
-* 余剰ノード表示の初期状態をONに変更
-* アビリティ名をCodex日本語表記に修正
-* 設定タブから売却モードを削除
-* 設定タブからレシピ優先設定を削除
-* データパネルの配置を左上寄せに調整
-
-### v0.1.5
-
-* グラフの初期倍率を少し大きめに調整
-* グラフノード間隔を広げ、エッジラベルが重なりにくいように調整
-* 副産物の余剰を専用ノードとして表示
-* レシピノード内の余剰表示を削除
-* レシピ設定パネルの見た目と名称を調整
-* 設定タブのパネル配置を改善
-* アビリティ名を日本語化
-* 個別の副産物設定テーブルを廃止し、計算パネルの副産物設定に一本化
-* package-lock.json を Git 管理しない方針へ変更
-
-### v0.1.4
-
-* ヘッダーのタブ配置をタイトル右側へ変更
-* バージョン表示を右上へ移動
-* 最終出力エディタを「出力 + 値 + /min or /台」構成へ変更
-* グラフ表示を「素材 / レシピ / 最終出力」中心に整理
-* グラフの初期ズームを見直し
-* About タブへ GitHub URL とノード操作説明を追加
-* 設定タブ / About タブの横幅レイアウトを改善
-
-### v0.1.3
-
-* グラフのエッジ表示を修正
-* グラフノードのドラッグ操作を有効化
-* ミニマップをダークテーマ向けに調整
-
-## v0.4.2
-
-- 燃料フローの矢印ラベルを通常フローと同じ形式に統一しました。
-- 燃料フローではアイテム名に「（燃料）」を付け、レシピノード上側中央へ接続します。
-- 熱源が必要なレシピノードに「要:熱源」バッジを表示します。
-- 表示数量の丸め単位として 1 / 0.1 / 0.01 / なしを選べるようにしました。
-- DEBUG モード時に計算時間と燃料計算の反復回数を表示します。
+通常は main へ push すると GitHub Actions で Pages 用ビルドが走ります。
 
 ## ライセンス
 
 MIT License
-
-
-## v0.4.2
-
-- 計算エンジンを再帰なしの queue ベースへ作り直しました。
-- 副産物再利用を bounded fixed-point 方式で再評価する土台を追加しました。
-- 燃料と肥料を補助需要として扱うための基盤を追加しました。
-- 肥料設定型と肥料データを追加しました。
-
-
-## v0.4.2
-
-- 副産物再利用を需要・供給・割当ベースで再計算するよう修正しました。
-- 副産物で賄える場合は主生成物レシピを減産/削除し、関連する入力・出力・副産物も反映します。
-- グラフの素材線は計算済みの供給元レシピを優先して接続するようにしました。

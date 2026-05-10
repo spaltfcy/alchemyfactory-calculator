@@ -17,7 +17,7 @@ import type {
   CalculationResult,
 } from './calculationTypes';
 
-export type SolverEngineId = 'balance-v080-pre';
+export type SolverEngineId = 'balance-v081';
 
 export type SelectedRecipeCycleDiagnostic = {
   id: string;
@@ -155,7 +155,7 @@ export type NewSolverResult = {
   alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
 };
 
-const ACTIVE_ENGINE: SolverEngineId = 'balance-v080-pre';
+const ACTIVE_ENGINE: SolverEngineId = 'balance-v081';
 const EPS = 1e-9;
 
 function uniqueSorted(values: Iterable<string>): string[] {
@@ -797,9 +797,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.8.0-pre では、収支ベースsolver結果経路を通常計算に使い、ログ出力時はbalance solver単独の診断ログを出力します。',
+      'v0.8.1 では、収支ベースsolver結果経路を通常計算に使い、ログ出力時はbalance solver単独の診断ログを出力します。',
     noteEn:
-      'v0.8.0-pre uses the balance-based solver result path at runtime and emits balance-solver-only debug/log output.',
+      'v0.8.1 uses the balance-based solver result path at runtime and emits balance-solver-only debug/log output.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',

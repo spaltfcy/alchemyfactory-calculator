@@ -14,9 +14,8 @@ import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
+import { APP_VERSION, GAME_VERSION, isUnsupportedStateSchema } from './appMetadata';
 
-const APP_VERSION = '0.8.0-pre';
-const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
   debug: boolean;
@@ -67,23 +66,7 @@ function parseRuntimeFlags(): RuntimeFlags {
 }
 
 function isUnsupportedSavedState(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as {
-    itemSourceModes?: unknown;
-    stockOverrides?: unknown;
-    settings?: {
-      fuel?: { fuelSourceMode?: unknown };
-      fertilizer?: { fertilizerSourceMode?: unknown };
-    };
-    version?: unknown;
-  };
-  return (
-    candidate.itemSourceModes !== undefined ||
-    candidate.stockOverrides !== undefined ||
-    candidate.settings?.fuel?.fuelSourceMode !== undefined ||
-    candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
-    (typeof candidate.version !== 'number' || candidate.version < 22)
-  );
+  return isUnsupportedStateSchema(value);
 }
 
 function mergeInitialState(safeMode: boolean): AppState {
@@ -102,11 +85,13 @@ function mergeInitialState(safeMode: boolean): AppState {
   }
 
   const merged: AppState = {
-    ...DEFAULT_STATE,
-    ...saved,
+    version: DEFAULT_STATE.version,
+    language: saved.language ?? DEFAULT_STATE.language,
+    activeTab: saved.activeTab ?? DEFAULT_STATE.activeTab,
+    targets: saved.targets ?? DEFAULT_STATE.targets,
     settings: {
       ...DEFAULT_STATE.settings,
-      ...saved.settings,
+      ...(saved.settings ?? {}),
       fuel: {
         ...DEFAULT_STATE.settings.fuel,
         ...(saved.settings?.fuel ?? {}),
@@ -116,17 +101,16 @@ function mergeInitialState(safeMode: boolean): AppState {
         ...(saved.settings?.fertilizer ?? {}),
       },
     },
-    abilities: { ...DEFAULT_STATE.abilities, ...saved.abilities },
-    recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
-    surplusPolicies: { ...DEFAULT_STATE.surplusPolicies, ...saved.surplusPolicies },
-    completedGraphNodeIds: { ...DEFAULT_STATE.completedGraphNodeIds, ...saved.completedGraphNodeIds },
-    nodeNotes: { ...DEFAULT_STATE.nodeNotes, ...saved.nodeNotes },
+    abilities: { ...DEFAULT_STATE.abilities, ...(saved.abilities ?? {}) },
+    recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...(saved.recipePreferences ?? {}) },
+    surplusPolicies: { ...DEFAULT_STATE.surplusPolicies, ...(saved.surplusPolicies ?? {}) },
+    completedGraphNodeIds: { ...DEFAULT_STATE.completedGraphNodeIds, ...(saved.completedGraphNodeIds ?? {}) },
+    nodeNotes: { ...DEFAULT_STATE.nodeNotes, ...(saved.nodeNotes ?? {}) },
   };
 
   if (merged.settings.showInitialInvestmentLines === undefined) merged.settings.showInitialInvestmentLines = DEFAULT_STATE.settings.showInitialInvestmentLines;
 
   merged.targets = sanitizeNegativeTargets(merged.targets).targets;
-  merged.version = Math.max(DEFAULT_STATE.version, saved.version ?? 0);
   return merged;
 }
 
