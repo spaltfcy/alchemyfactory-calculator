@@ -32,7 +32,6 @@ const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
   enabled: true,
   fertilizerItemId: 'basic_fertilizer',
   sourceMode: 'internal',
-  nurseryNutrientsPerSec: 12,
   maxIterations: 4,
 };
 
@@ -222,7 +221,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 16,
+      debugSchemaVersion: 17,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,

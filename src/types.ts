@@ -76,6 +76,8 @@ export type RecipeIO = {
 export type RecipeInput = RecipeIO;
 export type RecipeOutput = RecipeIO;
 
+export type NutrientRunRateMode = 'logisticsCap' | 'fixedTime';
+
 export type Recipe = {
   id: string; // レシピID
   name: LocalizedText; // 表示名
@@ -84,6 +86,8 @@ export type Recipe = {
   inputs: RecipeInput[]; // 入力一覧
   outputs: RecipeOutput[]; // 出力一覧
   heatInputPerSec?: number; // レシピ自体が要求する熱P/s。蒸気ボイラーなどで使用
+  nutrientInputPerRun?: number; // 肥料/栄養値を使うレシピの1回あたり必要栄養値V。未定義なら肥料不要
+  nutrientRunRateMode?: NutrientRunRateMode; // 肥料レシピの速度決定方式。通常ハーブはlogisticsCap、世界樹はfixedTime
   internal?: boolean; // 内部用。通常ターゲット候補には出さない
   order?: number; // レシピ候補の表示順
 };
@@ -115,7 +119,6 @@ export type FertilizerSettings = {
   enabled: boolean; // 肥料計算を有効にするか
   fertilizerItemId: string; // 使用する肥料アイテムID
   sourceMode: ExternalSourceMode; // 内部生産か外部生産か
-  nurseryNutrientsPerSec: number; // 苗床が要求する基礎栄養値/s
   maxIterations: number; // 肥料自己消費計算の最大反復回数
 };
 

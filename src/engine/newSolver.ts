@@ -3,6 +3,7 @@ import type { Recipe } from '../types';
 import { itemById } from '../data/items';
 import { chooseRecipeForItem, isBuyableItem } from './itemSourceResolver';
 import {
+  getConveyorItemsPerMinute,
   getFertilizerNutritionMultiplier,
   getFuelHeatValueMultiplier,
   getHeatConsumptionMultiplier,
@@ -17,7 +18,7 @@ import type {
   CalculationResult,
 } from './calculationTypes';
 
-export type SolverEngineId = 'balance-v081';
+export type SolverEngineId = 'balance-v082';
 
 export type SelectedRecipeCycleDiagnostic = {
   id: string;
@@ -155,7 +156,7 @@ export type NewSolverResult = {
   alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
 };
 
-const ACTIVE_ENGINE: SolverEngineId = 'balance-v081';
+const ACTIVE_ENGINE: SolverEngineId = 'balance-v082';
 const EPS = 1e-9;
 
 function uniqueSorted(values: Iterable<string>): string[] {
@@ -347,19 +348,28 @@ function outputPerRunForRecipe(recipe: Recipe, itemId: string): number {
   return output.amount * (output.probability ?? 1);
 }
 
+function recipeTotalOutputAmount(recipe: Recipe): number {
+  return recipe.outputs.reduce((sum, output) => sum + output.amount * (output.probability ?? 1), 0);
+}
+
 function runRateForDiagnosticRecipe(recipe: Recipe, input: CalculateInput): number {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
-  if (recipe.machineId === 'nursery') {
-    const fertilizer = input.settings.fertilizer;
-    const selectedNutrientsPerSec = fertilizer?.enabled
-      ? Math.max(0, Number(FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[fertilizer.fertilizerItemId] ?? fertilizer.nurseryNutrientsPerSec))
-      : Math.max(0, Number(fertilizer?.nurseryNutrientsPerSec ?? 12));
-    const nutrientsRequired = Math.max(0, recipe.timeSec * 12);
-    if (nutrientsRequired > EPS && selectedNutrientsPerSec > EPS) {
-      return (60 * selectedNutrientsPerSec * productionSpeedMultiplier) / nutrientsRequired;
-    }
+  const baseRunRate = 60 / recipe.timeSec;
+  const nutrientInputPerRun = Math.max(0, recipe.nutrientInputPerRun ?? 0);
+  if (!input.settings.fertilizer?.enabled || nutrientInputPerRun <= EPS) return baseRunRate * productionSpeedMultiplier;
+
+  if (recipe.nutrientRunRateMode === 'logisticsCap') {
+    const fertilizerItemId = input.settings.fertilizer.fertilizerItemId;
+    const fertilizerNutrientsPerSec = Math.max(0, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[fertilizerItemId] ?? 0);
+    const nutrientLimitedRunRate = fertilizerNutrientsPerSec > EPS ? (fertilizerNutrientsPerSec * 60) / nutrientInputPerRun : 0;
+    const outputAmountPerRun = Math.max(EPS, recipeTotalOutputAmount(recipe));
+    const logisticsLimitedRunRate = getConveyorItemsPerMinute(input.abilities) / outputAmountPerRun;
+    return Math.min(nutrientLimitedRunRate, logisticsLimitedRunRate);
   }
-  return (60 / recipe.timeSec) * productionSpeedMultiplier;
+
+  if (recipe.nutrientRunRateMode === 'fixedTime') return baseRunRate;
+
+  return baseRunRate * productionSpeedMultiplier;
 }
 
 function outputRateForDiagnosticRecipe(recipe: Recipe, itemId: string, input: CalculateInput): number {
@@ -446,8 +456,7 @@ function heatPerRunForRecipe(recipe: Recipe, input: CalculateInput): number {
 }
 
 function nutrientsPerRunForRecipe(recipe: Recipe): number {
-  if (recipe.machineId !== 'nursery') return 0;
-  return Math.max(0, recipe.timeSec * 12);
+  return Math.max(0, recipe.nutrientInputPerRun ?? 0);
 }
 
 function buildLinearBalanceModelDiagnostics(
@@ -797,9 +806,9 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
   return {
     mode: 'diagnostic-only',
     noteJa:
-      'v0.8.1 では、収支ベースsolver結果経路を通常計算に使い、ログ出力時はbalance solver単独の診断ログを出力します。',
+      'v0.8.2 では、収支ベースsolver結果経路を通常計算に使い、肥料レシピは栄養値モデルで診断します。',
     noteEn:
-      'v0.8.1 uses the balance-based solver result path at runtime and emits balance-solver-only debug/log output.',
+      'v0.8.2 uses the balance-based solver result path at runtime and diagnoses fertilizer recipes with the nutrient model.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',

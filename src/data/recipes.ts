@@ -333,7 +333,9 @@ export const RECIPES: Recipe[] = [
         itemId: 'chamomile',
         amount: 140
       }
-    ]
+    ],
+    nutrientInputPerRun: 100800,
+    nutrientRunRateMode: 'logisticsCap'
   },
   {
     id: 'chamomile_powder',
@@ -973,7 +975,9 @@ export const RECIPES: Recipe[] = [
         itemId: 'flax',
         amount: 200
       }
-    ]
+    ],
+    nutrientInputPerRun: 4800,
+    nutrientRunRateMode: 'logisticsCap'
   },
   {
     id: 'flax_fiber',
@@ -1061,7 +1065,9 @@ export const RECIPES: Recipe[] = [
         itemId: 'gentian_nectar',
         amount: 80
       }
-    ]
+    ],
+    nutrientInputPerRun: 960000,
+    nutrientRunRateMode: 'logisticsCap'
   },
   {
     id: 'gentian_powder',
@@ -1566,7 +1572,9 @@ export const RECIPES: Recipe[] = [
         itemId: 'lavender',
         amount: 120
       }
-    ]
+    ],
+    nutrientInputPerRun: 259200,
+    nutrientRunRateMode: 'logisticsCap'
   },
   {
     id: 'lavender_essential_oil',
@@ -2316,7 +2324,9 @@ export const RECIPES: Recipe[] = [
         itemId: 'redcurrant',
         amount: 150
       }
-    ]
+    ],
+    nutrientInputPerRun: 21600,
+    nutrientRunRateMode: 'logisticsCap'
   },
   {
     id: 'refined_sand_1',
@@ -2500,7 +2510,9 @@ export const RECIPES: Recipe[] = [
         itemId: 'sage',
         amount: 180
       }
-    ]
+    ],
+    nutrientInputPerRun: 6480,
+    nutrientRunRateMode: 'logisticsCap'
   },
   {
     id: 'sage_powder',
@@ -3439,7 +3451,9 @@ export const RECIPES: Recipe[] = [
         itemId: 'world_tree_core',
         amount: 1
       }
-    ]
+    ],
+    nutrientInputPerRun: 6000000,
+    nutrientRunRateMode: 'fixedTime'
   },
   {
     id: 'yeast_powder',

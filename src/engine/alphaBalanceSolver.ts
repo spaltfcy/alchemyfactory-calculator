@@ -14,7 +14,7 @@ import {
   getSellPriceMultiplier,
 } from '../data/abilityTables';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
-import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID } from '../data/fertilizer';
+import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
 import { safeCeil } from '../utils/format';
 import { chooseRecipeForItem, isBuyableItem } from './itemSourceResolver';
 import type {
@@ -36,8 +36,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 const EPS = 1e-9;
 const MAX_ALPHA_ITERATIONS = 160;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.8.1' as const;
-const BALANCE_SOLVER_MODE = 'balance-iterative-v081';
+const BALANCE_SOLVER_VERSION = '0.8.2' as const;
+const BALANCE_SOLVER_MODE = 'balance-iterative-v082';
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -67,7 +67,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type AlphaSolveTrace = {
-  mode: 'balance-iterative-v081';
+  mode: 'balance-iterative-v082';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   cycleInputItemIds?: string[];
@@ -129,8 +129,8 @@ function createItemStat(itemId: string): ItemStat {
   };
 }
 
-function createRecipeStat(recipe: Recipe, runsPerMinute: number, productionSpeedMultiplier: number): RecipeStat {
-  const machineRunRate = runRateForRecipe(recipe, productionSpeedMultiplier);
+function createRecipeStat(recipe: Recipe, runsPerMinute: number, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): RecipeStat {
+  const machineRunRate = runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
   return {
     recipeId: recipe.id,
@@ -146,8 +146,27 @@ function createRecipeStat(recipe: Recipe, runsPerMinute: number, productionSpeed
   };
 }
 
-function runRateForRecipe(recipe: Recipe, productionSpeedMultiplier: number): number {
-  return (60 / recipe.timeSec) * productionSpeedMultiplier;
+function recipeTotalOutputAmount(recipe: Recipe): number {
+  return recipe.outputs.reduce((sum, output) => sum + output.amount * (output.probability ?? 1), 0);
+}
+
+function runRateForRecipe(recipe: Recipe, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): number {
+  const baseRunRate = 60 / recipe.timeSec;
+  const nutrientInputPerRun = Math.max(0, recipe.nutrientInputPerRun ?? 0);
+  if (!input.settings.fertilizer?.enabled || nutrientInputPerRun <= EPS) return baseRunRate * productionSpeedMultiplier;
+
+  if (recipe.nutrientRunRateMode === 'logisticsCap') {
+    const fertilizerItemId = input.settings.fertilizer.fertilizerItemId;
+    const fertilizerNutrientsPerSec = Math.max(0, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[fertilizerItemId] ?? 0);
+    const nutrientLimitedRunRate = fertilizerNutrientsPerSec > EPS ? (fertilizerNutrientsPerSec * 60) / nutrientInputPerRun : 0;
+    const outputAmountPerRun = Math.max(EPS, recipeTotalOutputAmount(recipe));
+    const logisticsLimitedRunRate = conveyorItemsPerMinute > EPS ? conveyorItemsPerMinute / outputAmountPerRun : 0;
+    return Math.min(nutrientLimitedRunRate, logisticsLimitedRunRate);
+  }
+
+  if (recipe.nutrientRunRateMode === 'fixedTime') return baseRunRate;
+
+  return baseRunRate * productionSpeedMultiplier;
 }
 
 function outputPerRun(recipe: Recipe, itemId: string): number {
@@ -220,29 +239,29 @@ function fuelHeatPerRun(recipe: Recipe, input: CalculateInput, productionSpeedMu
   if (!input.settings.fuel?.enabled) return 0;
   const heatPerSec = HEAT_CONSUMER_BY_MACHINE_ID[recipe.machineId]?.heatPerSec ?? 0;
   if (heatPerSec <= EPS) return 0;
-  const runsPerMachine = runRateForRecipe(recipe, productionSpeedMultiplier);
+  const runsPerMachine = runRateForRecipe(recipe, input, productionSpeedMultiplier, getConveyorItemsPerMinute(input.abilities));
   if (runsPerMachine <= EPS) return 0;
   return (heatPerSec * 60 * getHeatConsumptionMultiplier(input.abilities)) / runsPerMachine;
 }
 
 function fertilizerNutrientsPerRun(recipe: Recipe, input: CalculateInput): number {
-  if (!input.settings.fertilizer?.enabled || recipe.machineId !== 'nursery') return 0;
-  return Math.max(0, recipe.timeSec * 12);
+  if (!input.settings.fertilizer?.enabled) return 0;
+  return Math.max(0, recipe.nutrientInputPerRun ?? 0);
 }
 
-function addRunForDemand(runs: RunMap, recipe: Recipe, itemId: string, missingRate: number, input: CalculateInput, productionSpeedMultiplier: number): void {
+function addRunForDemand(runs: RunMap, recipe: Recipe, itemId: string, missingRate: number, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): void {
   const perRun = outputPerRun(recipe, itemId);
   if (perRun <= EPS) return;
   let neededRuns = missingRate / perRun;
   if (shouldRoundMachines(input.settings.machineRounding)) {
-    const machineRunRate = runRateForRecipe(recipe, productionSpeedMultiplier);
+    const machineRunRate = runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
     const machines = machineRunRate > EPS ? safeCeil(neededRuns / machineRunRate) : 0;
     neededRuns = machines * machineRunRate;
   }
   addToMap(runs, recipe.id, neededRuns);
 }
 
-function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier: number): { runs: RunMap; targetRuns: Map<string, number>; targetRates: Map<string, number>; invalidTargets: string[] } {
+function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): { runs: RunMap; targetRuns: Map<string, number>; targetRates: Map<string, number>; invalidTargets: string[] } {
   const runs: RunMap = new Map();
   const targetRuns = new Map<string, number>();
   const targetRates = new Map<string, number>();
@@ -262,7 +281,7 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
     let runsPerMinute: number;
     let targetRate: number;
     if (target.mode === 'machines') {
-      runsPerMinute = Math.max(0, targetValue) * runRateForRecipe(recipe, productionSpeedMultiplier);
+      runsPerMinute = Math.max(0, targetValue) * runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
       targetRate = outputPerRun(recipe, target.outputItemId) * runsPerMinute;
     } else {
       const perRun = outputPerRun(recipe, target.outputItemId);
@@ -272,7 +291,7 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
       }
       runsPerMinute = targetValue / perRun;
       if (shouldRoundMachines(input.settings.machineRounding)) {
-        const machineRunRate = runRateForRecipe(recipe, productionSpeedMultiplier);
+        const machineRunRate = runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
         const machines = machineRunRate > EPS ? safeCeil(runsPerMinute / machineRunRate) : 0;
         runsPerMinute = machines * machineRunRate;
       }
@@ -372,9 +391,10 @@ function addRunForDemandWithTracking(
   missingRate: number,
   input: CalculateInput,
   productionSpeedMultiplier: number,
+  conveyorItemsPerMinute: number,
 ): void {
   const before = runs.get(recipe.id) ?? 0;
-  addRunForDemand(runs, recipe, itemId, missingRate, input, productionSpeedMultiplier);
+  addRunForDemand(runs, recipe, itemId, missingRate, input, productionSpeedMultiplier, conveyorItemsPerMinute);
   const delta = (runs.get(recipe.id) ?? 0) - before;
   if (delta > EPS) addRunToMap(trackedRuns, recipe.id, delta);
 }
@@ -599,7 +619,8 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
   fertilizerRuns: RunMap;
 } {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
-  const { runs, targetRuns, targetRates, invalidTargets } = initialRunsFromTargets(input, productionSpeedMultiplier);
+  const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
+  const { runs, targetRuns, targetRates, invalidTargets } = initialRunsFromTargets(input, productionSpeedMultiplier, conveyorItemsPerMinute);
   const sources: SourceBucket = new Map();
   const cycleInputs: CycleInputBucket = new Map();
   const fuelRuns: RunMap = new Map();
@@ -667,7 +688,7 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
         }
         const fuelRecipe = chooseRecipeForItem(demand.itemId, input.recipePreferences);
         if (fuelRecipe) {
-          addRunForDemandWithTracking(nextRuns, fuelRuns, fuelRecipe, demand.itemId, remaining, input, productionSpeedMultiplier);
+          addRunForDemandWithTracking(nextRuns, fuelRuns, fuelRecipe, demand.itemId, remaining, input, productionSpeedMultiplier, conveyorItemsPerMinute);
           changed = true;
           continue;
         }
@@ -688,7 +709,7 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
         }
         const fertilizerRecipe = chooseRecipeForItem(demand.itemId, input.recipePreferences);
         if (fertilizerRecipe) {
-          addRunForDemandWithTracking(nextRuns, fertilizerRuns, fertilizerRecipe, demand.itemId, remaining, input, productionSpeedMultiplier);
+          addRunForDemandWithTracking(nextRuns, fertilizerRuns, fertilizerRecipe, demand.itemId, remaining, input, productionSpeedMultiplier, conveyorItemsPerMinute);
           changed = true;
           continue;
         }
@@ -764,7 +785,7 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
       }
 
       if (recipeToUse) {
-        addRunForDemand(nextRuns, recipeToUse, demand.itemId, remaining, input, productionSpeedMultiplier);
+        addRunForDemand(nextRuns, recipeToUse, demand.itemId, remaining, input, productionSpeedMultiplier, conveyorItemsPerMinute);
         changed = true;
         continue;
       }
@@ -851,7 +872,7 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
   for (const [recipeId, runsPerMinute] of solved.runs.entries()) {
     const recipe = recipeById[recipeId];
     if (!recipe || runsPerMinute <= EPS) continue;
-    const recipeStat = createRecipeStat(recipe, runsPerMinute, productionSpeedMultiplier);
+    const recipeStat = createRecipeStat(recipe, runsPerMinute, input, productionSpeedMultiplier, conveyorItemsPerMinute);
     recipeStats[recipeId] = recipeStat;
     for (const inputEntry of recipe.inputs) addToRecord(recipeStat.inputRates, inputEntry.itemId, inputEntry.amount * runsPerMinute);
     for (const output of recipe.outputs) {
@@ -1149,8 +1170,8 @@ export function calculateAlphaBalance(input: CalculateInput, diagnostics: Linear
         enabled: input.settings.useByproductFuel,
         uses: byproductFuelUses,
       },
-      notesJa: ['v0.8.1 の収支ベース反復solver結果です。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
-      notesEn: ['Balance-based iterative solver result for v0.8.1. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
+      notesJa: ['v0.8.2 の収支ベース反復solver結果です。肥料レシピは栄養値モデルで計算します。完全な線形計画ソルバではありません。燃料/肥料の外部ソースは role 別に分離しています。'],
+      notesEn: ['Balance-based iterative solver result for v0.8.2 with nutrient-based fertilizer recipes. This is not a full linear-programming solver. External fuel/fertilizer sources are separated by role.'],
     },
   };
 }

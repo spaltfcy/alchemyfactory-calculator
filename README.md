@@ -1,29 +1,59 @@
 # AlchemyFactory Calculator
 
-Alchemy Factory 向けの生産計画ツールです。
+Alchemy Factory 向けの生産計画ツールです。React + TypeScript + Vite で作られた静的Webアプリとして動作します。
 
-このプロジェクトは、ブラウザ上で使うことを想定した React + TypeScript 製の静的 Web アプリです。
+## 現在のバージョン
 
-## 機能
+- アプリ: `0.8.2`
+- 計算エンジン: `balance-v082`
+- 対象ゲームバージョン表示: `0.4.4.4323`
 
-- 日本語 / 英語切り替え
-- グラフ / 表 / 設定 / About タブ
-- 複数の最終出力指定
-- 生産数/min または 機械台数指定
-- 同一最終出力の合算
-- デフォルトは自作、作れない素材は購入扱い
-- 副産物の再利用 / 破棄
-- 設備数丸め
-  - 無効
-  - 中間設備のみ整数化
-  - 全設備整数化
-- 過剰生産量の表示
-- ベルトコンベア本数の逆算
-- 原材料購入コスト/min、売上/min、利益/min
-- アビリティ全項目の保存
-- グラフノードのダブルクリックによる作成済み表示
-- localStorage 自動保存
+## 主な機能
+
+- 複数の最終出力を `/min` または設備台数で指定
+- 生産フローのグラフ表示と表形式表示
+- 副産物の再利用 / 破棄表示
+- 燃料・肥料を素材需要とは別の role として計算
+- 外部燃料 / 外部肥料を購入ではなく外部生産扱いで分離
+- 循環レシピに対する cycle input と代替レシピ補完
 - JSON エクスポート / インポート
+- DEBUG モードで計算ログ・検証ログを出力
+- Safe mode で localStorage 書き込みを抑止
+
+## v0.8.2 の肥料モデル
+
+肥料を使うレシピは、通常の素材入力とは別に `nutrientInputPerRun` を持ちます。
+
+```ts
+nutrientInputPerRun?: number;
+nutrientRunRateMode?: 'logisticsCap' | 'fixedTime';
+```
+
+### 通常ハーブ型: `logisticsCap`
+
+通常ハーブは、肥料の `V/s` と物流効率によるベルコン速度の小さい方で生産速度が決まります。工場効率は通常ハーブの肥料計算には掛けません。
+
+```txt
+run/min = min(
+  fertilizerNutrientsPerSec * 60 / nutrientInputPerRun,
+  conveyorItemsPerMinute / totalOutputAmountPerRun
+)
+```
+
+肥料消費量は、肥料効率込みの肥料1個あたり栄養値で計算します。
+
+```txt
+fertilizer/min = runsPerMinute * nutrientInputPerRun / effectiveFertilizerValue
+```
+
+### 世界樹型: `fixedTime`
+
+世界樹は固定時間レシピとして扱います。肥料の `V/s` や物流効率では生産速度を変えず、`timeSec` から run/min を出します。
+
+```txt
+run/min = 60 / timeSec
+fertilizer/min = runsPerMinute * nutrientInputPerRun / effectiveFertilizerValue
+```
 
 ## 開発環境
 
@@ -36,7 +66,7 @@ Alchemy Factory 向けの生産計画ツールです。
 npm install
 ```
 
-## 開発サーバー起動
+## 開発サーバー
 
 ```bash
 npm run dev
@@ -54,121 +84,46 @@ npm run build
 npm run preview
 ```
 
-## データ差し替え場所
+## データ定義
 
-### レシピ
+- レシピ: `src/data/recipes.ts`
+- アイテム: `src/data/items.ts`
+- 設備: `src/data/machines.ts`
+- アビリティ表: `src/data/abilityTables.ts`
+- 燃料データ: `src/data/heat.ts`
+- 肥料データ: `src/data/fertilizer.ts`
 
-`src/data/recipes.ts`
+売れないアイテムは `sellPriceCopper` を定義しません。購入できないアイテムは `buyPriceCopper` を定義しません。
 
-### アイテム
+## DEBUG / Safe mode
 
-`src/data/items.ts`
+URLフラグで動作を切り替えます。
 
-### 設備
-
-`src/data/machines.ts`
-
-### 価格
-
-`src/data/economy.ts`
-
-売れないアイテムは `sellPriceCopper` を定義しません。購入できない、または価格未確認のものは `buyPriceCopper` を定義しません。
-
-```ts
-{ itemId: 'logs', buyPriceCopper: 200 }
-{ itemId: 'charcoal', sellPriceCopper: 8 }
+```txt
+#DEBUG=ON
+#SAFE
+#SAFEMODE
 ```
 
-### アビリティ変動値
+DEBUG モードでは Debug タブが表示され、計算ログを出力できます。Safe mode では localStorage に自動保存しません。
 
-`src/data/abilityTables.ts`
+## GitHub Pages 公開
 
-配列は「レベルごとの加算値」です。ゲーム内最新値と違う場合は、このファイルを修正してください。
+このリポジトリは Vite の静的ビルドを GitHub Pages へ配信できます。
 
-```ts
-logisticsEfficiency: {
-  conveyorItemsPerMinuteAdd: [0.0, 15.0, 15.0, 15.0]
-}
+```bash
+npm run build
 ```
 
-## 収録データ
+`dist/` の内容を Pages の公開対象にします。GitHub Actions を使う場合は `.github/workflows/pages.yml` を確認してください。
 
-Codex のレシピ一覧を元に、現在は以下のデータを収録しています。
+## 既知の注意点
 
-- レシピ: 142 件
-- アイテム: 148 件
-- 設備: 25 件
-
-
-## 注意事項
-
-- 初期レシピ数は少なめです。
-- 循環レシピや完全最適化は未対応です。
-- 副産物再利用は現在の計算順に依存します。
-- 価格・アビリティ値・レシピ値は、後でゲーム内最新情報に合わせて差し替える前提です。
-- 売れないアイテムは `sellPriceCopper` 未定義として扱います。
-
-## 更新履歴
-
-### v0.1.6
-
-* 余剰ノード表示の初期状態をONに変更
-* アビリティ名をCodex日本語表記に修正
-* 設定タブから売却モードを削除
-* 設定タブからレシピ優先設定を削除
-* データパネルの配置を左上寄せに調整
-
-### v0.1.5
-
-* グラフの初期倍率を少し大きめに調整
-* グラフノード間隔を広げ、エッジラベルが重なりにくいように調整
-* 副産物の余剰を専用ノードとして表示
-* レシピノード内の余剰表示を削除
-* レシピ設定パネルの見た目と名称を調整
-* 設定タブのパネル配置を改善
-* アビリティ名を日本語化
-* 個別の副産物設定テーブルを廃止し、計算パネルの副産物設定に一本化
-* package-lock.json を Git 管理しない方針へ変更
-
-### v0.1.4
-
-* ヘッダーのタブ配置をタイトル右側へ変更
-* バージョン表示を右上へ移動
-* 最終出力エディタを「出力 + 値 + /min or /台」構成へ変更
-* グラフ表示を「素材 / レシピ / 最終出力」中心に整理
-* グラフの初期ズームを見直し
-* About タブへ GitHub URL とノード操作説明を追加
-* 設定タブ / About タブの横幅レイアウトを改善
-
-### v0.1.3
-
-* グラフのエッジ表示を修正
-* グラフノードのドラッグ操作を有効化
-* ミニマップをダークテーマ向けに調整
-
-## v0.4.2
-
-- 燃料フローの矢印ラベルを通常フローと同じ形式に統一しました。
-- 燃料フローではアイテム名に「（燃料）」を付け、レシピノード上側中央へ接続します。
-- 熱源が必要なレシピノードに「要:熱源」バッジを表示します。
-- 表示数量の丸め単位として 1 / 0.1 / 0.01 / なしを選べるようにしました。
-- DEBUG モード時に計算時間と燃料計算の反復回数を表示します。
+- 完全な線形計画ソルバではなく、収支ベースの反復 solver です。
+- 外部燃料 / 外部肥料は購入コストを持たない外部生産扱いです。
+- 価格・レシピ・日本語名はゲーム内最新値と差があれば `src/data/*` 側を更新してください。
+- 液体余剰の厳密制御、マシン名の日本語名修正は今後の調整対象です。
 
 ## ライセンス
 
 MIT License
-
-
-## v0.4.2
-
-- 計算エンジンを再帰なしの queue ベースへ作り直しました。
-- 副産物再利用を bounded fixed-point 方式で再評価する土台を追加しました。
-- 燃料と肥料を補助需要として扱うための基盤を追加しました。
-- 肥料設定型と肥料データを追加しました。
-
-
-## v0.4.2
-
-- 副産物再利用を需要・供給・割当ベースで再計算するよう修正しました。
-- 副産物で賄える場合は主生成物レシピを減産/削除し、関連する入力・出力・副産物も反映します。
-- グラフの素材線は計算済みの供給元レシピを優先して接続するようにしました。

@@ -34,7 +34,6 @@ export const DEFAULT_STATE: AppState = {
       enabled: true,
       fertilizerItemId: 'basic_fertilizer',
       sourceMode: 'internal',
-      nurseryNutrientsPerSec: 12,
       maxIterations: 4,
     },
   },
