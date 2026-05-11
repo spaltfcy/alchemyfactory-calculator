@@ -471,6 +471,35 @@ function buildLinearBalanceModelDiagnostics(
   const targetDemand = targetDemandByItem(input);
   const targetItemIds = uniqueSorted(targetDemand.keys());
   const hasActivePlan = recipeIds.length > 0 || targetItemIds.length > 0;
+  if (targetItemIds.length === 0 && input.targets.length === 0) {
+    return {
+      status: 'model-built-diagnostic-only',
+      activeRecipeIds: [],
+      activeItemIds: [],
+      targetItemIds: [],
+      summary: {
+        variableCount: 0,
+        constraintCount: 0,
+        variableCountsByKind: {},
+        constraintCountsByKind: {},
+        activeRecipeCount: 0,
+        activeItemCount: 0,
+        liquidActiveItemCount: 0,
+        targetCount: 0,
+      },
+      variables: [],
+      constraints: [],
+      candidates: {
+        cycleInput: [],
+        liquidSurplus: [],
+        alternateRecipe: [],
+        byproductFuel: [],
+      },
+      objectivePlan: [
+        { priority: 1, objective: 'empty-targets', noteJa: '有効な目標がないため診断モデルを空にします。', noteEn: 'No active targets; the diagnostic model is intentionally empty.' },
+      ],
+    };
+  }
   const variables: LinearModelVariable[] = [];
   const constraints: LinearModelConstraint[] = [];
   const seenVariables = new Set<string>();

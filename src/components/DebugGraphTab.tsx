@@ -44,8 +44,8 @@ export function DebugGraphTab({ lang, result, settings, completedGraphNodeIds, o
           <h2>Graph[DEBUG]</h2>
           <p>
             {lang === 'ja'
-              ? '本番Graphとは別の実験用タブです。v0.9系ではここで新レイアウト・メトリクス・保存用SVGを育てます。'
-              : 'Experimental graph tab. New layouts, metrics, and SVG dump support will be developed here during v0.9.'}
+              ? '本番Graphとは別の実験用タブです。v0.9.4ではlane-aware layout v1とメトリクス比較を確認します。'
+              : 'Experimental graph tab. v0.9.4 previews lane-aware layout v1 and layout metrics comparison.'}
           </p>
         </div>
         <dl className="debug-graph-metrics">

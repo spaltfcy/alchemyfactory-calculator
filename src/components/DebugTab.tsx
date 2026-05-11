@@ -8,7 +8,7 @@ import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { getMachinePreferences } from '../data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from '../data/paradox';
 import { normalizeAbilitySettings } from '../data/abilityTables';
-import { buildFlowGraphDebugArtifacts, buildFlowGraphSvg } from '../engine/graph';
+import { buildFlowGraphDebugArtifacts, buildFlowGraphSvg, compareFlowGraphLayoutMetrics } from '../engine/graph';
 
 type DebugTabProps = {
   lang: Lang;
@@ -531,7 +531,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 26,
+      debugSchemaVersion: 27,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -564,13 +564,15 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       metrics: {
         normal: normalGraphArtifact.metrics,
         debug: debugGraphArtifact.metrics,
+        diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.3では本番Graphと同じresultから生成し、今後のレイアウト比較の基準にします。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.3 generates these from the same result as the production Graph as a baseline for layout comparisons.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.4ではGraph[DEBUG]にlane-aware layout v1を適用し、本番Graphとの差分を比較します。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.4 applies lane-aware layout v1 to Graph[DEBUG] and compares it with the production Graph.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
       debug: { metrics: debugGraphArtifact.metrics },
+      diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
     };
 
     return {
@@ -698,7 +700,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 26,
+      debugSchemaVersion: 27,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -820,6 +822,13 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       zip.file(args.baseName + '__graph-normal-model.json', JSON.stringify(args.artifact.graphArtifacts.normal.model, null, 2));
       zip.file(args.baseName + '__graph-debug-model.json', JSON.stringify(args.artifact.graphArtifacts.debug.model, null, 2));
       zip.file(args.baseName + '__graph-layout-metrics.json', JSON.stringify(args.artifact.graphArtifacts.metrics, null, 2));
+      zip.file(args.baseName + '__graph-layout-diff.json', JSON.stringify(args.artifact.graphArtifacts.metrics.diff, null, 2));
+      zip.file(args.baseName + '__result-summary.json', JSON.stringify({
+        calculationStatus: args.artifact.enrichedDebugLog.calculationStatus,
+        totals: args.artifact.result.totals,
+        summary: args.artifact.debugLog.summary,
+        diagnosticComparison: args.artifact.enrichedDebugLog.diagnosticComparison,
+      }, null, 2));
     }
     return zip.generateAsync({ type: 'blob' });
   }
@@ -1100,6 +1109,13 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     zip.file(baseName + '__graph-normal-model.json', JSON.stringify(artifact.graphArtifacts.normal.model, null, 2));
     zip.file(baseName + '__graph-debug-model.json', JSON.stringify(artifact.graphArtifacts.debug.model, null, 2));
     zip.file(baseName + '__graph-layout-metrics.json', JSON.stringify(artifact.graphArtifacts.metrics, null, 2));
+    zip.file(baseName + '__graph-layout-diff.json', JSON.stringify(artifact.graphArtifacts.metrics.diff, null, 2));
+    zip.file(baseName + '__result-summary.json', JSON.stringify({
+      calculationStatus: artifact.enrichedDebugLog.calculationStatus,
+      totals: artifact.result.totals,
+      summary: artifact.debugLog.summary,
+      diagnosticComparison: artifact.enrichedDebugLog.diagnosticComparison,
+    }, null, 2));
 
     if (calculationInvalid) {
       zip.file(
@@ -1200,7 +1216,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 26,
+      debugSchemaVersion: 27,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

@@ -679,6 +679,114 @@ function layoutSvgNodes(nodes: Node[], edges: Edge[]): { nodes: SvgGraphNode[]; 
   return { nodes: positioned, width: canvasWidth, height: canvasHeight, nodeById };
 }
 
+function debugEdgeRole(edge: Edge): string | undefined {
+  const data = edge.data as { role?: string } | undefined;
+  return data?.role;
+}
+
+function debugNodeLane(node: Node, edges: Edge[]): number {
+  const data = node.data as PlannerNodeData;
+  if (node.id.startsWith('initial:') || data.isInitialInvestment) return -2;
+  if (data.kind === 'surplus' || data.kind === 'discard') return 2;
+  const relatedRoles = edges
+    .filter((edge) => edge.source === node.id || edge.target === node.id)
+    .map((edge) => debugEdgeRole(edge));
+  const isSourceLike = node.id.startsWith('source:') || data.kind === 'item';
+  if (isSourceLike && relatedRoles.some((role) => role === 'fuel' || role === 'steam')) return -1;
+  if (isSourceLike && relatedRoles.some((role) => role === 'fertilizer')) return 1;
+  return 0;
+}
+
+function layoutSvgNodesDebugLane(nodes: Node[], edges: Edge[]): { nodes: SvgGraphNode[]; width: number; height: number; nodeById: Map<string, SvgGraphNode> } {
+  if (nodes.length === 0) return { nodes: [], width: 960, height: 240, nodeById: new Map() };
+
+  const base = layoutSvgNodes(nodes, edges);
+  const baseLayerById = new Map(base.nodes.map((node) => [node.id, node.layer]));
+  const maxBaseLayer = Math.max(0, ...base.nodes.map((node) => node.layer));
+  const measureById = new Map<string, { width: number; height: number }>();
+  for (const node of nodes) measureById.set(node.id, measureSvgNode(node));
+
+  const laneGroups = new Map<number, Node[]>();
+  for (const node of nodes) {
+    const lane = debugNodeLane(node, edges);
+    const list = laneGroups.get(lane) ?? [];
+    list.push(node);
+    laneGroups.set(lane, list);
+  }
+
+  const laneOrder = [...laneGroups.keys()].sort((a, b) => a - b);
+  const leftPad = 44;
+  const topPad = 44;
+  const horizontalGap = 190;
+  const verticalGap = 26;
+  const laneGap = 74;
+  const maxLayer = Math.max(maxBaseLayer + 1, ...nodes.map((node) => {
+    const data = node.data as PlannerNodeData;
+    if (data.kind === 'final' || data.kind === 'surplus' || data.kind === 'discard') return maxBaseLayer + 1;
+    return baseLayerById.get(node.id) ?? initialNodeLayer(node);
+  }));
+
+  const layerWidth = new Map<number, number>();
+  for (const node of nodes) {
+    const data = node.data as PlannerNodeData;
+    const layer = (data.kind === 'final' || data.kind === 'surplus' || data.kind === 'discard')
+      ? maxBaseLayer + 1
+      : (baseLayerById.get(node.id) ?? initialNodeLayer(node));
+    const size = measureById.get(node.id)!;
+    layerWidth.set(layer, Math.max(layerWidth.get(layer) ?? 220, size.width));
+  }
+
+  const xByLayer = new Map<number, number>();
+  let currentX = leftPad;
+  for (let layer = 0; layer <= maxLayer; layer += 1) {
+    xByLayer.set(layer, currentX);
+    currentX += (layerWidth.get(layer) ?? 220) + horizontalGap;
+  }
+
+  const positioned: SvgGraphNode[] = [];
+  const nodeById = new Map<string, SvgGraphNode>();
+  let currentLaneY = topPad;
+
+  for (const lane of laneOrder) {
+    const laneNodes = laneGroups.get(lane) ?? [];
+    laneNodes.sort((a, b) => {
+      const dataA = a.data as PlannerNodeData;
+      const dataB = b.data as PlannerNodeData;
+      const layerA = dataA.kind === 'final' || dataA.kind === 'surplus' || dataA.kind === 'discard' ? maxBaseLayer + 1 : (baseLayerById.get(a.id) ?? initialNodeLayer(a));
+      const layerB = dataB.kind === 'final' || dataB.kind === 'surplus' || dataB.kind === 'discard' ? maxBaseLayer + 1 : (baseLayerById.get(b.id) ?? initialNodeLayer(b));
+      return layerA - layerB || nodeKindRank(dataA.kind) - nodeKindRank(dataB.kind) || dataA.label.localeCompare(dataB.label);
+    });
+
+    let y = currentLaneY;
+    let laneHeight = 0;
+    for (const node of laneNodes) {
+      const data = node.data as PlannerNodeData;
+      const layer = data.kind === 'final' || data.kind === 'surplus' || data.kind === 'discard' ? maxBaseLayer + 1 : (baseLayerById.get(node.id) ?? initialNodeLayer(node));
+      const size = measureById.get(node.id)!;
+      const maxWidth = layerWidth.get(layer) ?? size.width;
+      const x = (xByLayer.get(layer) ?? leftPad) + Math.max(0, (maxWidth - size.width) / 2);
+      const placed: SvgGraphNode = {
+        id: node.id,
+        x,
+        y,
+        width: size.width,
+        height: size.height,
+        layer,
+        data,
+      };
+      positioned.push(placed);
+      nodeById.set(node.id, placed);
+      y += size.height + verticalGap;
+      laneHeight += size.height + verticalGap;
+    }
+    currentLaneY += Math.max(80, laneHeight) + laneGap;
+  }
+
+  const canvasWidth = Math.max(900, currentX - horizontalGap + leftPad);
+  const canvasHeight = Math.max(280, currentLaneY - laneGap + topPad);
+  return { nodes: positioned, width: canvasWidth, height: canvasHeight, nodeById };
+}
+
 function svgHandlePoint(node: SvgGraphNode, handleId: string | null | undefined, kind: 'source' | 'target'): {
   x: number;
   y: number;
@@ -821,15 +929,11 @@ function renderSvgEdgeLabel(title: string, detail: string, x: number, y: number,
   return lines.join('\n');
 }
 
-export function buildFlowGraphSvg(
-  result: CalculationResult,
+function renderFlowGraphSvgFromGraph(
+  graph: { nodes: Node[]; edges: Edge[] },
+  layout: ReturnType<typeof layoutSvgNodes>,
   lang: Lang,
-  settings: AppSettings,
-  completedGraphNodeIds: Record<string, boolean>,
 ): string {
-  const graph = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
-  const layout = layoutSvgNodes(graph.nodes, graph.edges);
-
   if (graph.nodes.length === 0) {
     const emptyMessage = lang === 'ja' ? 'グラフデータがありません。' : 'No graph data.';
     return [
@@ -911,6 +1015,18 @@ export function buildFlowGraphSvg(
     '',
   ].join('\n');
 }
+
+export function buildFlowGraphSvg(
+  result: CalculationResult,
+  lang: Lang,
+  settings: AppSettings,
+  completedGraphNodeIds: Record<string, boolean>,
+): string {
+  const graph = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
+  const layout = layoutSvgNodes(graph.nodes, graph.edges);
+  return renderFlowGraphSvgFromGraph(graph, layout, lang);
+}
+
 
 
 export type FlowGraphLayoutMetrics = {
@@ -1090,6 +1206,43 @@ function serializeGraphModel(variant: 'normal' | 'debug', layout: ReturnType<typ
   };
 }
 
+export type FlowGraphLayoutMetricsDiff = {
+  generatedAt: string;
+  improved: boolean;
+  notesJa: string[];
+  notesEn: string[];
+  delta: Record<string, number>;
+  normal: FlowGraphLayoutMetrics;
+  debug: FlowGraphLayoutMetrics;
+};
+
+export function compareFlowGraphLayoutMetrics(normal: FlowGraphLayoutMetrics, debug: FlowGraphLayoutMetrics): FlowGraphLayoutMetricsDiff {
+  const delta = {
+    estimatedCrossings: debug.estimatedCrossings - normal.estimatedCrossings,
+    averageEdgeLength: Number((debug.averageEdgeLength - normal.averageEdgeLength).toFixed(2)),
+    maxEdgeLength: Number((debug.maxEdgeLength - normal.maxEdgeLength).toFixed(2)),
+    width: Number((debug.width - normal.width).toFixed(2)),
+    height: Number((debug.height - normal.height).toFixed(2)),
+    layoutMs: Number((debug.layoutMs - normal.layoutMs).toFixed(2)),
+  };
+  const improved = delta.estimatedCrossings <= 0 && delta.maxEdgeLength <= 0;
+  return {
+    generatedAt: new Date().toISOString(),
+    improved,
+    notesJa: [
+      'Graph[DEBUG]はlane-aware layout v1です。本番Graphにはまだ反映していません。',
+      'estimatedCrossingsとedge lengthは概算です。改善方向の比較値として使用してください。',
+    ],
+    notesEn: [
+      'Graph[DEBUG] uses lane-aware layout v1 and is not applied to the production Graph yet.',
+      'estimatedCrossings and edge length are approximate comparison metrics.',
+    ],
+    delta,
+    normal,
+    debug,
+  };
+}
+
 export function buildFlowGraphDebugArtifacts(
   result: CalculationResult,
   lang: Lang,
@@ -1101,9 +1254,9 @@ export function buildFlowGraphDebugArtifacts(
   const graph = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
   const graphEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const layoutStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const layout = layoutSvgNodes(graph.nodes, graph.edges);
+  const layout = variant === 'debug' ? layoutSvgNodesDebugLane(graph.nodes, graph.edges) : layoutSvgNodes(graph.nodes, graph.edges);
   const layoutEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const svg = buildFlowGraphSvg(result, lang, settings, completedGraphNodeIds);
+  const svg = renderFlowGraphSvgFromGraph(graph, layout, lang);
   const model = serializeGraphModel(variant, layout, graph);
   return {
     variant,

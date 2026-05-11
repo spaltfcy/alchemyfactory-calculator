@@ -237,12 +237,17 @@ export type CalculationDebugLog = {
     linearActiveRecipeCount?: number;
     linearActiveItemCount?: number;
     linearTargetCount?: number;
+    activeRecipeDelta?: number;
+    activeItemDelta?: number;
+    severeMismatch?: boolean;
+    diagnosticsOrigin?: string;
     noteJa: string;
     noteEn: string;
   };
   graphArtifacts?: {
     normal?: { metrics: unknown };
     debug?: { metrics: unknown };
+    diff?: unknown;
   };
 };
 

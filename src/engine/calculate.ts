@@ -29,8 +29,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v0930';
-const SOLVE_PLAN_VERSION = '0.9.3';
+const SOLVE_PLAN_MODE = 'solvePlan-v0940';
+const SOLVE_PLAN_VERSION = '0.9.4';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -42,15 +42,29 @@ function disabledTargetCount(input: CalculateInput): number {
 
 function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnostics: ReturnType<typeof buildLinearModelDiagnostics> | undefined) {
   const linearSummary = linearModelDiagnostics?.linearBalanceModel?.summary;
+  const resultRecipeCount = Object.keys(result.recipeStats).length;
+  const resultItemCount = Object.keys(result.itemStats).length;
+  const linearActiveRecipeCount = linearSummary?.activeRecipeCount;
+  const linearActiveItemCount = linearSummary?.activeItemCount;
+  const activeRecipeDelta = typeof linearActiveRecipeCount === 'number' ? linearActiveRecipeCount - resultRecipeCount : undefined;
+  const activeItemDelta = typeof linearActiveItemCount === 'number' ? linearActiveItemCount - resultItemCount : undefined;
+  const severeMismatch = Boolean(
+    (typeof activeRecipeDelta === 'number' && Math.abs(activeRecipeDelta) >= 5) ||
+    (typeof activeItemDelta === 'number' && Math.abs(activeItemDelta) >= 8),
+  );
   return {
     resultFlowCount: result.flows.length,
-    resultRecipeCount: Object.keys(result.recipeStats).length,
-    resultItemCount: Object.keys(result.itemStats).length,
-    linearActiveRecipeCount: linearSummary?.activeRecipeCount,
-    linearActiveItemCount: linearSummary?.activeItemCount,
+    resultRecipeCount,
+    resultItemCount,
+    linearActiveRecipeCount,
+    linearActiveItemCount,
     linearTargetCount: linearSummary?.targetCount,
-    noteJa: 'v0.9.3では実計算とDEBUG診断をsolvePlan経由に寄せています。linearModelDiagnosticsはまだ診断用モデルですが、実resultとの比較値を併記します。',
-    noteEn: 'v0.9.3 routes normal and DEBUG calculation through solvePlan. linearModelDiagnostics is still diagnostic-only, so comparison counts are included.',
+    activeRecipeDelta,
+    activeItemDelta,
+    severeMismatch,
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0940',
+    noteJa: 'v0.9.4では実resultと診断モデルの差分を明示します。target 0件では診断モデルも空に近づけ、残る差分は後続のsolver統合対象として扱います。',
+    noteEn: 'v0.9.4 reports deltas between the real result and diagnostic model. Empty targets should now produce an empty diagnostic model; remaining deltas are tracked for later solver unification.',
   };
 }
 
@@ -64,8 +78,21 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
 
   const debugLog = buildDebugLogFromResult(input, result);
   const diagnostics = newSolverResult.linearModelDiagnostics ?? linearModelDiagnostics;
+  const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
   const extendedDebugLog = {
     ...debugLog,
+    issues: diagnosticComparison.severeMismatch
+      ? [
+          ...debugLog.issues,
+          {
+            severity: 'warning' as const,
+            code: 'LINEAR_DIAGNOSTIC_RESULT_DELTA',
+            messageJa: '実計算結果とlinearModelDiagnosticsの件数差が大きいです。診断モデルの乖離候補として確認してください。',
+            messageEn: 'The linearModelDiagnostics counts differ significantly from the actual result. Please inspect this as a diagnostic model mismatch candidate.',
+            data: diagnosticComparison,
+          },
+        ]
+      : debugLog.issues,
     resultEngine: newSolverResult.engineId,
     solverEngine: newSolverResult.engineId,
     solver: {
@@ -80,7 +107,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
       enabledTargetCount: enabledTargetCount(input),
       disabledTargetCount: disabledTargetCount(input),
     },
-    diagnosticComparison: diagnosticComparisonFor(result, diagnostics),
+    diagnosticComparison,
     linearModelDiagnostics: diagnostics,
     alphaBalanceTrace: newSolverResult.alphaBalanceTrace,
   } as CalculationDebugResult['debugLog'] & {
