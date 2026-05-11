@@ -35,10 +35,27 @@ import type {
 import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './newSolver';
 
 const EPS = 1e-9;
-const STRUCTURED_QUEUE_SAFETY_LIMIT = 160; // structural safety guard; normal path no longer calls alphaBalanceSolver
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.10' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09100';
+const BALANCE_SOLVER_VERSION = '0.9.11' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09110';
+
+
+function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearModelDiagnostics): number {
+  const activeRecipeCount = Math.max(
+    1,
+    diagnostics.linearBalanceModel?.summary?.activeRecipeCount ?? 0,
+    diagnostics.graph?.recipeNodeCount ?? 0,
+    input.targets.length,
+  );
+  const dependencyEdgeCount = Math.max(
+    1,
+    diagnostics.graph?.dependencyEdgeCount ?? 0,
+    diagnostics.activePlanGraph?.dependencyEdgeCount ?? 0,
+    diagnostics.linearBalanceModel?.summary?.activeItemCount ?? 0,
+  );
+  const cyclePenalty = Math.max(0, diagnostics.activePlanCyclicComponents?.length ?? 0) * activeRecipeCount;
+  return Math.max(32, activeRecipeCount * dependencyEdgeCount * 4 + activeRecipeCount * 8 + cyclePenalty + input.targets.length * 16);
+}
 
 type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
@@ -68,9 +85,11 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09100';
+  mode: 'structured-balance-v09110';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
+  queueSafetyLimit?: number;
+  queueGuardMode?: 'graph-size-derived';
   cycleInputItemIds?: string[];
   cycleInputRates?: Record<string, number>;
   unresolvedItemIds?: string[];
@@ -590,6 +609,7 @@ type SolveRunMapResult = {
   cycleInputs: CycleInputBucket;
   unresolved: Set<string>;
   iterations: number;
+  queueSafetyLimit: number;
   heatRequiredPerMin: number;
   fertilizerNutrientsRequiredPerMin: number;
   alternateRecipeUses: AlternateRecipeUse[];
@@ -607,6 +627,7 @@ type SpecialItemCost = {
   heatPerItemPerMin: number;
   nutrientsPerItemPerMin: number;
   iterations: number;
+  queueSafetyLimit: number;
 };
 
 type SpecialResourceSolutionTrace = {
@@ -650,7 +671,8 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
   let heatRequiredPerMin = 0;
   let fertilizerNutrientsRequiredPerMin = 0;
 
-  for (let iteration = 0; iteration < STRUCTURED_QUEUE_SAFETY_LIMIT; iteration += 1) {
+  const queueSafetyLimit = structuredQueueSafetyLimit(input, diagnostics);
+  for (let iteration = 0; iteration < queueSafetyLimit; iteration += 1) {
     const analysis = analyzeRuns(runs, input, productionSpeedMultiplier);
     heatRequiredPerMin = analysis.heatRequiredPerMin;
     fertilizerNutrientsRequiredPerMin = analysis.fertilizerNutrientsRequiredPerMin;
@@ -818,18 +840,18 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
     const cycleInputRates = [...cycleInputs.values()].map((lot) => lot.rate);
     if ([...nextRuns.values()].some(isNonFiniteOrHuge) || sourceRates.some(isNonFiniteOrHuge) || cycleInputRates.some(isNonFiniteOrHuge)) {
       unresolved.add('__non_finite_or_huge__');
-      return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
+      return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
     }
 
     if (!changed || mapAlmostEqual(runs, nextRuns)) {
-      return { runs: nextRuns, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
+      return { runs: nextRuns, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
     }
     runs.clear();
     for (const [recipeId, rate] of nextRuns.entries()) runs.set(recipeId, rate);
   }
 
   unresolved.add('__solver_did_not_converge__');
-  return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: STRUCTURED_QUEUE_SAFETY_LIMIT, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
+  return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: queueSafetyLimit, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
 }
 
 
@@ -868,6 +890,7 @@ function specialCostForItem(itemId: string, input: CalculateInput, diagnostics: 
       heatPerItemPerMin: 0,
       nutrientsPerItemPerMin: 0,
       iterations: 0,
+      queueSafetyLimit: 0,
     };
   }
 
@@ -886,6 +909,7 @@ function specialCostForItem(itemId: string, input: CalculateInput, diagnostics: 
     heatPerItemPerMin: analysis.heatRequiredPerMin,
     nutrientsPerItemPerMin: analysis.fertilizerNutrientsRequiredPerMin,
     iterations: solved.iterations,
+    queueSafetyLimit: solved.queueSafetyLimit,
   };
 }
 
@@ -1050,6 +1074,9 @@ function applySpecialResourceApplication(base: SolveRunMapResult, input: Calcula
     iterations: base.iterations
       + (usesInternalFuelCost ? application.fuelCost?.iterations ?? 0 : 0)
       + (usesInternalFertilizerCost ? application.fertilizerCost?.iterations ?? 0 : 0),
+    queueSafetyLimit: base.queueSafetyLimit
+      + (usesInternalFuelCost ? application.fuelCost?.queueSafetyLimit ?? 0 : 0)
+      + (usesInternalFertilizerCost ? application.fertilizerCost?.queueSafetyLimit ?? 0 : 0),
     heatRequiredPerMin: analysis.heatRequiredPerMin,
     fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
   };
@@ -1436,7 +1463,7 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
       fertilizerItemId: input.settings.fertilizer?.fertilizerItemId ?? '',
       calculationMs: 0,
       queueSteps: solved.iterations,
-      queueMax: solved.runs.size,
+      queueMax: solved.queueSafetyLimit,
     },
     residualUnresolvedFlows: [],
   };
@@ -1447,6 +1474,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
       mode: BALANCE_SOLVER_MODE,
       version: BALANCE_SOLVER_VERSION,
       iterations: solved.iterations,
+      queueSafetyLimit: solved.queueSafetyLimit,
+      queueGuardMode: 'graph-size-derived',
       cycleInputItemIds: Object.keys(cycleInputRates),
       cycleInputRates,
       unresolvedItemIds: invalidRootItemIds,

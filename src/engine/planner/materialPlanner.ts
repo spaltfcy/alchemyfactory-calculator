@@ -227,14 +227,14 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
 
   const structuredPlan = {
     ...base,
-    mode: 'structured-material-v09100' as const,
+    mode: 'structured-material-v09110' as const,
     status: acceptedResult.calculationStatus === 'invalid' ? 'partial' as const : 'ok' as const,
     cycleComponents: planModel.dependencyGraph.cycleComponents,
     cycleDecisions,
     acceptedResultStatus: acceptedResult.calculationStatus,
     legacyFallbackUsed: false,
     structuredResultAdopted: true,
-    acceptedResultEngine: 'structured-material-v09100',
+    acceptedResultEngine: 'structured-material-v09110',
     trace: [
       ...base.trace,
       {

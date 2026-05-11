@@ -41,7 +41,7 @@ export function comparePlannerResults(alphaResult: CalculationResult, shadow: Ma
   const diffCount = recipeDiffs.length + itemDiffs.length + sourceDiffs.length;
   return {
     status: diffCount > 0 ? 'diff' : 'match',
-    mode: shadow.mode === 'structured-material-v09100' ? 'legacy-alpha-vs-structured-v09100' : shadow.mode === 'structured-material-v0990' ? 'legacy-alpha-vs-structured-v0990' : shadow.mode === 'structured-material-v0980' ? 'legacy-alpha-vs-structured-v0980' : shadow.mode === 'structured-material-v0970' ? 'legacy-alpha-vs-structured-v0970' : 'alpha-vs-shadow-v0960',
+    mode: shadow.mode === 'structured-material-v09110' ? 'legacy-alpha-vs-structured-v09110' : shadow.mode === 'structured-material-v0990' ? 'legacy-alpha-vs-structured-v0990' : shadow.mode === 'structured-material-v0980' ? 'legacy-alpha-vs-structured-v0980' : shadow.mode === 'structured-material-v0970' ? 'legacy-alpha-vs-structured-v0970' : 'alpha-vs-shadow-v0960',
     epsilon: { absolute: ABS_EPS, relative: REL_EPS },
     summary: {
       alphaRecipeCount: Object.keys(alphaResult.recipeStats).length,
