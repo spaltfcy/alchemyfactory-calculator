@@ -17,7 +17,7 @@ export type MaterialPlannerTraceStep = {
 
 export type MaterialPlannerShadowResult = {
   status: 'ok' | 'partial' | 'unsupported';
-  mode: 'shadow-dag-v0960' | 'structured-material-v0970' | 'structured-material-v0980';
+  mode: 'shadow-dag-v0960' | 'structured-material-v0970' | 'structured-material-v0980' | 'structured-material-v0990';
   planSummary: PlanModel['summary'];
   recipeRuns: Record<string, number>;
   itemDemand: Record<string, number>;
@@ -43,7 +43,7 @@ export type PlannerNumericDiff = {
 
 export type PlannerComparisonResult = {
   status: 'match' | 'diff' | 'not-compared';
-  mode: 'alpha-vs-shadow-v0960' | 'legacy-alpha-vs-structured-v0970' | 'legacy-alpha-vs-structured-v0980';
+  mode: 'alpha-vs-shadow-v0960' | 'legacy-alpha-vs-structured-v0970' | 'legacy-alpha-vs-structured-v0980' | 'legacy-alpha-vs-structured-v0990';
   epsilon: { absolute: number; relative: number };
   summary: {
     alphaRecipeCount: number;
@@ -65,7 +65,7 @@ export type PlannerComparisonResult = {
 
 export type MaterialPlannerShadowArtifact = {
   enabled: true;
-  mode: 'shadow-dag-v0960' | 'structured-material-v0970' | 'structured-material-v0980';
+  mode: 'shadow-dag-v0960' | 'structured-material-v0970' | 'structured-material-v0980' | 'structured-material-v0990';
   planModel: PlanModel;
   shadowResult: MaterialPlannerShadowResult;
   comparison: PlannerComparisonResult;
@@ -80,7 +80,7 @@ export type MaterialPlannerShadowArtifact = {
 
 
 export type StructuredMaterialPlan = MaterialPlannerShadowResult & {
-  mode: 'structured-material-v0970' | 'structured-material-v0980';
+  mode: 'structured-material-v0970' | 'structured-material-v0980' | 'structured-material-v0990';
   acceptedResultStatus: CalculationResult['calculationStatus'];
   cycleDecisions: PlanModel['dependencyGraph']['cycleDecisions'];
   legacyFallbackUsed: boolean;
@@ -91,8 +91,16 @@ export type StructuredMaterialPlan = MaterialPlannerShadowResult & {
 
 export type LegacyAlphaComparisonArtifact = {
   enabled: boolean;
-  mode: 'legacy-alpha-vs-structured-v0970' | 'legacy-alpha-vs-structured-v0980';
+  mode: 'legacy-alpha-vs-structured-v0970' | 'legacy-alpha-vs-structured-v0980' | 'legacy-alpha-vs-structured-v0990';
   comparison: PlannerComparisonResult;
+  numericComparison?: PlannerComparisonResult;
+  statusComparison?: {
+    status: 'match' | 'changed';
+    legacyStatus?: CalculationResult['calculationStatus'];
+    structuredStatus?: CalculationResult['calculationStatus'];
+    acceptedStatus?: CalculationResult['calculationStatus'];
+  };
+  acceptedResultEngine?: string;
   legacyAlphaSummary: {
     recipeCount: number;
     itemCount: number;

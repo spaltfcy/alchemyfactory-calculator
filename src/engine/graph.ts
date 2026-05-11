@@ -203,26 +203,38 @@ function buildInitialEndpointNode(groupId: string, endpoint: InitialInvestmentEn
   };
 }
 
+function initialInvestmentEdgeLabel(flow: InitialInvestmentFlow, lang: Lang): string {
+  if (flow.from.type === 'itemSource' && flow.from.sourceMode === 'cycleInput') {
+    return lang === 'ja' ? '初期投入 ' + formatNumber(flow.rate, 2) + '個' : 'Startup input x' + formatNumber(flow.rate, 2);
+  }
+  return rateLabel(flow, lang);
+}
+
+function initialInvestmentEdgeRole(flow: InitialInvestmentFlow): string {
+  return flow.from.type === 'itemSource' && flow.from.sourceMode === 'cycleInput' ? 'cycleInput' : 'initialInvestment';
+}
+
 function makeInitialEdge(groupId: string, flow: InitialInvestmentFlow, lang: Lang): Edge {
+  const startup = flow.from.type === 'itemSource' && flow.from.sourceMode === 'cycleInput';
   return {
     id: flow.id,
     type: 'flowEdge',
     source: initialEndpointNodeId(groupId, flow.from),
     target: initialEndpointNodeId(groupId, flow.to),
     animated: false,
-    style: { stroke: INITIAL_INVESTMENT_FLOW_COLOR, strokeWidth: 2.05, strokeDasharray: '4 4' },
+    style: { stroke: INITIAL_INVESTMENT_FLOW_COLOR, strokeWidth: 2.05, strokeDasharray: startup ? '2 4' : '4 4' },
     markerEnd: marker(INITIAL_INVESTMENT_FLOW_COLOR),
     data: {
       itemId: flow.itemId,
-      itemName: itemName(flow.itemId, lang),
-      rateLabel: rateLabel(flow, lang),
+      itemName: startup ? itemName(flow.itemId, lang) + (lang === 'ja' ? '（初期投入）' : ' (startup)') : itemName(flow.itemId, lang),
+      rateLabel: initialInvestmentEdgeLabel(flow, lang),
       color: INITIAL_INVESTMENT_FLOW_COLOR,
       cycleSide: 0,
       labelShiftY: 0,
       outputOrder: 9999,
       sourceSide: 'right' as PlannerHandleSide,
       targetSide: 'left' as PlannerHandleSide,
-      role: 'material',
+      role: initialInvestmentEdgeRole(flow),
     },
   };
 }
@@ -1334,7 +1346,7 @@ export function compareFlowGraphLayoutMetrics(normal: FlowGraphLayoutMetrics, de
     worseByLength,
     worseByCanvasSize,
     notesJa: [
-      'Graph[DEBUG]はELKベース軽補正v2です。本番Graphにはまだ反映していません。v0.9.6では改善が明確でない場合はnormal-fallbackを選択します。',
+      'Graph[DEBUG]はELKベース軽補正v2です。本番Graphにはまだ反映していません。改善が明確でない場合はnormal-fallbackを選択します。',
       'debug layoutが大きく悪化した場合はnormal-fallbackを選択します。',
       'estimatedCrossingsとedge lengthは概算です。改善方向の比較値として使用してください。',
     ],

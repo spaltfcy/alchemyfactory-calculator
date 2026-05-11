@@ -337,10 +337,10 @@ function decideCycleComponent(cycle: PlanCycleComponent, settings: AppSettings):
       runningExternalInputs: {},
       safeForMainResult: simpleEnough,
       reasonJa: simpleEnough
-        ? '単純な循環として初期投入候補を特定しました。v0.9.7では本流の毎分購入には混ぜず、初期投入判断としてログ化します。'
+        ? '単純な循環として初期投入候補を特定しました。本流の毎分購入には混ぜず、初期投資として扱います。'
         : '循環は検出できましたが、初期投入だけで安全に扱える単純循環とは判定できませんでした。',
       reasonEn: simpleEnough
-        ? 'Identified startup input for a simple cycle. v0.9.7 logs it as a startup decision without mixing it into per-minute purchases.'
+        ? 'Identified startup input for a simple cycle. It is treated as initial investment without mixing it into per-minute purchases.'
         : 'A cycle was detected, but it was not proven safe as a simple startup-input cycle.',
     };
   }
@@ -354,8 +354,8 @@ function decideCycleComponent(cycle: PlanCycleComponent, settings: AppSettings):
     requiredInitialItems: {},
     runningExternalInputs: {},
     safeForMainResult: false,
-    reasonJa: 'v0.9.7ではこの循環を安全に解決できません。',
-    reasonEn: 'v0.9.7 cannot safely resolve this cycle.',
+    reasonJa: 'この循環を安全に解決できません。',
+    reasonEn: 'This cycle cannot be safely resolved.',
   };
 }
 

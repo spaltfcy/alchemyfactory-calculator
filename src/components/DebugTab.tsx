@@ -104,6 +104,10 @@ type VerificationExpectation = {
   expectedErrorCodes?: string[];
   expectedCycleClassification?: string;
   expectedInitialInvestmentItems?: string[];
+  expectedNoPurchasedPerMinItems?: string[];
+  expectedLegacyFallbackUsed?: boolean;
+  expectedAcceptedResultEngine?: string;
+  expectedGraphStartupLabel?: boolean;
 };
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
@@ -114,10 +118,23 @@ function expectationForSource(expectations: VerificationExpectations, sourceFile
 
 
 
-function expectationMatchesArtifact(expectation: VerificationExpectation | undefined, status: 'ok' | 'invalid' | 'error', artifact?: { enrichedDebugLog?: unknown }): boolean | undefined {
+function expectationMatchesArtifact(expectation: VerificationExpectation | undefined, status: 'ok' | 'invalid' | 'error', artifact?: { enrichedDebugLog?: unknown; graphArtifacts?: unknown }): boolean | undefined {
   if (!expectation?.expectedStatus) return undefined;
   if (expectation.expectedStatus !== status) return false;
-  const debugLog = artifact?.enrichedDebugLog as { cycleDecisions?: Array<{ classification?: string; requiredInitialItems?: Record<string, number> }>; initialInvestment?: { requiredByRecipe?: Record<string, string[]>; purchasedItemIds?: string[] } } | undefined;
+  const debugLog = artifact?.enrichedDebugLog as {
+    cycleDecisions?: Array<{ classification?: string; requiredInitialItems?: Record<string, number> }>;
+    initialInvestment?: { requiredByRecipe?: Record<string, string[]>; purchasedItemIds?: string[] };
+    itemStats?: Array<{ itemId?: string; purchased?: number; initialPurchased?: number }>;
+    errorSummaries?: Array<{ code?: string }>;
+    solver?: { resultEngine?: string; solverEngine?: string };
+    resultEngine?: string;
+    structuredMaterialPlan?: { legacyFallbackUsed?: boolean; acceptedResultEngine?: string };
+    legacyAlphaComparison?: { acceptedResultEngine?: string; statusComparison?: unknown; numericComparison?: unknown };
+  } | undefined;
+  if (expectation.expectedErrorCodes && expectation.expectedErrorCodes.length > 0) {
+    const codes = new Set((debugLog?.errorSummaries ?? []).map((summary) => summary.code).filter(Boolean));
+    for (const code of expectation.expectedErrorCodes) if (!codes.has(code)) return false;
+  }
   if (expectation.expectedCycleClassification) {
     const classifications = (debugLog?.cycleDecisions ?? []).map((decision) => decision.classification).filter(Boolean);
     if (!classifications.includes(expectation.expectedCycleClassification)) return false;
@@ -131,6 +148,28 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     for (const itemId of expectation.expectedInitialInvestmentItems) {
       if (!fromDecisions.has(itemId) && !fromInitial.has(itemId)) return false;
     }
+  }
+  if (expectation.expectedNoPurchasedPerMinItems && expectation.expectedNoPurchasedPerMinItems.length > 0) {
+    const stats = new Map((debugLog?.itemStats ?? []).map((stat) => [stat.itemId, stat]));
+    for (const itemId of expectation.expectedNoPurchasedPerMinItems) {
+      const purchased = Number(stats.get(itemId)?.purchased ?? 0);
+      if (Number.isFinite(purchased) && Math.abs(purchased) > 0.000001) return false;
+    }
+  }
+  if (typeof expectation.expectedLegacyFallbackUsed === 'boolean') {
+    const actual = debugLog?.structuredMaterialPlan?.legacyFallbackUsed;
+    if (actual !== expectation.expectedLegacyFallbackUsed) return false;
+  }
+  if (expectation.expectedAcceptedResultEngine) {
+    const actual = debugLog?.structuredMaterialPlan?.acceptedResultEngine ?? debugLog?.legacyAlphaComparison?.acceptedResultEngine ?? debugLog?.resultEngine ?? debugLog?.solver?.resultEngine;
+    if (actual !== expectation.expectedAcceptedResultEngine) return false;
+  }
+  if (expectation.expectedGraphStartupLabel) {
+    const graphArtifacts = artifact?.graphArtifacts as { normal?: { model?: { edges?: Array<{ rateLabel?: string; role?: string; itemName?: string }> } } } | undefined;
+    const edges = graphArtifacts?.normal?.model?.edges ?? [];
+    const startupEdge = edges.find((edge) => String(edge.role ?? '').includes('cycleInput') || String(edge.rateLabel ?? '').includes('初期投入') || String(edge.rateLabel ?? '').includes('Startup input'));
+    if (!startupEdge) return false;
+    if (String(startupEdge.rateLabel ?? '').includes('/min')) return false;
   }
   return true;
 }
@@ -569,7 +608,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 31,
+      debugSchemaVersion: 32,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -604,8 +643,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.7ではGraph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisions/legacyAlphaComparisonも保存します。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.7 keeps Graph[DEBUG] fallback behavior and also saves StructuredMaterialPlan/cycleDecisions/legacyAlphaComparison artifacts.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisions/legacyAlphaComparisonも保存します。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. keeps Graph[DEBUG] fallback behavior and also saves StructuredMaterialPlan/cycleDecisions/legacyAlphaComparison artifacts.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -738,7 +777,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 31,
+      debugSchemaVersion: 32,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1292,7 +1331,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 31,
+      debugSchemaVersion: 32,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

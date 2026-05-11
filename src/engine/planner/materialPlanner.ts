@@ -21,8 +21,8 @@ export function runMaterialPlannerShadow(planModel: PlanModel, alphaResult: Calc
   const discarded = positiveRecord(Object.entries(alphaResult.itemStats).map(([itemId, stat]) => [itemId, stat.discarded]));
   const unsupportedReasons: PlannerUnsupportedReason[] = planModel.dependencyGraph.cycleComponents.map((cycle) => ({
     code: 'SHADOW_CYCLE_COMPONENT_DETECTED',
-    messageJa: 'shadow planner が循環成分を検出しました。v0.9.6では分類のみ行い、本番結果はalpha solverを採用します。',
-    messageEn: 'The shadow planner detected a cycle component. v0.9.6 classifies it only; the production result still comes from the alpha solver.',
+    messageJa: 'structured planner が循環成分を検出しました。cycleDecisionとして本番Resultへ反映し、安全なcycleInputは初期投資扱いにします。',
+    messageEn: 'The structured planner detected a cycle component. It is applied to the production result as a cycleDecision; safe cycleInput decisions become startup input.',
     data: cycle,
   }));
   const status = unsupportedReasons.length > 0 ? 'partial' : 'ok';
@@ -58,12 +58,12 @@ export function runMaterialPlannerShadow(planModel: PlanModel, alphaResult: Calc
       },
       {
         phase: 'shadowResult',
-        messageJa: 'v0.9.6ではalpha結果を基準にshadow比較用のmaterial summaryを生成します。DAG独立解法への本番切替はv0.9.7で行います。',
-        messageEn: 'v0.9.6 builds a material summary for shadow comparison using the alpha result as the accepted baseline. Production switch to the independent DAG solver is planned for v0.9.7.',
+        messageJa: 'structured plannerのmaterial summaryを生成します。legacy alphaはDEBUG比較専用です。',
+        messageEn: 'Builds a material summary for the structured planner. Legacy alpha is DEBUG comparison only.',
       },
     ],
-    noteJa: 'v0.9.6のMaterialPlannerは本番切替前のshadow比較版です。DAG/cycle/source分類をログ化し、計算結果そのものはalpha solverを正として比較します。',
-    noteEn: 'The v0.9.6 MaterialPlanner is a pre-switch shadow comparison. It logs DAG/cycle/source classifications and compares against the alpha solver as the accepted production result.',
+    noteJa: 'MaterialPlannerはstructured planner結果の材料サマリです。DAG/cycle/source分類をログ化し、legacy alphaとはDEBUG比較します。',
+    noteEn: 'The MaterialPlanner summary belongs to the accepted structured planner result. It logs DAG/cycle/source classification and compares against legacy alpha for DEBUG only.',
   };
 }
 
@@ -227,14 +227,14 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, legacyAlphaRes
 
   const structuredPlan = {
     ...base,
-    mode: 'structured-material-v0980' as const,
+    mode: 'structured-material-v0990' as const,
     status: acceptedResult.calculationStatus === 'invalid' ? 'partial' as const : 'ok' as const,
     cycleComponents: planModel.dependencyGraph.cycleComponents,
     cycleDecisions,
     acceptedResultStatus: acceptedResult.calculationStatus,
     legacyFallbackUsed: false,
     structuredResultAdopted: true,
-    acceptedResultEngine: 'structured-material-v0980',
+    acceptedResultEngine: 'structured-material-v0990',
     trace: [
       ...base.trace,
       {
@@ -245,13 +245,13 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, legacyAlphaRes
       },
       {
         phase: 'structuredResultAdoption',
-        messageJa: 'v0.9.8ではStructuredMaterialPlan由来のCalculationResultを採用します。alpha solverはDEBUG比較用の互換ベースとしてのみ記録します。',
-        messageEn: 'v0.9.8 adopts the CalculationResult produced from StructuredMaterialPlan. The alpha solver is recorded only as a DEBUG compatibility comparison baseline.',
+        messageJa: 'StructuredMaterialPlan由来のCalculationResultを採用しています。alpha solverはDEBUG比較用にのみ記録します。',
+        messageEn: 'The CalculationResult produced from StructuredMaterialPlan is adopted. The alpha solver is recorded only for DEBUG comparison.',
         data: { acceptedResultStatus: acceptedResult.calculationStatus, legacyFallbackUsed: false },
       },
     ],
-    noteJa: 'v0.9.8ではStructuredMaterialPlanのcycleDecisionsをResultへ反映し、安全なcycleInputは初期投資ラインとしてOK resultに昇格します。',
-    noteEn: 'v0.9.8 applies StructuredMaterialPlan cycleDecisions to the result and promotes safe cycleInput decisions to OK results with initial-investment lines.',
+    noteJa: 'StructuredMaterialPlanのcycleDecisionsをResultへ反映し、安全なcycleInputは初期投資ラインとしてOK resultに昇格します。',
+    noteEn: 'StructuredMaterialPlan cycleDecisions are applied to the result; safe cycleInput decisions are promoted to OK results with initial-investment lines.',
   };
 
   return { result: acceptedResult, structuredPlan };

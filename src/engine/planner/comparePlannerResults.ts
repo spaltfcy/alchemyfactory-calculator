@@ -41,7 +41,7 @@ export function comparePlannerResults(alphaResult: CalculationResult, shadow: Ma
   const diffCount = recipeDiffs.length + itemDiffs.length + sourceDiffs.length;
   return {
     status: diffCount > 0 ? 'diff' : 'match',
-    mode: shadow.mode === 'structured-material-v0980' ? 'legacy-alpha-vs-structured-v0980' : shadow.mode === 'structured-material-v0970' ? 'legacy-alpha-vs-structured-v0970' : 'alpha-vs-shadow-v0960',
+    mode: shadow.mode === 'structured-material-v0990' ? 'legacy-alpha-vs-structured-v0990' : shadow.mode === 'structured-material-v0980' ? 'legacy-alpha-vs-structured-v0980' : shadow.mode === 'structured-material-v0970' ? 'legacy-alpha-vs-structured-v0970' : 'alpha-vs-shadow-v0960',
     epsilon: { absolute: ABS_EPS, relative: REL_EPS },
     summary: {
       alphaRecipeCount: Object.keys(alphaResult.recipeStats).length,
@@ -63,7 +63,7 @@ export function comparePlannerResults(alphaResult: CalculationResult, shadow: Ma
     itemDiffs,
     sourceDiffs,
     reasonCandidates: shadow.unsupportedReasons,
-    noteJa: 'v0.9.6ではalpha solverを正としてshadow plannerとの差分を出します。DAG独立計算への切替前に差分箇所を特定するためのログです。',
-    noteEn: 'v0.9.6 treats the alpha solver as the accepted result and reports differences against the shadow planner before switching to the independent DAG planner.',
+    noteJa: 'structured plannerの採用結果とlegacy alpha比較用の数値差分です。status差分はlegacyAlphaComparison.statusComparisonを確認してください。',
+    noteEn: 'Numeric differences between the accepted structured planner result and the legacy alpha comparison. See legacyAlphaComparison.statusComparison for status differences.',
   };
 }
