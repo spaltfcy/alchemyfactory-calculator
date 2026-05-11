@@ -17,7 +17,7 @@ export type MaterialPlannerTraceStep = {
 
 export type MaterialPlannerShadowResult = {
   status: 'ok' | 'partial' | 'unsupported';
-  mode: 'shadow-dag-v0960' | 'structured-material-v0970';
+  mode: 'shadow-dag-v0960' | 'structured-material-v0970' | 'structured-material-v0980';
   planSummary: PlanModel['summary'];
   recipeRuns: Record<string, number>;
   itemDemand: Record<string, number>;
@@ -43,7 +43,7 @@ export type PlannerNumericDiff = {
 
 export type PlannerComparisonResult = {
   status: 'match' | 'diff' | 'not-compared';
-  mode: 'alpha-vs-shadow-v0960' | 'legacy-alpha-vs-structured-v0970';
+  mode: 'alpha-vs-shadow-v0960' | 'legacy-alpha-vs-structured-v0970' | 'legacy-alpha-vs-structured-v0980';
   epsilon: { absolute: number; relative: number };
   summary: {
     alphaRecipeCount: number;
@@ -65,7 +65,7 @@ export type PlannerComparisonResult = {
 
 export type MaterialPlannerShadowArtifact = {
   enabled: true;
-  mode: 'shadow-dag-v0960' | 'structured-material-v0970';
+  mode: 'shadow-dag-v0960' | 'structured-material-v0970' | 'structured-material-v0980';
   planModel: PlanModel;
   shadowResult: MaterialPlannerShadowResult;
   comparison: PlannerComparisonResult;
@@ -80,16 +80,18 @@ export type MaterialPlannerShadowArtifact = {
 
 
 export type StructuredMaterialPlan = MaterialPlannerShadowResult & {
-  mode: 'structured-material-v0970';
+  mode: 'structured-material-v0970' | 'structured-material-v0980';
   acceptedResultStatus: CalculationResult['calculationStatus'];
   cycleDecisions: PlanModel['dependencyGraph']['cycleDecisions'];
   legacyFallbackUsed: boolean;
   legacyFallbackReason?: string;
+  structuredResultAdopted?: boolean;
+  acceptedResultEngine?: string;
 };
 
 export type LegacyAlphaComparisonArtifact = {
   enabled: boolean;
-  mode: 'legacy-alpha-vs-structured-v0970';
+  mode: 'legacy-alpha-vs-structured-v0970' | 'legacy-alpha-vs-structured-v0980';
   comparison: PlannerComparisonResult;
   legacyAlphaSummary: {
     recipeCount: number;

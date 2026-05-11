@@ -103,12 +103,36 @@ type VerificationExpectation = {
   expectedStatus?: 'ok' | 'invalid' | 'error';
   expectedErrorCodes?: string[];
   expectedCycleClassification?: string;
+  expectedInitialInvestmentItems?: string[];
 };
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
 
 function expectationForSource(expectations: VerificationExpectations, sourceFileName: string): VerificationExpectation | undefined {
   return expectations[sourceFileName] ?? expectations[sourceFileName.split('/').pop() ?? sourceFileName];
+}
+
+
+
+function expectationMatchesArtifact(expectation: VerificationExpectation | undefined, status: 'ok' | 'invalid' | 'error', artifact?: { enrichedDebugLog?: unknown }): boolean | undefined {
+  if (!expectation?.expectedStatus) return undefined;
+  if (expectation.expectedStatus !== status) return false;
+  const debugLog = artifact?.enrichedDebugLog as { cycleDecisions?: Array<{ classification?: string; requiredInitialItems?: Record<string, number> }>; initialInvestment?: { requiredByRecipe?: Record<string, string[]>; purchasedItemIds?: string[] } } | undefined;
+  if (expectation.expectedCycleClassification) {
+    const classifications = (debugLog?.cycleDecisions ?? []).map((decision) => decision.classification).filter(Boolean);
+    if (!classifications.includes(expectation.expectedCycleClassification)) return false;
+  }
+  if (expectation.expectedInitialInvestmentItems && expectation.expectedInitialInvestmentItems.length > 0) {
+    const fromDecisions = new Set<string>();
+    for (const decision of debugLog?.cycleDecisions ?? []) {
+      for (const itemId of Object.keys(decision.requiredInitialItems ?? {})) fromDecisions.add(itemId);
+    }
+    const fromInitial = new Set(Object.values(debugLog?.initialInvestment?.requiredByRecipe ?? {}).flat());
+    for (const itemId of expectation.expectedInitialInvestmentItems) {
+      if (!fromDecisions.has(itemId) && !fromInitial.has(itemId)) return false;
+    }
+  }
+  return true;
 }
 
 function isZipFile(file: File): boolean {
@@ -545,7 +569,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 30,
+      debugSchemaVersion: 31,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -714,7 +738,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 30,
+      debugSchemaVersion: 31,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -892,7 +916,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       previousMessageCount: Math.max(0, (args.allMessageLogs?.length ?? userMessages.length) - (args.currentRunMessageLogs?.length ?? 0)),
       negativeTargetCount: args.negativeTargets?.length ?? 0,
       expectedStatus: args.expectation?.expectedStatus,
-      expectedMatched: args.expectation?.expectedStatus ? args.expectation.expectedStatus === args.status : undefined,
+      expectedMatched: expectationMatchesArtifact(args.expectation, args.status, args.artifact),
     };
   }
 
@@ -1139,6 +1163,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       materialPlannerShadowSummary: (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: { status?: string }; comparison?: unknown } }).materialPlannerShadow?.comparison,
       structuredMaterialPlanSummary: (artifact.enrichedDebugLog as { structuredMaterialPlan?: { status?: string; mode?: string; cycleDecisions?: unknown[] } }).structuredMaterialPlan,
       cycleDecisionCount: ((artifact.enrichedDebugLog as { cycleDecisions?: unknown[] }).cycleDecisions ?? []).length,
+      solver: (artifact.enrichedDebugLog as { solver?: unknown }).solver,
+      legacyAlphaComparison: (artifact.enrichedDebugLog as { legacyAlphaComparison?: unknown }).legacyAlphaComparison,
     }, null, 2));
     const materialPlannerShadow = (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: unknown; comparison?: unknown; cycleComponents?: unknown[]; planModel?: unknown } }).materialPlannerShadow;
     if (materialPlannerShadow) {
@@ -1266,7 +1292,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 30,
+      debugSchemaVersion: 31,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
@@ -1276,6 +1302,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       error: results.filter((result) => result.status === 'error').length,
       expectedInvalid: results.filter((result) => result.status === 'invalid' && result.expectedMatched).length,
       unexpectedInvalid: results.filter((result) => result.status === 'invalid' && !result.expectedMatched).length,
+      expectedOk: results.filter((result) => result.status === 'ok' && result.expectedMatched).length,
+      unexpectedOkMismatch: results.filter((result) => result.status === 'ok' && result.expectedMatched === false).length,
       expectationMatched: results.filter((result) => result.expectedMatched === true).length,
       expectationMismatched: results.filter((result) => result.expectedMatched === false).length,
       skipped: Object.values(sourceZip.files)

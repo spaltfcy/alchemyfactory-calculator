@@ -127,7 +127,7 @@ export type ResidualUnresolvedFlow = {
 
 export type InitialInvestmentEndpoint =
   | { type: 'recipe'; recipeId: string }
-  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'unresolved' }
+  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'unresolved' | 'cycleInput' }
   | { type: 'itemSink'; itemId: string; sinkMode: 'initial' };
 
 export type InitialInvestmentTransportKind = 'belt' | 'pipeline';

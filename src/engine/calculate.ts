@@ -32,8 +32,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v0970';
-const SOLVE_PLAN_VERSION = '0.9.7';
+const SOLVE_PLAN_MODE = 'solvePlan-v0980';
+const SOLVE_PLAN_VERSION = '0.9.8';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -93,9 +93,9 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0970',
-    noteJa: 'v0.9.7ではactive/candidate/unusedを明示し、MaterialPlanner shadow comparisonを追加します。実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
-    noteEn: 'v0.9.7 explicitly separates active/candidate/unused diagnostics and adds MaterialPlanner shadow comparison. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0980',
+    noteJa: 'v0.9.8ではactive/candidate/unusedを明示し、MaterialPlanner shadow comparisonを追加します。実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
+    noteEn: 'v0.9.8 explicitly separates active/candidate/unused diagnostics and adds MaterialPlanner shadow comparison. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
 }
 
@@ -117,7 +117,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const structuredComparison = comparePlannerResults(newSolverResult.result, structuredSolve.structuredPlan);
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v0970' as const,
+    mode: 'structured-material-v0980' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -133,7 +133,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   };
   const legacyAlphaComparison = {
     enabled: true as const,
-    mode: 'legacy-alpha-vs-structured-v0970' as const,
+    mode: 'legacy-alpha-vs-structured-v0980' as const,
     comparison: structuredComparison,
     legacyAlphaSummary: materialPlannerShadow.alphaResultSummary,
     structuredSummary: {
@@ -142,8 +142,8 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
       flowCount: result.flows.length,
       calculationStatus: result.calculationStatus,
     },
-    noteJa: 'v0.9.7では通常Result契約をStructuredMaterialPlan側へ寄せ、alpha solverはDEBUG時のlegacy比較として記録します。',
-    noteEn: 'v0.9.7 aligns the production result contract with StructuredMaterialPlan and records the alpha solver as a legacy DEBUG comparison.',
+    noteJa: 'v0.9.8ではStructuredMaterialPlan由来のResultを採用し、alpha solverはDEBUG時のlegacy比較として記録します。',
+    noteEn: 'v0.9.8 adopts the StructuredMaterialPlan-derived result and records the alpha solver as a legacy DEBUG comparison.',
   };
   const extendedDebugLog = {
     ...debugLog,
@@ -159,14 +159,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v0970',
-    solverEngine: 'structured-material-v0970',
+    resultEngine: 'structured-material-v0980',
+    solverEngine: 'structured-material-v0980',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v0970',
-      solverEngine: 'structured-material-v0970',
+      resultEngine: 'structured-material-v0980',
+      solverEngine: 'structured-material-v0980',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
