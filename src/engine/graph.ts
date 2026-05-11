@@ -152,6 +152,7 @@ function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
       sourceSide: isSelfLoop ? 'right' : sourceSide(flow.role),
       targetSide: isSelfLoop ? 'left' : targetSide(flow.role),
       isSelfLoop,
+      role: flow.role,
     },
   };
 }
@@ -221,6 +222,7 @@ function makeInitialEdge(groupId: string, flow: InitialInvestmentFlow, lang: Lan
       outputOrder: 9999,
       sourceSide: 'right' as PlannerHandleSide,
       targetSide: 'left' as PlannerHandleSide,
+      role: 'material',
     },
   };
 }
@@ -787,6 +789,44 @@ function layoutSvgNodesDebugLane(nodes: Node[], edges: Edge[]): { nodes: SvgGrap
   return { nodes: positioned, width: canvasWidth, height: canvasHeight, nodeById };
 }
 
+
+function layoutSvgNodesDebugV2(nodes: Node[], edges: Edge[]): { nodes: SvgGraphNode[]; width: number; height: number; nodeById: Map<string, SvgGraphNode> } {
+  const base = layoutSvgNodes(nodes, edges);
+  if (base.nodes.length === 0) return base;
+  const maxShiftX = 300;
+  const maxShiftY = 240;
+  const shifted = base.nodes.map((node) => {
+    const data = node.data;
+    const relatedRoles = edges
+      .filter((edge) => edge.source === node.id || edge.target === node.id)
+      .map((edge) => edgeRole(edge));
+    let dx = 0;
+    let dy = 0;
+    if (data.kind === 'final') dx += 160;
+    if (data.kind === 'surplus' || data.kind === 'discard') {
+      dx += 80;
+      dy += 170;
+    }
+    if (node.id.startsWith('source:') || data.kind === 'item') {
+      if (relatedRoles.some((role) => role === 'fuel' || role === 'steam')) dy -= 150;
+      if (relatedRoles.some((role) => role === 'fertilizer')) dy += 150;
+    }
+    if (data.isInitialInvestment) dy -= 180;
+    dx = Math.max(-maxShiftX, Math.min(maxShiftX, dx));
+    dy = Math.max(-maxShiftY, Math.min(maxShiftY, dy));
+    return { ...node, x: node.x + dx, y: node.y + dy };
+  });
+  const minX = Math.min(...shifted.map((node) => node.x));
+  const minY = Math.min(...shifted.map((node) => node.y));
+  const normalizeX = minX < 40 ? 40 - minX : 0;
+  const normalizeY = minY < 40 ? 40 - minY : 0;
+  const normalized = shifted.map((node) => ({ ...node, x: node.x + normalizeX, y: node.y + normalizeY }));
+  const nodeById = new Map(normalized.map((node) => [node.id, node]));
+  const width = Math.max(900, Math.ceil(Math.max(...normalized.map((node) => node.x + node.width)) + 40));
+  const height = Math.max(240, Math.ceil(Math.max(...normalized.map((node) => node.y + node.height)) + 40));
+  return { nodes: normalized, width, height, nodeById };
+}
+
 function svgHandlePoint(node: SvgGraphNode, handleId: string | null | undefined, kind: 'source' | 'target'): {
   x: number;
   y: number;
@@ -1050,6 +1090,13 @@ export type FlowGraphLayoutMetrics = {
   layoutMs: number;
   width: number;
   height: number;
+  layoutAlgorithm?: string;
+  selectedLayout?: string;
+  fallbackReason?: string;
+  layoutScore?: number;
+  normalLayoutScore?: number;
+  debugCandidateLayoutScore?: number;
+  debugCandidate?: Record<string, unknown>;
 };
 
 export type FlowGraphDebugArtifacts = {
@@ -1168,6 +1215,35 @@ function graphMetrics(variant: 'normal' | 'debug', graphBuildMs: number, layoutM
   };
 }
 
+
+function scoreFlowGraphLayoutMetrics(metrics: Pick<FlowGraphLayoutMetrics, 'estimatedCrossings' | 'averageEdgeLength' | 'maxEdgeLength' | 'width' | 'height'>): number {
+  return Number((
+    metrics.estimatedCrossings * 1000 +
+    metrics.averageEdgeLength +
+    metrics.maxEdgeLength * 0.2 +
+    metrics.width * 0.05 +
+    metrics.height * 0.05
+  ).toFixed(2));
+}
+
+function withLayoutDecision(
+  metrics: FlowGraphLayoutMetrics,
+  patch: Partial<FlowGraphLayoutMetrics>,
+): FlowGraphLayoutMetrics {
+  return { ...metrics, ...patch, layoutScore: patch.layoutScore ?? metrics.layoutScore ?? scoreFlowGraphLayoutMetrics(metrics) };
+}
+
+function fallbackReasonForDebugLayout(normal: FlowGraphLayoutMetrics, candidate: FlowGraphLayoutMetrics): string | undefined {
+  const normalScore = normal.layoutScore ?? scoreFlowGraphLayoutMetrics(normal);
+  const candidateScore = candidate.layoutScore ?? scoreFlowGraphLayoutMetrics(candidate);
+  if (candidate.width > normal.width * 2) return 'debug width is more than 2x normal';
+  if (candidate.height > normal.height * 2.5) return 'debug height is more than 2.5x normal';
+  if (candidate.maxEdgeLength > Math.max(1, normal.maxEdgeLength) * 2) return 'debug max edge length is more than 2x normal';
+  if (candidateScore > normalScore * 1.05 && candidate.estimatedCrossings >= normal.estimatedCrossings) return 'debug score is worse and crossings did not improve';
+  if (candidateScore > normalScore * 1.25) return 'debug score is more than 25% worse';
+  return undefined;
+}
+
 function serializeGraphModel(variant: 'normal' | 'debug', layout: ReturnType<typeof layoutSvgNodes>, graph: { nodes: Node[]; edges: Edge[] }) {
   const nodeIds = new Set(layout.nodes.map((node) => node.id));
   return {
@@ -1209,6 +1285,15 @@ function serializeGraphModel(variant: 'normal' | 'debug', layout: ReturnType<typ
 export type FlowGraphLayoutMetricsDiff = {
   generatedAt: string;
   improved: boolean;
+  selectedLayout: string;
+  fallbackReason?: string;
+  normalScore: number;
+  debugScore: number;
+  scoreDelta: number;
+  scoreRatio: number;
+  improvedByCrossings: boolean;
+  worseByLength: boolean;
+  worseByCanvasSize: boolean;
   notesJa: string[];
   notesEn: string[];
   delta: Record<string, number>;
@@ -1217,6 +1302,8 @@ export type FlowGraphLayoutMetricsDiff = {
 };
 
 export function compareFlowGraphLayoutMetrics(normal: FlowGraphLayoutMetrics, debug: FlowGraphLayoutMetrics): FlowGraphLayoutMetricsDiff {
+  const normalScore = normal.layoutScore ?? scoreFlowGraphLayoutMetrics(normal);
+  const debugScore = debug.layoutScore ?? scoreFlowGraphLayoutMetrics(debug);
   const delta = {
     estimatedCrossings: debug.estimatedCrossings - normal.estimatedCrossings,
     averageEdgeLength: Number((debug.averageEdgeLength - normal.averageEdgeLength).toFixed(2)),
@@ -1224,17 +1311,33 @@ export function compareFlowGraphLayoutMetrics(normal: FlowGraphLayoutMetrics, de
     width: Number((debug.width - normal.width).toFixed(2)),
     height: Number((debug.height - normal.height).toFixed(2)),
     layoutMs: Number((debug.layoutMs - normal.layoutMs).toFixed(2)),
+    layoutScore: Number((debugScore - normalScore).toFixed(2)),
   };
-  const improved = delta.estimatedCrossings <= 0 && delta.maxEdgeLength <= 0;
+  const scoreRatio = normalScore > 0 ? Number((debugScore / normalScore).toFixed(4)) : 1;
+  const improvedByCrossings = delta.estimatedCrossings < 0;
+  const worseByLength = delta.averageEdgeLength > 0 || delta.maxEdgeLength > 0;
+  const worseByCanvasSize = delta.width > 0 || delta.height > 0;
+  const improved = debugScore <= normalScore && !debug.fallbackReason;
   return {
     generatedAt: new Date().toISOString(),
     improved,
+    selectedLayout: debug.selectedLayout ?? debug.layoutAlgorithm ?? 'debug-v2',
+    fallbackReason: debug.fallbackReason,
+    normalScore,
+    debugScore,
+    scoreDelta: Number((debugScore - normalScore).toFixed(2)),
+    scoreRatio,
+    improvedByCrossings,
+    worseByLength,
+    worseByCanvasSize,
     notesJa: [
-      'Graph[DEBUG]はlane-aware layout v1です。本番Graphにはまだ反映していません。',
+      'Graph[DEBUG]はELKベース軽補正v2です。本番Graphにはまだ反映していません。',
+      'debug layoutが大きく悪化した場合はnormal-fallbackを選択します。',
       'estimatedCrossingsとedge lengthは概算です。改善方向の比較値として使用してください。',
     ],
     notesEn: [
-      'Graph[DEBUG] uses lane-aware layout v1 and is not applied to the production Graph yet.',
+      'Graph[DEBUG] uses ELK-based light-adjustment v2 and is not applied to the production Graph yet.',
+      'If the debug layout gets significantly worse, normal-fallback is selected.',
       'estimatedCrossings and edge length are approximate comparison metrics.',
     ],
     delta,
@@ -1253,16 +1356,59 @@ export function buildFlowGraphDebugArtifacts(
   const graphStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const graph = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
   const graphEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const layoutStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const layout = variant === 'debug' ? layoutSvgNodesDebugLane(graph.nodes, graph.edges) : layoutSvgNodes(graph.nodes, graph.edges);
-  const layoutEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const svg = renderFlowGraphSvgFromGraph(graph, layout, lang);
-  const model = serializeGraphModel(variant, layout, graph);
+
+  if (variant === 'normal') {
+    const layoutStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const layout = layoutSvgNodes(graph.nodes, graph.edges);
+    const layoutEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const metrics = withLayoutDecision(
+      graphMetrics('normal', graphEnd - graphStart, layoutEnd - layoutStart, graph, layout),
+      { layoutAlgorithm: 'production-layered', selectedLayout: 'normal' },
+    );
+    return {
+      variant,
+      generatedAt: new Date().toISOString(),
+      svg: renderFlowGraphSvgFromGraph(graph, layout, lang),
+      model: serializeGraphModel(variant, layout, graph),
+      metrics,
+    };
+  }
+
+  const normalLayoutStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const normalLayout = layoutSvgNodes(graph.nodes, graph.edges);
+  const normalLayoutEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const normalMetrics = withLayoutDecision(
+    graphMetrics('normal', graphEnd - graphStart, normalLayoutEnd - normalLayoutStart, graph, normalLayout),
+    { layoutAlgorithm: 'production-layered', selectedLayout: 'normal' },
+  );
+
+  const candidateLayoutStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const candidateLayout = layoutSvgNodesDebugV2(graph.nodes, graph.edges);
+  const candidateLayoutEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const candidateMetrics = withLayoutDecision(
+    graphMetrics('debug', graphEnd - graphStart, candidateLayoutEnd - candidateLayoutStart, graph, candidateLayout),
+    { layoutAlgorithm: 'elk-light-adjustment-v2', selectedLayout: 'debug-v2' },
+  );
+
+  const fallbackReason = fallbackReasonForDebugLayout(normalMetrics, candidateMetrics);
+  const selectedLayout = fallbackReason ? normalLayout : candidateLayout;
+  const selectedBaseMetrics = fallbackReason
+    ? graphMetrics('debug', graphEnd - graphStart, candidateLayoutEnd - candidateLayoutStart, graph, normalLayout)
+    : candidateMetrics;
+  const selectedMetrics = withLayoutDecision(selectedBaseMetrics, {
+    layoutAlgorithm: 'elk-light-adjustment-v2',
+    selectedLayout: fallbackReason ? 'normal-fallback' : 'debug-v2',
+    fallbackReason,
+    normalLayoutScore: normalMetrics.layoutScore,
+    debugCandidateLayoutScore: candidateMetrics.layoutScore,
+    debugCandidate: candidateMetrics,
+  });
+
   return {
     variant,
     generatedAt: new Date().toISOString(),
-    svg,
-    model,
-    metrics: graphMetrics(variant, graphEnd - graphStart, layoutEnd - layoutStart, graph, layout),
+    svg: renderFlowGraphSvgFromGraph(graph, selectedLayout, lang),
+    model: serializeGraphModel(variant, selectedLayout, graph),
+    metrics: selectedMetrics,
   };
 }

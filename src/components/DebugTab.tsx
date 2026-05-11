@@ -531,7 +531,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 27,
+      debugSchemaVersion: 28,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -566,8 +566,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.4ではGraph[DEBUG]にlane-aware layout v1を適用し、本番Graphとの差分を比較します。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.4 applies lane-aware layout v1 to Graph[DEBUG] and compares it with the production Graph.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.5ではGraph[DEBUG]にELKベース軽補正v2を適用し、悪化時は本番Graph相当へ自動fallbackします。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.5 applies ELK-based light-adjustment v2 to Graph[DEBUG] and automatically falls back to the production-like layout when it gets worse.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -700,7 +700,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 27,
+      debugSchemaVersion: 28,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1093,7 +1093,11 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     zip.file(baseName + '__source.json', raw);
     zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
     zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
-    zip.file(baseName + '__user-message-log.json', JSON.stringify({ currentRunMessageLogs: messageLogs.currentRunMessageLogs, allMessageLogs: messageLogs.allMessageLogs }, null, 2));
+    zip.file(baseName + '__user-message-log.json', JSON.stringify({
+      currentRunMessageLogs: messageLogs.currentRunMessageLogs,
+      allMessageLogs: messageLogs.allMessageLogs,
+      previousMessageCount: Math.max(0, messageLogs.allMessageLogs.length - messageLogs.currentRunMessageLogs.length),
+    }, null, 2));
     if (targetSanitization.negativeTargets.length > 0) {
       zip.file(baseName + '__target-warning-summary.json', JSON.stringify({
         code: 'NEGATIVE_TARGET_VALUE_IGNORED',
@@ -1216,7 +1220,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 27,
+      debugSchemaVersion: 28,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

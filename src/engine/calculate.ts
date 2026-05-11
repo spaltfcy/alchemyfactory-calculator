@@ -29,8 +29,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v0940';
-const SOLVE_PLAN_VERSION = '0.9.4';
+const SOLVE_PLAN_MODE = 'solvePlan-v0950';
+const SOLVE_PLAN_VERSION = '0.9.5';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -42,16 +42,26 @@ function disabledTargetCount(input: CalculateInput): number {
 
 function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnostics: ReturnType<typeof buildLinearModelDiagnostics> | undefined) {
   const linearSummary = linearModelDiagnostics?.linearBalanceModel?.summary;
-  const resultRecipeCount = Object.keys(result.recipeStats).length;
-  const resultItemCount = Object.keys(result.itemStats).length;
+  const resultRecipeIds = Object.keys(result.recipeStats).sort((a, b) => a.localeCompare(b));
+  const resultItemIds = Object.keys(result.itemStats).sort((a, b) => a.localeCompare(b));
+  const linearRecipeIds = [...(linearModelDiagnostics?.linearBalanceModel?.activeRecipeIds ?? [])].sort((a, b) => a.localeCompare(b));
+  const linearItemIds = [...(linearModelDiagnostics?.linearBalanceModel?.activeItemIds ?? [])].sort((a, b) => a.localeCompare(b));
+  const resultRecipeSet = new Set(resultRecipeIds);
+  const resultItemSet = new Set(resultItemIds);
+  const linearRecipeSet = new Set(linearRecipeIds);
+  const linearItemSet = new Set(linearItemIds);
+  const missingResultRecipeIds = resultRecipeIds.filter((recipeId) => !linearRecipeSet.has(recipeId));
+  const missingResultItemIds = resultItemIds.filter((itemId) => !linearItemSet.has(itemId));
+  const unusedCandidateRecipeIds = linearRecipeIds.filter((recipeId) => !resultRecipeSet.has(recipeId));
+  const unusedCandidateItemIds = linearItemIds.filter((itemId) => !resultItemSet.has(itemId));
+  const resultRecipeCount = resultRecipeIds.length;
+  const resultItemCount = resultItemIds.length;
   const linearActiveRecipeCount = linearSummary?.activeRecipeCount;
   const linearActiveItemCount = linearSummary?.activeItemCount;
   const activeRecipeDelta = typeof linearActiveRecipeCount === 'number' ? linearActiveRecipeCount - resultRecipeCount : undefined;
   const activeItemDelta = typeof linearActiveItemCount === 'number' ? linearActiveItemCount - resultItemCount : undefined;
-  const severeMismatch = Boolean(
-    (typeof activeRecipeDelta === 'number' && Math.abs(activeRecipeDelta) >= 5) ||
-    (typeof activeItemDelta === 'number' && Math.abs(activeItemDelta) >= 8),
-  );
+  const severeMismatch = missingResultRecipeIds.length > 0 || missingResultItemIds.length > 0;
+  const candidateOnlyMismatch = !severeMismatch && (unusedCandidateRecipeIds.length > 0 || unusedCandidateItemIds.length > 0);
   return {
     resultFlowCount: result.flows.length,
     resultRecipeCount,
@@ -62,9 +72,17 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
     activeRecipeDelta,
     activeItemDelta,
     severeMismatch,
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0940',
-    noteJa: 'v0.9.4では実resultと診断モデルの差分を明示します。target 0件では診断モデルも空に近づけ、残る差分は後続のsolver統合対象として扱います。',
-    noteEn: 'v0.9.4 reports deltas between the real result and diagnostic model. Empty targets should now produce an empty diagnostic model; remaining deltas are tracked for later solver unification.',
+    candidateOnlyMismatch,
+    missingResultRecipeIds,
+    missingResultItemIds,
+    unusedCandidateRecipeIds,
+    unusedCandidateItemIds,
+    unusedCandidateRecipeCount: unusedCandidateRecipeIds.length,
+    unusedCandidateItemCount: unusedCandidateItemIds.length,
+    comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0950',
+    noteJa: 'v0.9.5では実resultに存在しない診断候補をcandidate-onlyとして分離します。実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
+    noteEn: 'v0.9.5 separates diagnostic-only candidates from the actual result. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
 }
 
@@ -87,8 +105,8 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           {
             severity: 'warning' as const,
             code: 'LINEAR_DIAGNOSTIC_RESULT_DELTA',
-            messageJa: '実計算結果とlinearModelDiagnosticsの件数差が大きいです。診断モデルの乖離候補として確認してください。',
-            messageEn: 'The linearModelDiagnostics counts differ significantly from the actual result. Please inspect this as a diagnostic model mismatch candidate.',
+            messageJa: '実計算結果に存在するrecipe/itemがlinearModelDiagnosticsに欠けています。診断モデルの乖離候補として確認してください。',
+            messageEn: 'Some recipes/items from the actual result are missing from linearModelDiagnostics. Please inspect this as a diagnostic model mismatch candidate.',
             data: diagnosticComparison,
           },
         ]

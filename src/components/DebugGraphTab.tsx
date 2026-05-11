@@ -33,6 +33,9 @@ export function DebugGraphTab({ lang, result, settings, completedGraphNodeIds, o
       crossings: artifact.metrics.estimatedCrossings + (artifact.metrics.estimatedCrossingsCapped ? '+' : ''),
       avgEdge: artifact.metrics.averageEdgeLength,
       maxEdge: artifact.metrics.maxEdgeLength,
+      score: artifact.metrics.layoutScore,
+      selectedLayout: artifact.metrics.selectedLayout ?? artifact.metrics.layoutAlgorithm,
+      fallback: artifact.metrics.fallbackReason ?? '-',
       status: result.calculationStatus ?? 'ok',
     };
   }, [result, lang, settings, completedGraphNodeIds]);
@@ -44,8 +47,8 @@ export function DebugGraphTab({ lang, result, settings, completedGraphNodeIds, o
           <h2>Graph[DEBUG]</h2>
           <p>
             {lang === 'ja'
-              ? '本番Graphとは別の実験用タブです。v0.9.4ではlane-aware layout v1とメトリクス比較を確認します。'
-              : 'Experimental graph tab. v0.9.4 previews lane-aware layout v1 and layout metrics comparison.'}
+              ? '本番Graphとは別の実験用タブです。v0.9.5ではELKベース軽補正v2とfallback判定を確認します。'
+              : 'Experimental graph tab. v0.9.5 previews ELK-based light-adjustment v2 and fallback decisions.'}
           </p>
         </div>
         <dl className="debug-graph-metrics">
