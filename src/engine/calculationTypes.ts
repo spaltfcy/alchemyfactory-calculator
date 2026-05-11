@@ -218,6 +218,32 @@ export type CalculationDebugLog = {
   flows: CalculatedFlow[];
   itemStats: ItemStat[];
   recipeStats: RecipeStat[];
+  solver?: {
+    mode: string;
+    version: string;
+    debug: boolean;
+    resultEngine?: string;
+    solverEngine?: string;
+    diagnosticsMode?: string;
+    normalizedTargetCount: number;
+    calculationTargetCount: number;
+    enabledTargetCount: number;
+    disabledTargetCount: number;
+  };
+  diagnosticComparison?: {
+    resultFlowCount: number;
+    resultRecipeCount: number;
+    resultItemCount: number;
+    linearActiveRecipeCount?: number;
+    linearActiveItemCount?: number;
+    linearTargetCount?: number;
+    noteJa: string;
+    noteEn: string;
+  };
+  graphArtifacts?: {
+    normal?: { metrics: unknown };
+    debug?: { metrics: unknown };
+  };
 };
 
 export type CalculationDebugResult = {

@@ -442,8 +442,9 @@ function activeItemIdsForModel(recipeIds: string[], input: CalculateInput): stri
   for (const target of input.targets) {
     if (target.outputItemId) itemIds.add(target.outputItemId);
   }
-  if (input.settings.fuel?.enabled) itemIds.add(input.settings.fuel.fuelItemId);
-  if (input.settings.fertilizer?.enabled) itemIds.add(input.settings.fertilizer.fertilizerItemId);
+  const hasActivePlan = recipeIds.length > 0 || input.targets.some((target) => Number.isFinite(Number(target.value)) && Number(target.value) > EPS);
+  if (hasActivePlan && input.settings.fuel?.enabled) itemIds.add(input.settings.fuel.fuelItemId);
+  if (hasActivePlan && input.settings.fertilizer?.enabled) itemIds.add(input.settings.fertilizer.fertilizerItemId);
   return uniqueSorted(itemIds);
 }
 
@@ -469,6 +470,7 @@ function buildLinearBalanceModelDiagnostics(
   const itemIds = activeItemIdsForModel(recipeIds, input);
   const targetDemand = targetDemandByItem(input);
   const targetItemIds = uniqueSorted(targetDemand.keys());
+  const hasActivePlan = recipeIds.length > 0 || targetItemIds.length > 0;
   const variables: LinearModelVariable[] = [];
   const constraints: LinearModelConstraint[] = [];
   const seenVariables = new Set<string>();
@@ -532,7 +534,7 @@ function buildLinearBalanceModelDiagnostics(
     }
   }
 
-  if (input.settings.fuel?.enabled) {
+  if (hasActivePlan && input.settings.fuel?.enabled) {
     const fuelItemId = input.settings.fuel.fuelItemId;
     addVariable({
       id: variableId('fuelDemand', fuelItemId),
@@ -555,7 +557,7 @@ function buildLinearBalanceModelDiagnostics(
     }
   }
 
-  if (input.settings.fertilizer?.enabled) {
+  if (hasActivePlan && input.settings.fertilizer?.enabled) {
     const fertilizerItemId = input.settings.fertilizer.fertilizerItemId;
     addVariable({
       id: variableId('fertilizerDemand', fertilizerItemId),
@@ -666,7 +668,7 @@ function buildLinearBalanceModelDiagnostics(
     }
   }
 
-  if (input.settings.fuel?.enabled) {
+  if (hasActivePlan && input.settings.fuel?.enabled) {
     const terms: LinearModelConstraintTerm[] = [];
     for (const recipeId of recipeIds) {
       const recipe = recipeById[recipeId];
@@ -690,7 +692,7 @@ function buildLinearBalanceModelDiagnostics(
     });
   }
 
-  if (input.settings.fertilizer?.enabled) {
+  if (hasActivePlan && input.settings.fertilizer?.enabled) {
     const terms: LinearModelConstraintTerm[] = [];
     for (const recipeId of recipeIds) {
       const recipe = recipeById[recipeId];

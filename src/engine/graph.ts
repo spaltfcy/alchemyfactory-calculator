@@ -911,3 +911,205 @@ export function buildFlowGraphSvg(
     '',
   ].join('\n');
 }
+
+
+export type FlowGraphLayoutMetrics = {
+  variant: 'normal' | 'debug';
+  nodeCount: number;
+  edgeCount: number;
+  recipeNodes: number;
+  sourceNodes: number;
+  finalNodes: number;
+  surplusNodes: number;
+  discardNodes: number;
+  fuelEdges: number;
+  fertilizerEdges: number;
+  steamEdges: number;
+  labelCount: number;
+  averageEdgeLength: number;
+  maxEdgeLength: number;
+  estimatedCrossings: number;
+  estimatedCrossingsCapped: boolean;
+  graphBuildMs: number;
+  layoutMs: number;
+  width: number;
+  height: number;
+};
+
+export type FlowGraphDebugArtifacts = {
+  variant: 'normal' | 'debug';
+  generatedAt: string;
+  svg: string;
+  model: {
+    variant: 'normal' | 'debug';
+    generatedAt: string;
+    width: number;
+    height: number;
+    nodes: Array<{
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      layer: number;
+      kind: PlannerNodeData['kind'];
+      label: string;
+      subLabel?: string;
+      completed?: boolean;
+      badges?: PlannerNodeData['badges'];
+    }>;
+    edges: Array<{
+      id: string;
+      source: string;
+      target: string;
+      sourceHandle?: string | null;
+      targetHandle?: string | null;
+      itemName?: string;
+      rateLabel?: string;
+      role?: string;
+      color?: string;
+    }>;
+  };
+  metrics: FlowGraphLayoutMetrics;
+};
+
+function edgeRole(edge: Edge): string | undefined {
+  const data = edge.data as { role?: string } | undefined;
+  return data?.role;
+}
+
+function edgeLine(layout: ReturnType<typeof layoutSvgNodes>, edge: Edge): { x1: number; y1: number; x2: number; y2: number; length: number } | undefined {
+  const sourceNode = layout.nodeById.get(edge.source);
+  const targetNode = layout.nodeById.get(edge.target);
+  if (!sourceNode || !targetNode) return undefined;
+  const source = svgHandlePoint(sourceNode, edge.sourceHandle, 'source');
+  const target = svgHandlePoint(targetNode, edge.targetHandle, 'target');
+  const length = Math.hypot(target.x - source.x, target.y - source.y);
+  return { x1: source.x, y1: source.y, x2: target.x, y2: target.y, length };
+}
+
+function orientation(ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number {
+  const value = (by - ay) * (cx - bx) - (bx - ax) * (cy - by);
+  if (Math.abs(value) < 1e-9) return 0;
+  return value > 0 ? 1 : 2;
+}
+
+function segmentsCross(a: { x1: number; y1: number; x2: number; y2: number }, b: { x1: number; y1: number; x2: number; y2: number }): boolean {
+  const o1 = orientation(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1);
+  const o2 = orientation(a.x1, a.y1, a.x2, a.y2, b.x2, b.y2);
+  const o3 = orientation(b.x1, b.y1, b.x2, b.y2, a.x1, a.y1);
+  const o4 = orientation(b.x1, b.y1, b.x2, b.y2, a.x2, a.y2);
+  return o1 !== o2 && o3 !== o4;
+}
+
+function estimateEdgeCrossings(lines: Array<{ source: string; target: string; x1: number; y1: number; x2: number; y2: number }>): { count: number; capped: boolean } {
+  const maxPairs = 200000;
+  let checked = 0;
+  let count = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    for (let j = i + 1; j < lines.length; j += 1) {
+      checked += 1;
+      if (checked > maxPairs) return { count, capped: true };
+      const a = lines[i];
+      const b = lines[j];
+      if (a.source === b.source || a.source === b.target || a.target === b.source || a.target === b.target) continue;
+      if (segmentsCross(a, b)) count += 1;
+    }
+  }
+  return { count, capped: false };
+}
+
+function graphMetrics(variant: 'normal' | 'debug', graphBuildMs: number, layoutMs: number, graph: { nodes: Node[]; edges: Edge[] }, layout: ReturnType<typeof layoutSvgNodes>): FlowGraphLayoutMetrics {
+  const lines = graph.edges.flatMap((edge) => {
+    const line = edgeLine(layout, edge);
+    return line ? [{ source: edge.source, target: edge.target, ...line }] : [];
+  });
+  const crossing = estimateEdgeCrossings(lines);
+  const lengths = lines.map((line) => line.length);
+  const avg = lengths.length ? lengths.reduce((sum, value) => sum + value, 0) / lengths.length : 0;
+  const max = lengths.length ? Math.max(...lengths) : 0;
+  return {
+    variant,
+    nodeCount: graph.nodes.length,
+    edgeCount: graph.edges.length,
+    recipeNodes: graph.nodes.filter((node) => (node.data as PlannerNodeData).kind === 'recipe').length,
+    sourceNodes: graph.nodes.filter((node) => node.id.startsWith('source:')).length,
+    finalNodes: graph.nodes.filter((node) => (node.data as PlannerNodeData).kind === 'final').length,
+    surplusNodes: graph.nodes.filter((node) => (node.data as PlannerNodeData).kind === 'surplus').length,
+    discardNodes: graph.nodes.filter((node) => (node.data as PlannerNodeData).kind === 'discard').length,
+    fuelEdges: graph.edges.filter((edge) => edgeRole(edge) === 'fuel').length,
+    fertilizerEdges: graph.edges.filter((edge) => edgeRole(edge) === 'fertilizer').length,
+    steamEdges: graph.edges.filter((edge) => edgeRole(edge) === 'steam').length,
+    labelCount: graph.edges.length,
+    averageEdgeLength: Number(avg.toFixed(2)),
+    maxEdgeLength: Number(max.toFixed(2)),
+    estimatedCrossings: crossing.count,
+    estimatedCrossingsCapped: crossing.capped,
+    graphBuildMs: Number(graphBuildMs.toFixed(2)),
+    layoutMs: Number(layoutMs.toFixed(2)),
+    width: layout.width,
+    height: layout.height,
+  };
+}
+
+function serializeGraphModel(variant: 'normal' | 'debug', layout: ReturnType<typeof layoutSvgNodes>, graph: { nodes: Node[]; edges: Edge[] }) {
+  const nodeIds = new Set(layout.nodes.map((node) => node.id));
+  return {
+    variant,
+    generatedAt: new Date().toISOString(),
+    width: layout.width,
+    height: layout.height,
+    nodes: layout.nodes.map((node) => ({
+      id: node.id,
+      x: Number(node.x.toFixed(2)),
+      y: Number(node.y.toFixed(2)),
+      width: Number(node.width.toFixed(2)),
+      height: Number(node.height.toFixed(2)),
+      layer: node.layer,
+      kind: node.data.kind,
+      label: node.data.label,
+      subLabel: node.data.subLabel,
+      completed: node.data.completed,
+      badges: node.data.badges,
+    })),
+    edges: graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)).map((edge) => {
+      const data = edge.data as { itemName?: string; rateLabel?: string; color?: string; role?: string } | undefined;
+      const style = edge.style as { stroke?: string } | undefined;
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+        itemName: data?.itemName,
+        rateLabel: data?.rateLabel,
+        role: data?.role ?? edgeRole(edge),
+        color: data?.color ?? style?.stroke,
+      };
+    }),
+  };
+}
+
+export function buildFlowGraphDebugArtifacts(
+  result: CalculationResult,
+  lang: Lang,
+  settings: AppSettings,
+  completedGraphNodeIds: Record<string, boolean>,
+  variant: 'normal' | 'debug' = 'normal',
+): FlowGraphDebugArtifacts {
+  const graphStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const graph = buildFlowGraph(result, lang, settings, completedGraphNodeIds);
+  const graphEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const layoutStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const layout = layoutSvgNodes(graph.nodes, graph.edges);
+  const layoutEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const svg = buildFlowGraphSvg(result, lang, settings, completedGraphNodeIds);
+  const model = serializeGraphModel(variant, layout, graph);
+  return {
+    variant,
+    generatedAt: new Date().toISOString(),
+    svg,
+    model,
+    metrics: graphMetrics(variant, graphEnd - graphStart, layoutEnd - layoutStart, graph, layout),
+  };
+}

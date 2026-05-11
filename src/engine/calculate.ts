@@ -20,8 +20,81 @@ import { chooseRecipeForItem } from './itemSourceResolver';
 
 const EPS = 1e-9;
 
+export type SolvePlanOptions = {
+  debug?: boolean;
+};
+
+export type SolvePlanResult = {
+  result: CalculationResult;
+  debugLog?: CalculationDebugResult['debugLog'];
+};
+
+const SOLVE_PLAN_MODE = 'solvePlan-v0930';
+const SOLVE_PLAN_VERSION = '0.9.3';
+
+function enabledTargetCount(input: CalculateInput): number {
+  return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
+}
+
+function disabledTargetCount(input: CalculateInput): number {
+  return input.targets.filter((target) => (target.enabled ?? true) === false).length;
+}
+
+function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnostics: ReturnType<typeof buildLinearModelDiagnostics> | undefined) {
+  const linearSummary = linearModelDiagnostics?.linearBalanceModel?.summary;
+  return {
+    resultFlowCount: result.flows.length,
+    resultRecipeCount: Object.keys(result.recipeStats).length,
+    resultItemCount: Object.keys(result.itemStats).length,
+    linearActiveRecipeCount: linearSummary?.activeRecipeCount,
+    linearActiveItemCount: linearSummary?.activeItemCount,
+    linearTargetCount: linearSummary?.targetCount,
+    noteJa: 'v0.9.3では実計算とDEBUG診断をsolvePlan経由に寄せています。linearModelDiagnosticsはまだ診断用モデルですが、実resultとの比較値を併記します。',
+    noteEn: 'v0.9.3 routes normal and DEBUG calculation through solvePlan. linearModelDiagnostics is still diagnostic-only, so comparison counts are included.',
+  };
+}
+
+export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {}): SolvePlanResult {
+  const debug = options.debug === true;
+  const linearModelDiagnostics = debug ? buildLinearModelDiagnostics(input) : undefined;
+  const newSolverResult = calculateWithNewSolver(input, linearModelDiagnostics);
+  const result = newSolverResult.result;
+
+  if (!debug) return { result };
+
+  const debugLog = buildDebugLogFromResult(input, result);
+  const diagnostics = newSolverResult.linearModelDiagnostics ?? linearModelDiagnostics;
+  const extendedDebugLog = {
+    ...debugLog,
+    resultEngine: newSolverResult.engineId,
+    solverEngine: newSolverResult.engineId,
+    solver: {
+      mode: SOLVE_PLAN_MODE,
+      version: SOLVE_PLAN_VERSION,
+      debug,
+      resultEngine: newSolverResult.engineId,
+      solverEngine: newSolverResult.engineId,
+      diagnosticsMode: diagnostics?.mode,
+      normalizedTargetCount: input.targets.length,
+      calculationTargetCount: input.targets.length,
+      enabledTargetCount: enabledTargetCount(input),
+      disabledTargetCount: disabledTargetCount(input),
+    },
+    diagnosticComparison: diagnosticComparisonFor(result, diagnostics),
+    linearModelDiagnostics: diagnostics,
+    alphaBalanceTrace: newSolverResult.alphaBalanceTrace,
+  } as CalculationDebugResult['debugLog'] & {
+    resultEngine: typeof newSolverResult.engineId;
+    solverEngine: typeof newSolverResult.engineId;
+    linearModelDiagnostics: typeof diagnostics;
+    alphaBalanceTrace: typeof newSolverResult.alphaBalanceTrace;
+  };
+
+  return { result, debugLog: extendedDebugLog };
+}
+
 export function calculate(input: CalculateInput): CalculationResult {
-  return calculateWithNewSolver(input).result;
+  return solvePlan(input, { debug: false }).result;
 }
 
 function isFiniteDebugNumber(value: unknown): value is number {
@@ -273,22 +346,9 @@ function buildDebugLogFromResult(input: CalculateInput, result: CalculationResul
 }
 
 export function calculateWithDebug(input: CalculateInput): CalculationDebugResult {
-  const linearModelDiagnostics = buildLinearModelDiagnostics(input);
-  const newSolverResult = calculateWithNewSolver(input, linearModelDiagnostics);
-  const newDebugLog = buildDebugLogFromResult(input, newSolverResult.result);
+  const solved = solvePlan(input, { debug: true });
   return {
-    result: newSolverResult.result,
-    debugLog: {
-      ...newDebugLog,
-      resultEngine: newSolverResult.engineId,
-      solverEngine: newSolverResult.engineId,
-      linearModelDiagnostics,
-      alphaBalanceTrace: newSolverResult.alphaBalanceTrace,
-    } as CalculationDebugResult['debugLog'] & {
-      resultEngine: typeof newSolverResult.engineId;
-      solverEngine: typeof newSolverResult.engineId;
-      linearModelDiagnostics: typeof linearModelDiagnostics;
-      alphaBalanceTrace: typeof newSolverResult.alphaBalanceTrace;
-    },
+    result: solved.result,
+    debugLog: solved.debugLog ?? buildDebugLogFromResult(input, solved.result),
   };
 }

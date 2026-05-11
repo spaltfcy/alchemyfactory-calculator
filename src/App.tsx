@@ -18,7 +18,7 @@ import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 
-const APP_VERSION = '0.9.2';
+const APP_VERSION = '0.9.3';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {

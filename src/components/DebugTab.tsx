@@ -8,7 +8,7 @@ import { calculateWithDebug, type CalculateInput } from '../engine/calculate';
 import { getMachinePreferences } from '../data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from '../data/paradox';
 import { normalizeAbilitySettings } from '../data/abilityTables';
-import { buildFlowGraphSvg } from '../engine/graph';
+import { buildFlowGraphDebugArtifacts, buildFlowGraphSvg } from '../engine/graph';
 
 type DebugTabProps = {
   lang: Lang;
@@ -531,7 +531,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 25,
+      debugSchemaVersion: 26,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -544,6 +544,34 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       ...result,
       errorSummaries: normalizedErrorSummaries,
     };
+    const normalGraphArtifact = buildFlowGraphDebugArtifacts(
+      resultForSvg as typeof result,
+      lang,
+      sourceState.settings,
+      sourceState.completedGraphNodeIds ?? {},
+      'normal',
+    );
+    const debugGraphArtifact = buildFlowGraphDebugArtifacts(
+      resultForSvg as typeof result,
+      lang,
+      sourceState.settings,
+      sourceState.completedGraphNodeIds ?? {},
+      'debug',
+    );
+    const graphArtifacts = {
+      normal: normalGraphArtifact,
+      debug: debugGraphArtifact,
+      metrics: {
+        normal: normalGraphArtifact.metrics,
+        debug: debugGraphArtifact.metrics,
+      },
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.3では本番Graphと同じresultから生成し、今後のレイアウト比較の基準にします。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.3 generates these from the same result as the production Graph as a baseline for layout comparisons.',
+    };
+    (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
+      normal: { metrics: normalGraphArtifact.metrics },
+      debug: { metrics: debugGraphArtifact.metrics },
+    };
 
     return {
       input,
@@ -552,6 +580,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       debugLog,
       normalizedIssues,
       enrichedDebugLog,
+      graphArtifacts,
     };
   }
 
@@ -669,7 +698,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 25,
+      debugSchemaVersion: 26,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -786,6 +815,11 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     if (args.artifact) {
       zip.file(args.baseName + '__input.json', JSON.stringify(args.artifact.input, null, 2));
       zip.file(args.baseName + '__debug.json', JSON.stringify(args.artifact.enrichedDebugLog, null, 2));
+      zip.file(args.baseName + '__graph-normal.svg', args.artifact.graphArtifacts.normal.svg);
+      zip.file(args.baseName + '__graph-debug.svg', args.artifact.graphArtifacts.debug.svg);
+      zip.file(args.baseName + '__graph-normal-model.json', JSON.stringify(args.artifact.graphArtifacts.normal.model, null, 2));
+      zip.file(args.baseName + '__graph-debug-model.json', JSON.stringify(args.artifact.graphArtifacts.debug.model, null, 2));
+      zip.file(args.baseName + '__graph-layout-metrics.json', JSON.stringify(args.artifact.graphArtifacts.metrics, null, 2));
     }
     return zip.generateAsync({ type: 'blob' });
   }
@@ -1060,10 +1094,12 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         displayedMessageEn: warningInput?.messageEn,
       }, null, 2));
     }
-    zip.file(
-      baseName + '__graph.svg',
-      buildFlowGraphSvg(artifact.resultForSvg as typeof artifact.result, lang, importedState.settings, importedState.completedGraphNodeIds),
-    );
+    zip.file(baseName + '__graph.svg', artifact.graphArtifacts.normal.svg);
+    zip.file(baseName + '__graph-normal.svg', artifact.graphArtifacts.normal.svg);
+    zip.file(baseName + '__graph-debug.svg', artifact.graphArtifacts.debug.svg);
+    zip.file(baseName + '__graph-normal-model.json', JSON.stringify(artifact.graphArtifacts.normal.model, null, 2));
+    zip.file(baseName + '__graph-debug-model.json', JSON.stringify(artifact.graphArtifacts.debug.model, null, 2));
+    zip.file(baseName + '__graph-layout-metrics.json', JSON.stringify(artifact.graphArtifacts.metrics, null, 2));
 
     if (calculationInvalid) {
       zip.file(
@@ -1164,7 +1200,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 25,
+      debugSchemaVersion: 26,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
