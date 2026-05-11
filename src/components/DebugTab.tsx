@@ -85,6 +85,7 @@ type VerificationZipResult = {
   issueCount?: number;
   errorSummaryCount?: number;
   currentRunMessageCount: number;
+  previousMessageCount: number;
   allMessageCount: number;
   negativeTargetCount: number;
 };
@@ -530,7 +531,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 24,
+      debugSchemaVersion: 25,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -624,10 +625,14 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       activeTab: sourceState?.activeTab,
       targetCount: targets.length,
       positiveTargetCount: targets.filter((target) => Number.isFinite(Number(target.value)) && Number(target.value) > 0).length,
+      enabledTargetCount: targets.filter((target) => target.enabled !== false).length,
+      disabledTargetCount: targets.filter((target) => target.enabled === false).length,
+      enabledPositiveTargetCount: targets.filter((target) => target.enabled !== false && Number.isFinite(Number(target.value)) && Number(target.value) > 0).length,
       zeroTargetCount: targets.filter((target) => Number(target.value) === 0).length,
       negativeTargetCount: targets.filter((target) => Number.isFinite(Number(target.value)) && Number(target.value) < 0).length,
       targetPreview: targets.slice(0, 20).map((target) => ({
         id: target.id,
+        enabled: target.enabled ?? true,
         recipeId: target.recipeId,
         outputItemId: target.outputItemId,
         mode: target.mode,
@@ -664,7 +669,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 24,
+      debugSchemaVersion: 25,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -715,6 +720,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
           currentRunCount: (args.currentRunMessageLogs ?? []).length,
           currentRun: (args.currentRunMessageLogs ?? []).slice(0, 30),
           allCount: (args.userMessageLogs ?? userMessages).length,
+          previousCount: Math.max(0, (args.userMessageLogs ?? userMessages).length - (args.currentRunMessageLogs ?? []).length),
           recentAll: (args.userMessageLogs ?? userMessages).slice(0, 30),
         },
         calculation: {
@@ -771,7 +777,11 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     );
     zip.file(
       args.baseName + '__user-message-log.json',
-      JSON.stringify({ currentRunMessageLogs: args.currentRunMessageLogs ?? [], allMessageLogs: args.userMessageLogs ?? userMessages }, null, 2),
+      JSON.stringify({
+        currentRunMessageLogs: args.currentRunMessageLogs ?? [],
+        allMessageLogs: args.userMessageLogs ?? userMessages,
+        previousMessageCount: Math.max(0, ((args.userMessageLogs ?? userMessages).length) - ((args.currentRunMessageLogs ?? []).length)),
+      }, null, 2),
     );
     if (args.artifact) {
       zip.file(args.baseName + '__input.json', JSON.stringify(args.artifact.input, null, 2));
@@ -821,6 +831,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       errorSummaryCount: Array.isArray(errorSummaries) ? errorSummaries.length : undefined,
       currentRunMessageCount: args.currentRunMessageLogs?.length ?? 0,
       allMessageCount: args.allMessageLogs?.length ?? userMessages.length,
+      previousMessageCount: Math.max(0, (args.allMessageLogs?.length ?? userMessages.length) - (args.currentRunMessageLogs?.length ?? 0)),
       negativeTargetCount: args.negativeTargets?.length ?? 0,
     };
   }
@@ -1153,7 +1164,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 24,
+      debugSchemaVersion: 25,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

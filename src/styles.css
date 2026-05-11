@@ -1833,3 +1833,96 @@ a {
     grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width) max-content;
   }
 }
+
+
+/* v0.9.2: target editor layout hardening */
+/*
+ * Keep the enable checkbox visually attached to the item label and keep ×/↑/↓
+ * in the normal grid flow. These rules intentionally override earlier absolute
+ * positioning added while prototyping the v0.9 target workflow.
+ */
+.target-card {
+  grid-template-columns: var(--target-item-width) var(--target-value-width) var(--target-mode-width) max-content !important;
+  align-items: end !important;
+  column-gap: var(--target-gap) !important;
+  padding-right: var(--target-card-padding-x) !important;
+}
+
+.target-item-field {
+  min-width: var(--target-item-width);
+}
+
+.target-item-heading {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.42rem !important;
+  min-height: 1.2rem !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+}
+
+.target-enabled-checkbox {
+  position: static !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  align-self: center !important;
+  justify-self: start !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+}
+
+.target-enabled-checkbox input {
+  width: 1rem !important;
+  height: 1rem !important;
+  margin: 0 !important;
+  accent-color: var(--accent);
+}
+
+.target-card-actions {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  grid-column: auto !important;
+  grid-row: auto !important;
+  display: flex !important;
+  gap: 0.25rem !important;
+  align-items: end !important;
+  justify-content: flex-start !important;
+  min-width: max-content !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.target-card-actions .target-remove,
+.target-card .target-remove,
+.target-card-actions .target-order-button {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 1.45rem !important;
+  min-width: 1.45rem !important;
+  height: 1.45rem !important;
+  min-height: 1.45rem !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 8px !important;
+  line-height: 1 !important;
+}
+
+.target-card-actions button:hover {
+  transform: none;
+}
+
+@media (max-width: 56rem) {
+  .target-card {
+    grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width) max-content !important;
+  }
+
+  .target-item-field {
+    min-width: 0;
+  }
+}
