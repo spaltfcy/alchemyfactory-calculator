@@ -18,7 +18,7 @@ import { itemById } from '../data/items';
 import { recipeById } from '../data/recipes';
 import { chooseRecipeForItem } from './itemSourceResolver';
 import { buildPlanModel } from './planner/planModel';
-import { runMaterialPlannerShadow } from './planner/materialPlanner';
+import { runMaterialPlannerShadow, solveStructuredMaterialPlan } from './planner/materialPlanner';
 import { comparePlannerResults } from './planner/comparePlannerResults';
 
 const EPS = 1e-9;
@@ -32,8 +32,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v0960';
-const SOLVE_PLAN_VERSION = '0.9.6';
+const SOLVE_PLAN_MODE = 'solvePlan-v0970';
+const SOLVE_PLAN_VERSION = '0.9.7';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -93,9 +93,9 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0960',
-    noteJa: 'v0.9.6ではactive/candidate/unusedを明示し、MaterialPlanner shadow comparisonを追加します。実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
-    noteEn: 'v0.9.6 explicitly separates active/candidate/unused diagnostics and adds MaterialPlanner shadow comparison. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0970',
+    noteJa: 'v0.9.7ではactive/candidate/unusedを明示し、MaterialPlanner shadow comparisonを追加します。実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
+    noteEn: 'v0.9.7 explicitly separates active/candidate/unused diagnostics and adds MaterialPlanner shadow comparison. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
 }
 
@@ -104,28 +104,46 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const planModel = buildPlanModel(input);
   const linearModelDiagnostics = debug ? buildLinearModelDiagnostics(input) : undefined;
   const newSolverResult = calculateWithNewSolver(input, linearModelDiagnostics);
-  const result = newSolverResult.result;
+  const structuredSolve = solveStructuredMaterialPlan(planModel, newSolverResult.result);
+  const result = structuredSolve.result;
 
   if (!debug) return { result };
 
   const debugLog = buildDebugLogFromResult(input, result);
   const diagnostics = newSolverResult.linearModelDiagnostics ?? linearModelDiagnostics;
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
-  const shadowResult = runMaterialPlannerShadow(planModel, result);
-  const plannerComparison = comparePlannerResults(result, shadowResult);
+  const shadowResult = runMaterialPlannerShadow(planModel, newSolverResult.result);
+  const plannerComparison = comparePlannerResults(newSolverResult.result, shadowResult);
+  const structuredComparison = comparePlannerResults(newSolverResult.result, structuredSolve.structuredPlan);
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'shadow-dag-v0960' as const,
+    mode: 'structured-material-v0970' as const,
     planModel,
-    shadowResult,
+    shadowResult: structuredSolve.structuredPlan,
+    structuredPlan: structuredSolve.structuredPlan,
     comparison: plannerComparison,
-    cycleComponents: shadowResult.cycleComponents,
+    cycleComponents: structuredSolve.structuredPlan.cycleComponents,
+    cycleDecisions: structuredSolve.structuredPlan.cycleDecisions,
     alphaResultSummary: {
+      recipeCount: Object.keys(newSolverResult.result.recipeStats).length,
+      itemCount: Object.keys(newSolverResult.result.itemStats).length,
+      flowCount: newSolverResult.result.flows.length,
+      calculationStatus: newSolverResult.result.calculationStatus,
+    },
+  };
+  const legacyAlphaComparison = {
+    enabled: true as const,
+    mode: 'legacy-alpha-vs-structured-v0970' as const,
+    comparison: structuredComparison,
+    legacyAlphaSummary: materialPlannerShadow.alphaResultSummary,
+    structuredSummary: {
       recipeCount: Object.keys(result.recipeStats).length,
       itemCount: Object.keys(result.itemStats).length,
       flowCount: result.flows.length,
       calculationStatus: result.calculationStatus,
     },
+    noteJa: 'v0.9.7では通常Result契約をStructuredMaterialPlan側へ寄せ、alpha solverはDEBUG時のlegacy比較として記録します。',
+    noteEn: 'v0.9.7 aligns the production result contract with StructuredMaterialPlan and records the alpha solver as a legacy DEBUG comparison.',
   };
   const extendedDebugLog = {
     ...debugLog,
@@ -141,14 +159,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: newSolverResult.engineId,
-    solverEngine: newSolverResult.engineId,
+    resultEngine: 'structured-material-v0970',
+    solverEngine: 'structured-material-v0970',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: newSolverResult.engineId,
-      solverEngine: newSolverResult.engineId,
+      resultEngine: 'structured-material-v0970',
+      solverEngine: 'structured-material-v0970',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -156,10 +174,13 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
       disabledTargetCount: disabledTargetCount(input),
       planModelSummary: planModel.summary,
       materialPlannerShadowMode: materialPlannerShadow.mode,
-      materialPlannerShadowStatus: shadowResult.status,
+      materialPlannerShadowStatus: structuredSolve.structuredPlan.status,
     },
     diagnosticComparison,
     materialPlannerShadow,
+    structuredMaterialPlan: structuredSolve.structuredPlan,
+    cycleDecisions: structuredSolve.structuredPlan.cycleDecisions,
+    legacyAlphaComparison,
     planModel,
     linearModelDiagnostics: diagnostics ? {
       ...diagnostics,
@@ -171,8 +192,8 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
     } : diagnostics,
     alphaBalanceTrace: newSolverResult.alphaBalanceTrace,
   } as CalculationDebugResult['debugLog'] & {
-    resultEngine: typeof newSolverResult.engineId;
-    solverEngine: typeof newSolverResult.engineId;
+    resultEngine: string;
+    solverEngine: string;
     linearModelDiagnostics: typeof diagnostics;
     alphaBalanceTrace: typeof newSolverResult.alphaBalanceTrace;
   };

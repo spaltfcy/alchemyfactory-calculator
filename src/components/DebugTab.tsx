@@ -88,6 +88,8 @@ type VerificationZipResult = {
   previousMessageCount: number;
   allMessageCount: number;
   negativeTargetCount: number;
+  expectedStatus?: 'ok' | 'invalid' | 'error';
+  expectedMatched?: boolean;
 };
 
 function createRunId(prefix = 'run'): string {
@@ -95,6 +97,18 @@ function createRunId(prefix = 'run'): string {
     return prefix + '-' + crypto.randomUUID();
   }
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+}
+
+type VerificationExpectation = {
+  expectedStatus?: 'ok' | 'invalid' | 'error';
+  expectedErrorCodes?: string[];
+  expectedCycleClassification?: string;
+};
+
+type VerificationExpectations = Record<string, VerificationExpectation>;
+
+function expectationForSource(expectations: VerificationExpectations, sourceFileName: string): VerificationExpectation | undefined {
+  return expectations[sourceFileName] ?? expectations[sourceFileName.split('/').pop() ?? sourceFileName];
 }
 
 function isZipFile(file: File): boolean {
@@ -531,7 +545,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 29,
+      debugSchemaVersion: 30,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -566,8 +580,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.6ではGraph[DEBUG]にELKベース軽補正v2を適用し、改善が明確でない場合は本番Graph相当へ自動fallbackします。MaterialPlanner shadow比較も保存します。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.6 applies ELK-based light-adjustment v2 to Graph[DEBUG] and automatically falls back to the production-like layout unless the improvement is clear. It also saves MaterialPlanner shadow comparison artifacts.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.7ではGraph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisions/legacyAlphaComparisonも保存します。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.7 keeps Graph[DEBUG] fallback behavior and also saves StructuredMaterialPlan/cycleDecisions/legacyAlphaComparison artifacts.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -700,7 +714,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 29,
+      debugSchemaVersion: 30,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -857,6 +871,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     currentRunMessageLogs?: UserMessageLog[];
     allMessageLogs?: UserMessageLog[];
     negativeTargets?: NegativeTargetEntry[];
+    expectation?: VerificationExpectation;
   }): VerificationZipResult {
     const errorSummaries = (args.artifact?.enrichedDebugLog as { errorSummaries?: unknown[] } | undefined)?.errorSummaries;
     return {
@@ -876,10 +891,12 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       allMessageCount: args.allMessageLogs?.length ?? userMessages.length,
       previousMessageCount: Math.max(0, (args.allMessageLogs?.length ?? userMessages.length) - (args.currentRunMessageLogs?.length ?? 0)),
       negativeTargetCount: args.negativeTargets?.length ?? 0,
+      expectedStatus: args.expectation?.expectedStatus,
+      expectedMatched: args.expectation?.expectedStatus ? args.expectation.expectedStatus === args.status : undefined,
     };
   }
 
-  async function buildVerificationZipFromSource(source: VerificationSourceFile, options: { resetMessages?: boolean; applyState?: boolean; captureLiveGraph?: boolean } = {}): Promise<VerificationZipResult> {
+  async function buildVerificationZipFromSource(source: VerificationSourceFile, options: { resetMessages?: boolean; applyState?: boolean; captureLiveGraph?: boolean; expectation?: VerificationExpectation } = {}): Promise<VerificationZipResult> {
     const baseName = safeFilePart(source.name);
     const timestamp = timestampForFile();
     const runId = createRunId('verification');
@@ -1120,6 +1137,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       summary: artifact.debugLog.summary,
       diagnosticComparison: artifact.enrichedDebugLog.diagnosticComparison,
       materialPlannerShadowSummary: (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: { status?: string }; comparison?: unknown } }).materialPlannerShadow?.comparison,
+      structuredMaterialPlanSummary: (artifact.enrichedDebugLog as { structuredMaterialPlan?: { status?: string; mode?: string; cycleDecisions?: unknown[] } }).structuredMaterialPlan,
+      cycleDecisionCount: ((artifact.enrichedDebugLog as { cycleDecisions?: unknown[] }).cycleDecisions ?? []).length,
     }, null, 2));
     const materialPlannerShadow = (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: unknown; comparison?: unknown; cycleComponents?: unknown[]; planModel?: unknown } }).materialPlannerShadow;
     if (materialPlannerShadow) {
@@ -1127,6 +1146,12 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       zip.file(baseName + '__planner-comparison.json', JSON.stringify(materialPlannerShadow.comparison ?? {}, null, 2));
       zip.file(baseName + '__cycle-components.json', JSON.stringify(materialPlannerShadow.cycleComponents ?? [], null, 2));
     }
+    const structuredMaterialPlan = (artifact.enrichedDebugLog as { structuredMaterialPlan?: unknown }).structuredMaterialPlan;
+    if (structuredMaterialPlan) zip.file(baseName + '__structured-material-plan.json', JSON.stringify(structuredMaterialPlan, null, 2));
+    const cycleDecisions = (artifact.enrichedDebugLog as { cycleDecisions?: unknown }).cycleDecisions;
+    if (cycleDecisions) zip.file(baseName + '__cycle-decisions.json', JSON.stringify(cycleDecisions, null, 2));
+    const legacyAlphaComparison = (artifact.enrichedDebugLog as { legacyAlphaComparison?: unknown }).legacyAlphaComparison;
+    if (legacyAlphaComparison) zip.file(baseName + '__legacy-alpha-comparison.json', JSON.stringify(legacyAlphaComparison, null, 2));
 
     if (calculationInvalid) {
       zip.file(
@@ -1190,6 +1215,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       currentRunMessageLogs: messageLogs.currentRunMessageLogs,
       allMessageLogs: messageLogs.allMessageLogs,
       negativeTargets: targetSanitization.negativeTargets,
+      expectation: options.expectation,
     });
   }
 
@@ -1207,6 +1233,18 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const entries = Object.values(sourceZip.files)
       .filter((entry) => !entry.dir && shouldIncludeVerificationJsonEntry(entry.name))
       .sort((a, b) => a.name.localeCompare(b.name));
+    const expectationEntries = Object.values(sourceZip.files)
+      .filter((entry) => !entry.dir && entry.name.toLowerCase().endsWith('.manual.json'))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    let expectations: VerificationExpectations = {};
+    for (const entry of expectationEntries) {
+      try {
+        const rawExpectation = await entry.async('string');
+        expectations = { ...expectations, ...(JSON.parse(rawExpectation) as VerificationExpectations) };
+      } catch {
+        // Keep verification running even if an optional manual expectation file is malformed.
+      }
+    }
 
     const batchZip = new JSZip();
     const results: Omit<VerificationZipResult, 'blob'>[] = [];
@@ -1218,6 +1256,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         resetMessages: false,
         applyState: true,
         captureLiveGraph: true,
+        expectation: expectationForSource(expectations, entry.name),
       });
       batchZip.file(result.resultZipName, result.blob);
       const { blob: ignoredBlob, ...summary } = result;
@@ -1227,7 +1266,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 29,
+      debugSchemaVersion: 30,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
@@ -1235,6 +1274,10 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       ok: results.filter((result) => result.status === 'ok').length,
       invalid: results.filter((result) => result.status === 'invalid').length,
       error: results.filter((result) => result.status === 'error').length,
+      expectedInvalid: results.filter((result) => result.status === 'invalid' && result.expectedMatched).length,
+      unexpectedInvalid: results.filter((result) => result.status === 'invalid' && !result.expectedMatched).length,
+      expectationMatched: results.filter((result) => result.expectedMatched === true).length,
+      expectationMismatched: results.filter((result) => result.expectedMatched === false).length,
       skipped: Object.values(sourceZip.files)
         .filter((entry) => !entry.dir && !shouldIncludeVerificationJsonEntry(entry.name))
         .map((entry) => entry.name),

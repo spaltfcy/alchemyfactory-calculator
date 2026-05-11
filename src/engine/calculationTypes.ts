@@ -93,6 +93,26 @@ export type CalculationErrorSummary = {
   recipeIds?: string[];
 };
 
+
+export type CalculationCycleDecision = {
+  componentId: string;
+  classification:
+    | 'cycleInput'
+    | 'purchaseBreakable'
+    | 'externalBreakable'
+    | 'alternateRecipeBreakable'
+    | 'invalid'
+    | 'unsupported';
+  candidateClassification?: string;
+  itemIds: string[];
+  recipeIds: string[];
+  requiredInitialItems: Record<string, number>;
+  runningExternalInputs: Record<string, number>;
+  safeForMainResult: boolean;
+  reasonJa: string;
+  reasonEn: string;
+};
+
 export type ResidualUnresolvedFlow = {
   itemId: string;
   itemNameJa: string;
@@ -152,6 +172,7 @@ export type CalculationResult = {
   calculationStatus?: CalculationStatus;
   errorSummaries?: CalculationErrorSummary[];
   initialInvestment?: InitialInvestmentData;
+  cycleDecisions?: CalculationCycleDecision[];
   totals: {
     initialCostCopper: number;
     runningCostCopperPerMin: number;
@@ -207,6 +228,7 @@ export type CalculationDebugLog = {
     purchasedAutoCraftableCount: number;
   };
   initialInvestment?: InitialInvestmentData;
+  cycleDecisions?: CalculationCycleDecision[];
   residualUnresolvedFlows: ResidualUnresolvedFlow[];
   purchasedAutoCraftableFlows: Array<{
     itemId: string;
@@ -253,6 +275,8 @@ export type CalculationDebugLog = {
     diff?: unknown;
   };
   materialPlannerShadow?: unknown;
+  structuredMaterialPlan?: unknown;
+  legacyAlphaComparison?: unknown;
   planModel?: unknown;
 };
 

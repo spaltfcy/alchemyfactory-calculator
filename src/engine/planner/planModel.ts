@@ -36,6 +36,27 @@ export type PlanCycleClassification =
   | 'invalid'
   | 'unsupported';
 
+export type PlanCycleDecisionClassification =
+  | 'cycleInput'
+  | 'purchaseBreakable'
+  | 'externalBreakable'
+  | 'alternateRecipeBreakable'
+  | 'invalid'
+  | 'unsupported';
+
+export type PlanCycleDecision = {
+  componentId: string;
+  candidateClassification: PlanCycleClassification;
+  classification: PlanCycleDecisionClassification;
+  recipeIds: string[];
+  itemIds: string[];
+  requiredInitialItems: Record<string, number>;
+  runningExternalInputs: Record<string, number>;
+  safeForMainResult: boolean;
+  reasonJa: string;
+  reasonEn: string;
+};
+
 export type PlanCycleComponent = {
   id: string;
   recipeIds: string[];
@@ -66,6 +87,7 @@ export type PlanModel = {
     activeRecipeIds: string[];
     edges: PlanRecipeDependencyEdge[];
     cycleComponents: PlanCycleComponent[];
+    cycleDecisions: PlanCycleDecision[];
   };
   sources: {
     buyableItemIds: string[];
@@ -254,6 +276,93 @@ function buildCycleComponents(recipeIds: string[], edges: PlanRecipeDependencyEd
   });
 }
 
+
+function firstPositiveInitialItem(cycle: PlanCycleComponent): string | undefined {
+  return cycle.buyableItemIds[0] ?? cycle.itemIds[0];
+}
+
+function decideCycleComponent(cycle: PlanCycleComponent, settings: AppSettings): PlanCycleDecision {
+  if (cycle.classification === 'externalBreakable') {
+    const runningExternalInputs: Record<string, number> = {};
+    const externalItems = [
+      settings.fuel.sourceMode === 'external' ? settings.fuel.fuelItemId : '',
+      settings.fertilizer.sourceMode === 'external' ? settings.fertilizer.fertilizerItemId : '',
+      settings.fuel.sourceMode === 'external' && settings.fuel.heatingMode === 'steam' ? 'steam' : '',
+    ].filter(Boolean);
+    for (const itemId of cycle.itemIds) if (externalItems.includes(itemId)) runningExternalInputs[itemId] = 0;
+    return {
+      componentId: cycle.id,
+      candidateClassification: cycle.classification,
+      classification: 'externalBreakable',
+      recipeIds: cycle.recipeIds,
+      itemIds: cycle.itemIds,
+      requiredInitialItems: {},
+      runningExternalInputs,
+      safeForMainResult: true,
+      reasonJa: '外部供給設定の特殊リソースで循環を安全に分断できます。',
+      reasonEn: 'The cycle can be safely broken by an externally supplied special resource.',
+    };
+  }
+
+  if (cycle.classification === 'purchaseBreakable') {
+    const itemId = cycle.buyableItemIds[0];
+    return {
+      componentId: cycle.id,
+      candidateClassification: cycle.classification,
+      classification: itemId ? 'cycleInput' : 'unsupported',
+      recipeIds: cycle.recipeIds,
+      itemIds: cycle.itemIds,
+      requiredInitialItems: itemId ? { [itemId]: 1 } : {},
+      runningExternalInputs: {},
+      safeForMainResult: Boolean(itemId),
+      reasonJa: itemId
+        ? '購入可能素材を初期投入として使えば循環を起動できます。毎分購入としては扱いません。'
+        : '購入可能素材で分断できる候補ですが、初期投入素材を確定できませんでした。',
+      reasonEn: itemId
+        ? 'A buyable item can be used as startup input for the cycle. It is not treated as a per-minute purchase.'
+        : 'The cycle looked purchase-breakable, but no startup item could be determined.',
+    };
+  }
+
+  if (cycle.classification === 'cycleInputCandidate') {
+    const itemId = firstPositiveInitialItem(cycle);
+    const simpleEnough = cycle.recipeIds.length <= 3 && cycle.itemIds.length <= 4 && Boolean(itemId);
+    return {
+      componentId: cycle.id,
+      candidateClassification: cycle.classification,
+      classification: simpleEnough ? 'cycleInput' : 'unsupported',
+      recipeIds: cycle.recipeIds,
+      itemIds: cycle.itemIds,
+      requiredInitialItems: simpleEnough && itemId ? { [itemId]: 1 } : {},
+      runningExternalInputs: {},
+      safeForMainResult: simpleEnough,
+      reasonJa: simpleEnough
+        ? '単純な循環として初期投入候補を特定しました。v0.9.7では本流の毎分購入には混ぜず、初期投入判断としてログ化します。'
+        : '循環は検出できましたが、初期投入だけで安全に扱える単純循環とは判定できませんでした。',
+      reasonEn: simpleEnough
+        ? 'Identified startup input for a simple cycle. v0.9.7 logs it as a startup decision without mixing it into per-minute purchases.'
+        : 'A cycle was detected, but it was not proven safe as a simple startup-input cycle.',
+    };
+  }
+
+  return {
+    componentId: cycle.id,
+    candidateClassification: cycle.classification,
+    classification: cycle.classification === 'invalid' ? 'invalid' : 'unsupported',
+    recipeIds: cycle.recipeIds,
+    itemIds: cycle.itemIds,
+    requiredInitialItems: {},
+    runningExternalInputs: {},
+    safeForMainResult: false,
+    reasonJa: 'v0.9.7ではこの循環を安全に解決できません。',
+    reasonEn: 'v0.9.7 cannot safely resolve this cycle.',
+  };
+}
+
+function buildCycleDecisions(cycles: PlanCycleComponent[], settings: AppSettings): PlanCycleDecision[] {
+  return cycles.map((cycle) => decideCycleComponent(cycle, settings));
+}
+
 export function buildPlanModel(input: CalculateInput): PlanModel {
   const allTargets = normalizeTargets(input);
   const enabled = allTargets.filter((target) => target.enabled);
@@ -269,6 +378,7 @@ export function buildPlanModel(input: CalculateInput): PlanModel {
   const selectedByOutputItemId = buildSelectedByOutputItemId(input);
   const buyableItemIds = Object.keys(itemById).filter(isBuyableItem).sort((a, b) => a.localeCompare(b));
   const cycleComponents = buildCycleComponents(activeGraph.recipeIds, activeGraph.edges, input.settings);
+  const cycleDecisions = buildCycleDecisions(cycleComponents, input.settings);
   return {
     input,
     targets: { all: allTargets, enabled, disabled, calculation },
@@ -282,6 +392,7 @@ export function buildPlanModel(input: CalculateInput): PlanModel {
       activeRecipeIds: activeGraph.recipeIds,
       edges: activeGraph.edges,
       cycleComponents,
+      cycleDecisions,
     },
     sources: {
       buyableItemIds,

@@ -65,3 +65,53 @@ export function runMaterialPlannerShadow(planModel: PlanModel, alphaResult: Calc
     noteEn: 'The v0.9.6 MaterialPlanner is a pre-switch shadow comparison. It logs DAG/cycle/source classifications and compares against the alpha solver as the accepted production result.',
   };
 }
+
+
+export function solveStructuredMaterialPlan(planModel: PlanModel, legacyAlphaResult: CalculationResult) {
+  const base = runMaterialPlannerShadow(planModel, legacyAlphaResult);
+  const cycleDecisions = planModel.dependencyGraph.cycleDecisions;
+  const acceptedResult: CalculationResult = {
+    ...legacyAlphaResult,
+    cycleDecisions: cycleDecisions.map((decision) => ({
+      componentId: decision.componentId,
+      classification: decision.classification,
+      candidateClassification: decision.candidateClassification,
+      itemIds: decision.itemIds,
+      recipeIds: decision.recipeIds,
+      requiredInitialItems: decision.requiredInitialItems,
+      runningExternalInputs: decision.runningExternalInputs,
+      safeForMainResult: decision.safeForMainResult,
+      reasonJa: decision.reasonJa,
+      reasonEn: decision.reasonEn,
+    })),
+  };
+
+  const structuredPlan = {
+    ...base,
+    mode: 'structured-material-v0970' as const,
+    status: cycleDecisions.some((decision) => decision.classification === 'unsupported' || decision.classification === 'invalid') ? 'partial' as const : base.status,
+    cycleComponents: planModel.dependencyGraph.cycleComponents,
+    cycleDecisions,
+    acceptedResultStatus: acceptedResult.calculationStatus,
+    legacyFallbackUsed: true,
+    legacyFallbackReason: 'v0.9.7 promotes the structured planner decision model and result contract while preserving the alpha numeric result as the compatibility baseline until the final DAG numeric solver is enabled.',
+    trace: [
+      ...base.trace,
+      {
+        phase: 'cycleDecisions',
+        messageJa: 'cycleComponentsを本番判定用のcycleDecisionsへ変換しました。安全に扱える循環だけsafeForMainResult=trueにします。',
+        messageEn: 'Converted cycleComponents into production-oriented cycleDecisions. Only cycles proven safe are marked safeForMainResult=true.',
+        data: cycleDecisions,
+      },
+      {
+        phase: 'structuredResultContract',
+        messageJa: 'v0.9.7ではCalculationResultへcycleDecisionsを追加し、Graph/Table/Debugが同じResultを読む構造に寄せています。数値本体は互換性のためalpha結果を基準にしています。',
+        messageEn: 'v0.9.7 adds cycleDecisions to CalculationResult and aligns Graph/Table/Debug around the same result contract. Numeric rates still use the alpha-compatible baseline for safety.',
+      },
+    ],
+    noteJa: 'v0.9.7のStructuredMaterialPlanはPlanModel/cycleDecisions/Result契約を本番構造へ昇格します。数値解は互換性維持のためalpha baselineを利用します。',
+    noteEn: 'The v0.9.7 StructuredMaterialPlan promotes PlanModel/cycleDecisions/Result contract to the production structure. Numeric solving still uses the alpha baseline for compatibility.',
+  };
+
+  return { result: acceptedResult, structuredPlan };
+}
