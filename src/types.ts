@@ -108,6 +108,7 @@ export type TargetMode = 'rate' | 'machines';
 
 export type ProductionTarget = {
   id: string;
+  enabled?: boolean;
   recipeId: string;
   outputItemId: string;
   mode: TargetMode;
@@ -135,14 +136,12 @@ export type FuelSettings = {
   fuelItemId: string; // 使用する燃料アイテムID
   sourceMode: ExternalSourceMode; // 内部生産か外部生産か
   heatingMode: HeatingMode; // 直接加熱か蒸気加熱か
-  maxIterations: number; // 燃料自己消費計算の最大反復回数
 };
 
 export type FertilizerSettings = {
   enabled: boolean; // 肥料計算を有効にするか
   fertilizerItemId: string; // 使用する肥料アイテムID
   sourceMode: ExternalSourceMode; // 内部生産か外部生産か
-  maxIterations: number; // 肥料自己消費計算の最大反復回数
 };
 
 export type AbilityId =
@@ -159,6 +158,11 @@ export type AbilityId =
 
 export type AbilitySettings = Record<AbilityId, number>;
 
+export type TargetDefaults = {
+  mode: TargetMode;
+  value: number;
+};
+
 export type AppSettings = {
   machineRounding: MachineRoundingMode;
   defaultSurplusPolicy: SurplusPolicy;
@@ -168,6 +172,7 @@ export type AppSettings = {
   showInitialInvestmentLines: boolean;
   allowAlternateRecipeCompletion: boolean;
   useByproductFuel: boolean;
+  targetDefaults: TargetDefaults;
   machinePreferences: MachinePreferences;
   paradox: ParadoxSettings;
   fuel: FuelSettings;
@@ -177,7 +182,7 @@ export type AppSettings = {
 export type AppState = {
   version: number;
   language: Lang;
-  activeTab: 'graph' | 'table' | 'settings' | 'about' | 'debug';
+  activeTab: 'graph' | 'table' | 'settings' | 'about' | 'graphDebug' | 'debug';
   targets: ProductionTarget[];
   settings: AppSettings;
   abilities: AbilitySettings;

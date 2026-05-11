@@ -53,8 +53,8 @@ export function sanitizeNegativeTargets(targets: ProductionTarget[]): TargetSani
       });
       return { ...target, value: 0 };
     }
-    if (!Number.isFinite(value)) return { ...target, value: 0 };
-    return { ...target, value };
+    if (!Number.isFinite(value)) return { ...target, enabled: target.enabled ?? true, value: 0 };
+    return { ...target, enabled: target.enabled ?? true, value };
   });
 
   return { targets: sanitizedTargets, negativeTargets };
@@ -89,5 +89,5 @@ export function buildNegativeTargetWarningInput(entries: NegativeTargetEntry[]):
 }
 
 export function filterPositiveTargets(targets: ProductionTarget[]): ProductionTarget[] {
-  return targets.filter((target) => Number.isFinite(Number(target.value)) && Number(target.value) > 0);
+  return targets.filter((target) => target.enabled !== false && Number.isFinite(Number(target.value)) && Number(target.value) > 0);
 }

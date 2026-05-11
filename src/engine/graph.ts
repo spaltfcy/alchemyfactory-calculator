@@ -28,6 +28,7 @@ export type PlannerNodeData = {
   isInitialInvestment?: boolean;
   hasStartupWarning?: boolean;
   isFuelSource?: boolean;
+  focused?: boolean;
 };
 
 const OUTPUT_COLORS = [

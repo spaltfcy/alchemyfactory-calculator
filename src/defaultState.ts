@@ -4,12 +4,13 @@ import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
 import { DEFAULT_PARADOX_SETTINGS } from './data/paradox';
 
 export const DEFAULT_STATE: AppState = {
-  version: 26,
+  version: 27,
   language: 'ja',
   activeTab: 'graph',
   targets: [
     {
       id: 'target-1',
+      enabled: true,
       recipeId: 'charcoal_powder_from_charcoal',
       outputItemId: 'charcoal_powder',
       mode: 'rate',
@@ -25,6 +26,10 @@ export const DEFAULT_STATE: AppState = {
     showInitialInvestmentLines: true,
     allowAlternateRecipeCompletion: false,
     useByproductFuel: false,
+    targetDefaults: {
+      mode: 'rate',
+      value: 30,
+    },
     machinePreferences: DEFAULT_MACHINE_PREFERENCES,
     paradox: DEFAULT_PARADOX_SETTINGS,
     fuel: {
@@ -32,13 +37,11 @@ export const DEFAULT_STATE: AppState = {
       fuelItemId: 'charcoal_powder',
       sourceMode: 'internal',
       heatingMode: 'direct',
-      maxIterations: 16,
     },
     fertilizer: {
       enabled: true,
       fertilizerItemId: 'basic_fertilizer',
       sourceMode: 'internal',
-      maxIterations: 4,
     },
   },
   abilities: DEFAULT_ABILITIES,

@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { useState, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
 import type { AppSettings, AppState, ItemRecipeInput, Lang, MachinePreferences, ParadoxSettings, Recipe, RecipeInput, SurplusPolicy } from '../types';
 import { DEFAULT_STATE } from '../defaultState';
 import { ITEMS, fuelItemIds, fertilizerItemIds, itemById } from '../data/items';
@@ -16,7 +16,7 @@ import { normalizeAbilitySettings } from '../data/abilityTables';
 
 export type SettingsTabProps = {
   state: AppState;
-  setState: (next: AppState) => void;
+  setState: Dispatch<SetStateAction<AppState>>;
   safeMode?: boolean;
   onBeginJsonImport?: () => void;
   onUserMessage?: (message: UserMessageInput) => void;
@@ -29,14 +29,12 @@ const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
   fuelItemId: 'charcoal_powder',
   sourceMode: 'internal',
   heatingMode: 'direct',
-  maxIterations: 16,
 };
 
 const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
   enabled: true,
   fertilizerItemId: 'basic_fertilizer',
   sourceMode: 'internal',
-  maxIterations: 4,
 };
 
 function getFertilizerSettings(state: AppState): AppSettings['fertilizer'] {
@@ -182,6 +180,10 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
         ...(imported.settings?.fuel ?? {}),
       },
       fertilizer: { ...getFertilizerSettings(current), ...(imported.settings?.fertilizer ?? {}) },
+      targetDefaults: {
+        ...current.settings.targetDefaults,
+        ...(imported.settings?.targetDefaults ?? {}),
+      },
     },
     abilities: normalizeAbilitySettings({ ...current.abilities, ...imported.abilities }),
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
@@ -471,6 +473,47 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                   <option value="none">{t('roundingNone', lang)}</option>
                   <option value="intermediate">{t('roundingIntermediate', lang)}</option>
                   <option value="all">{t('roundingAll', lang)}</option>
+                </select>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? 'レシピ追加 出力数' : 'Add recipe output'}</span>
+                <input
+                  id="target-default-value"
+                  name="target-default-value"
+                  type="number"
+                  min={0}
+                  value={state.settings.targetDefaults?.value ?? 30}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value) || value < 0) return;
+                    patchSettings({
+                      targetDefaults: {
+                        ...(state.settings.targetDefaults ?? { mode: 'rate', value: 30 }),
+                        value,
+                      },
+                    });
+                  }}
+                />
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? 'レシピ追加 指定方法' : 'Add recipe mode'}</span>
+                <select
+                  id="target-default-mode"
+                  name="target-default-mode"
+                  value={state.settings.targetDefaults?.mode ?? 'rate'}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchSettings({
+                      targetDefaults: {
+                        ...(state.settings.targetDefaults ?? { mode: 'rate', value: 30 }),
+                        mode: event.target.value as AppState['settings']['targetDefaults']['mode'],
+                      },
+                    })
+                  }
+                >
+                  <option value="rate">{t('rateShort', lang)}</option>
+                  <option value="machines">{t('machinesShort', lang)}</option>
                 </select>
               </label>
               <label className="form-field">

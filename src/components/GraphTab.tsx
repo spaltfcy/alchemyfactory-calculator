@@ -44,12 +44,18 @@ type PlannerHandleData = {
   color: string;
 };
 
+export type GraphFocusRequest = {
+  nodeId: string;
+  requestId: number;
+};
+
 type GraphTabProps = {
   lang: Lang;
   result: CalculationResult;
   settings: AppSettings;
   completedGraphNodeIds: Record<string, boolean>;
   onToggleCompleted: (nodeId: string) => void;
+  focusRequest?: GraphFocusRequest;
   debug?: boolean;
 };
 
@@ -382,6 +388,21 @@ function applyCompletedStateToNodes(nodes: Node[], completedGraphNodeIds: Record
   });
 }
 
+function applyFocusStateToNodes(nodes: Node[], focusedNodeId?: string): Node[] {
+  return nodes.map((node) => {
+    const focused = focusedNodeId === node.id;
+    const data = node.data as Record<string, unknown> | undefined;
+    if ((data?.focused ?? false) === focused) return node;
+    return {
+      ...node,
+      data: {
+        ...(node.data ?? {}),
+        focused,
+      },
+    };
+  });
+}
+
 
 function collectLiveGraphStyleText(): string {
   return Array.from(document.styleSheets)
@@ -541,7 +562,7 @@ function GraphControls({ lang, isInteractive, onToggleInteractive }: GraphContro
   );
 }
 
-export function GraphTab({ lang, result, settings, completedGraphNodeIds, onToggleCompleted, debug = false }: GraphTabProps) {
+export function GraphTab({ lang, result, settings, completedGraphNodeIds, onToggleCompleted, focusRequest, debug = false }: GraphTabProps) {
   const flowRef = useRef<ReactFlowInstance | null>(null);
   const latestLayoutId = useRef(0);
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -594,8 +615,6 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
 
     if (showUpdating) {
       setIsUpdating(true);
-      setNodes([]);
-      setEdges([]);
     } else {
       setIsUpdating(false);
     }
@@ -604,9 +623,8 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
       .then((layouted) => {
         if (disposed || latestLayoutId.current !== layoutId) return;
         const positionById = new Map(layouted.map((node) => [node.id, node.position]));
-        const fresh = buildFlowGraph(graphResult, lang, settings, {});
-        const positionedNodes = fresh.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position }));
-        const realigned = realignIncomingHandlesBySourceY(positionedNodes, fresh.edges);
+        const positionedNodes = raw.nodes.map((node) => ({ ...node, position: positionById.get(node.id) ?? node.position }));
+        const realigned = realignIncomingHandlesBySourceY(positionedNodes, raw.edges);
         const layoutMs = Math.round(performance.now() - startedAt);
 
         setNodes(applyCompletedStateToNodes(realigned.nodes, completedRef.current));
@@ -619,7 +637,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
           console.info(`[graph] nodes=${realigned.nodes.length} edges=${realigned.edges.length} total=${realigned.nodes.length + realigned.edges.length} layout=${layoutMs}ms updating=${showUpdating} recipeNodes=${recipeNodes} discardNodes=${discardNodes}`);
         }
 
-        requestAnimationFrame(() => requestAnimationFrame(() => flowRef.current?.fitView({ padding: 0.18, duration: 220, maxZoom: 1 })));
+        if (!focusRequest) requestAnimationFrame(() => requestAnimationFrame(() => flowRef.current?.fitView({ padding: 0.18, duration: 220, maxZoom: 1 })));
       })
       .catch((error: unknown) => {
         if (disposed || latestLayoutId.current !== layoutId) return;
@@ -627,13 +645,32 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
         setEdges(raw.edges);
         setIsUpdating(false);
         if (debug) console.warn('[graph] layout failed', error);
-        requestAnimationFrame(() => requestAnimationFrame(() => flowRef.current?.fitView({ padding: 0.18, duration: 220, maxZoom: 1 })));
+        if (!focusRequest) requestAnimationFrame(() => requestAnimationFrame(() => flowRef.current?.fitView({ padding: 0.18, duration: 220, maxZoom: 1 })));
       });
 
     return () => {
       disposed = true;
     };
-  }, [raw, graphResult, lang, settings, debug]);
+  }, [raw, graphResult, lang, settings, debug, focusRequest]);
+
+  useEffect(() => {
+    if (!focusRequest || !flowRef.current) return;
+    const targetNode = nodes.find((node) => node.id === focusRequest.nodeId);
+    if (!targetNode) return;
+
+    setNodes((current) => applyFocusStateToNodes(current, focusRequest.nodeId));
+    const measured = targetNode.measured as { width?: number; height?: number } | undefined;
+    const width = Number(measured?.width ?? targetNode.width ?? 245);
+    const height = Number(measured?.height ?? targetNode.height ?? 104);
+    const centerX = targetNode.position.x + width / 2;
+    const centerY = targetNode.position.y + height / 2;
+    flowRef.current.setCenter(centerX, centerY, { zoom: 1.15, duration: 420 });
+
+    const timeoutId = window.setTimeout(() => {
+      setNodes((current) => applyFocusStateToNodes(current, undefined));
+    }, 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [focusRequest?.requestId, focusRequest?.nodeId, nodes.length]);
 
   const onNodeDoubleClick: NodeMouseHandler = (_, node) => {
     if (isInteractive) onToggleCompleted(node.id);

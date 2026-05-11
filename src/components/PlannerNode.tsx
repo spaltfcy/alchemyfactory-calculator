@@ -36,6 +36,7 @@ export function PlannerNode({ data }: NodeProps) {
     kind +
     (nodeData.completed ? ' is-completed' : '') +
     (nodeData.isFuelSource ? ' is-fuel-source' : '') +
+    (nodeData.focused ? ' is-focused' : '') +
     (nodeData.isInitialInvestment ? ' is-initial-investment' : '') +
     (nodeData.hasStartupWarning ? ' is-startup-warning' : '');
 

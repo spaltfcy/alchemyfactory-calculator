@@ -170,17 +170,6 @@ export type CalculationResult = {
     fertilizerNutrientsRequiredPerMin: number;
     fertilizerRequiredPerMin: number;
     fertilizerItemId: string;
-    fuelIterations?: number;
-    fuelConverged?: boolean;
-    fuelHitMaxIterations?: boolean;
-    fuelConvergenceDelta?: number;
-    fuelIterationTrace?: Array<{
-      iteration: number;
-      injectedFuelRate: number;
-      nextFuelRate: number;
-      delta: number;
-    }>;
-    byproductIterations?: number;
     calculationMs?: number;
     queueSteps?: number;
     queueMax?: number;

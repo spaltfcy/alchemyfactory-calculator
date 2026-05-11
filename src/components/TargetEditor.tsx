@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
-import type { Lang, ProductionTarget } from '../types';
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react';
+import type { Lang, ProductionTarget, TargetDefaults } from '../types';
 import { negativeOutputTemporaryError, type UserMessageInput, type UserMessageLog } from '../utils/userMessages';
 import { ITEMS, itemById } from '../data/items';
 import { DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing, recipeById } from '../data/recipes';
@@ -9,7 +9,9 @@ import { t, text } from '../i18n';
 export type TargetEditorProps = {
   lang: Lang;
   targets: ProductionTarget[];
+  targetDefaults: TargetDefaults;
   onChange: (targets: ProductionTarget[]) => void;
+  onFocusGraphNode?: (nodeId: string) => void;
   onUserMessage?: (input: UserMessageInput) => UserMessageLog;
 };
 
@@ -51,15 +53,16 @@ function getDefaultRecipeId(itemId: string): string {
   return DEFAULT_RECIPE_BY_ITEM_ID[itemId] ?? getRecipesProducing(itemId)[0]?.id ?? '';
 }
 
-function makeTarget(lang: Lang): ProductionTarget {
+function makeTarget(lang: Lang, targetDefaults: TargetDefaults): ProductionTarget {
   const selectable = getSelectableOutputItems(lang);
   const outputItemId = selectable[0] ?? ITEMS[0]?.id ?? '';
   return {
     id: 'target-' + crypto.randomUUID(),
+    enabled: true,
     recipeId: getDefaultRecipeId(outputItemId),
     outputItemId,
-    mode: 'rate',
-    value: 30,
+    mode: targetDefaults.mode,
+    value: targetDefaults.value,
   };
 }
 
@@ -72,15 +75,29 @@ function moveTarget(targets: ProductionTarget[], index: number, delta: number): 
   return next;
 }
 
+function moveTargetToIndex(targets: ProductionTarget[], fromIndex: number, toIndex: number): ProductionTarget[] {
+  if (fromIndex < 0 || fromIndex >= targets.length || toIndex < 0 || toIndex >= targets.length || fromIndex === toIndex) return targets;
+  const next = [...targets];
+  const [target] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, target);
+  return next;
+}
+
 function sameTargetOrder(a: ProductionTarget[], b: ProductionTarget[]): boolean {
   return a.length === b.length && a.every((target, index) => target.id === b[index]?.id);
 }
 
-export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetEditorProps) {
+function targetRecipeNodeId(target: ProductionTarget): string {
+  const recipeId = target.recipeId || getDefaultRecipeId(target.outputItemId);
+  return 'recipe:' + recipeId;
+}
+
+export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusGraphNode, onUserMessage }: TargetEditorProps) {
   const selectableItems = getSelectableOutputItems(lang);
   const [bulkValue, setBulkValue] = useState('');
   const [bulkMode, setBulkMode] = useState<BulkModeValue>('');
   const [draftTargets, setDraftTargets] = useState(targets);
+  const [draggingTargetId, setDraggingTargetId] = useState<string | null>(null);
   const syncedTargetsRef = useRef(targets);
 
   useEffect(() => {
@@ -89,7 +106,11 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
     setDraftTargets(targets);
   }, [targets]);
 
-  function commitTargets(nextTargets: ProductionTarget[]) { syncedTargetsRef.current = nextTargets; setDraftTargets(nextTargets); onChange(nextTargets); }
+  function commitTargets(nextTargets: ProductionTarget[]) {
+    syncedTargetsRef.current = nextTargets;
+    setDraftTargets(nextTargets);
+    onChange(nextTargets);
+  }
 
   function showNegativeOutputError(): void {
     onUserMessage?.(negativeOutputTemporaryError());
@@ -110,6 +131,7 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
       if (target.id !== id) return target;
       const next = { ...target, ...patch };
       if (patch.outputItemId) next.recipeId = getDefaultRecipeId(patch.outputItemId);
+      if (next.enabled === undefined) next.enabled = true;
       return next;
     });
     commitTargets(nextTargets);
@@ -130,6 +152,7 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
 
     const nextTargets = draftTargets.map((target) => ({
       ...target,
+      enabled: target.enabled ?? true,
       ...(hasValue ? { value } : {}),
       ...(nextMode !== '' ? { mode: nextMode } : {}),
     }));
@@ -151,7 +174,34 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
     if (nextMode !== '') applyBulkOutput(nextMode);
   }
 
-  function reorderTarget(index: number, delta: number) { const nextTargets = moveTarget(draftTargets, index, delta); if (sameTargetOrder(nextTargets, draftTargets)) return; setDraftTargets(nextTargets); }
+  function reorderTarget(index: number, delta: number) {
+    const nextTargets = moveTarget(draftTargets, index, delta);
+    if (sameTargetOrder(nextTargets, draftTargets)) return;
+    commitTargets(nextTargets);
+  }
+
+  function onDragStart(event: DragEvent<HTMLDivElement>, targetId: string): void {
+    setDraggingTargetId(targetId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', targetId);
+  }
+
+  function onDragOver(event: DragEvent<HTMLDivElement>): void {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  function onDrop(event: DragEvent<HTMLDivElement>, dropTargetId: string): void {
+    event.preventDefault();
+    const sourceId = event.dataTransfer.getData('text/plain') || draggingTargetId;
+    setDraggingTargetId(null);
+    if (!sourceId || sourceId === dropTargetId) return;
+    const fromIndex = draftTargets.findIndex((target) => target.id === sourceId);
+    const toIndex = draftTargets.findIndex((target) => target.id === dropTargetId);
+    const nextTargets = moveTargetToIndex(draftTargets, fromIndex, toIndex);
+    if (sameTargetOrder(nextTargets, draftTargets)) return;
+    commitTargets(nextTargets);
+  }
 
   const itemLabel = lang === 'ja' ? 'アイテム' : 'Item';
   const outputLabel = lang === 'ja' ? '出力' : 'Output';
@@ -161,6 +211,8 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
   const moveUpLabel = lang === 'ja' ? '上へ移動' : 'Move up';
   const moveDownLabel = lang === 'ja' ? '下へ移動' : 'Move down';
   const removeLabel = lang === 'ja' ? '削除' : 'Remove';
+  const enabledLabel = lang === 'ja' ? 'このレシピを使う' : 'Use this recipe';
+  const focusLabel = lang === 'ja' ? 'ダブルクリックでグラフ上のノードへ移動' : 'Double-click to focus this node on the graph';
 
   return (
     <section className="target-editor panel">
@@ -187,7 +239,7 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
               <option value="machines">{t('machinesShort', lang)}</option>
             </select>
           </label>
-          <button type="button" onClick={() => commitTargets([...draftTargets, makeTarget(lang)])}>
+          <button type="button" onClick={() => commitTargets([...draftTargets, makeTarget(lang, targetDefaults)])}>
             {t('addTarget', lang)}
           </button>
         </div>
@@ -195,8 +247,26 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
 
       <div className="target-list" aria-label={t('targets', lang)}>
         {draftTargets.map((target, index) => (
-          <div className="target-card" key={target.id}>
-            <label className="target-field">
+          <div
+            className={draggingTargetId === target.id ? 'target-card is-dragging' : 'target-card'}
+            key={target.id}
+            draggable
+            title={focusLabel}
+            onDragStart={(event) => onDragStart(event, target.id)}
+            onDragEnd={() => setDraggingTargetId(null)}
+            onDragOver={onDragOver}
+            onDrop={(event) => onDrop(event, target.id)}
+            onDoubleClick={() => onFocusGraphNode?.(targetRecipeNodeId(target))}
+          >
+            <label className="target-enabled-checkbox" title={enabledLabel} aria-label={enabledLabel} onDoubleClick={(event) => event.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={target.enabled ?? true}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => updateTarget(target.id, { enabled: event.target.checked })}
+              />
+            </label>
+
+            <label className="target-field target-item-field" onDoubleClick={(event) => event.stopPropagation()}>
               <span>{itemLabel}</span>
               <select
                 value={target.outputItemId}
@@ -212,7 +282,7 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
               </select>
             </label>
 
-            <label className="target-field">
+            <label className="target-field" onDoubleClick={(event) => event.stopPropagation()}>
               <span>{outputLabel}</span>
               <input
                 type="number"
@@ -226,7 +296,7 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
               />
             </label>
 
-            <label className="target-field">
+            <label className="target-field" onDoubleClick={(event) => event.stopPropagation()}>
               <span>{t('mode', lang)}</span>
               <select
                 value={target.mode}
@@ -239,7 +309,7 @@ export function TargetEditor({ lang, targets, onChange, onUserMessage }: TargetE
               </select>
             </label>
 
-            <div className="target-card-actions" aria-label={lang === 'ja' ? '削除と並び替え' : 'Remove and sort'}>
+            <div className="target-card-actions" aria-label={lang === 'ja' ? '削除と並び替え' : 'Remove and sort'} onDoubleClick={(event) => event.stopPropagation()}>
               <button
                 type="button"
                 className="target-remove danger"

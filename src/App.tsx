@@ -8,7 +8,8 @@ import { loadState, saveState } from './utils/storage';
 import { t } from './i18n';
 import { ABILITY_IDS, ABILITY_MAX_LEVEL, normalizeAbilityLevel, normalizeAbilitySettings } from './data/abilityTables';
 import { TargetEditor } from './components/TargetEditor';
-import { GraphTab } from './components/GraphTab';
+import { GraphTab, type GraphFocusRequest } from './components/GraphTab';
+import { DebugGraphTab } from './components/DebugGraphTab';
 import { TableTab } from './components/TableTab';
 import { SettingsTab } from './components/SettingsTab';
 import { AboutTab } from './components/AboutTab';
@@ -17,7 +18,7 @@ import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 
-const APP_VERSION = '0.8.11';
+const APP_VERSION = '0.9.0';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -147,15 +148,18 @@ function resetStateForSafeMode(current: AppState): AppState {
 }
 
 export function App() {
-  const [runtimeFlags, setRuntimeFlags] = useState<RuntimeFlags>(() => parseRuntimeFlags());
-  const [state, setState] = useState<AppState>(() => mergeInitialState(parseRuntimeFlags().safeMode));
+  const initialRuntimeFlagsRef = useRef<RuntimeFlags | null>(null);
+  if (initialRuntimeFlagsRef.current === null) initialRuntimeFlagsRef.current = parseRuntimeFlags();
+  const [runtimeFlags, setRuntimeFlags] = useState<RuntimeFlags>(() => initialRuntimeFlagsRef.current!);
+  const [state, setState] = useState<AppState>(() => mergeInitialState(initialRuntimeFlagsRef.current!.safeMode));
   const [abilityOpen, setAbilityOpen] = useState(false);
   const [visibleUserMessages, setVisibleUserMessages] = useState<UserMessageLog[]>([]);
   const [userMessageHistory, setUserMessageHistory] = useState<UserMessageLog[]>([]);
   const calculationErrorMessageRef = useRef<{ id: string; key: string } | null>(null);
+  const [focusGraphRequest, setFocusGraphRequest] = useState<GraphFocusRequest | undefined>(undefined);
   const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
   const lang = state.language;
-  const showSidebar = state.activeTab === 'graph' || state.activeTab === 'table';
+  const showSidebar = state.activeTab === 'graph' || state.activeTab === 'graphDebug' || state.activeTab === 'table';
 
   function addUserMessage(input: UserMessageInput): UserMessageLog {
     const message = createUserMessage(input);
@@ -229,8 +233,8 @@ export function App() {
   }, [state, runtimeFlags.safeMode]);
 
   useEffect(() => {
-    if (runtimeFlags.debug || state.activeTab !== 'debug') return;
-    setState((current) => (current.activeTab === 'debug' ? { ...current, activeTab: 'graph' } : current));
+    if (runtimeFlags.debug || (state.activeTab !== 'debug' && state.activeTab !== 'graphDebug')) return;
+    setState((current) => (current.activeTab === 'debug' || current.activeTab === 'graphDebug' ? { ...current, activeTab: 'graph' } : current));
   }, [runtimeFlags.debug, state.activeTab]);
 
   const targetCalculationKey = useMemo(
@@ -239,6 +243,7 @@ export function App() {
         state.targets
           .map((target) => ({
             id: target.id,
+            enabled: target.enabled ?? true,
             recipeId: state.recipePreferences[target.outputItemId] ?? target.recipeId,
             outputItemId: target.outputItemId,
             mode: target.mode,
@@ -312,13 +317,13 @@ export function App() {
   }
 
   function toggleCompleted(nodeId: string) {
-    setState({
-      ...state,
+    setState((current) => ({
+      ...current,
       completedGraphNodeIds: {
-        ...state.completedGraphNodeIds,
-        [nodeId]: !(state.completedGraphNodeIds[nodeId] ?? false),
+        ...current.completedGraphNodeIds,
+        [nodeId]: !(current.completedGraphNodeIds[nodeId] ?? false),
       },
-    });
+    }));
   }
 
   function abilityInputValue(value: unknown): number {
@@ -331,13 +336,13 @@ export function App() {
 
   function setAbility(id: AbilityId, value: number | string) {
     const nextValue = abilityInputValue(value);
-    setState({
-      ...state,
+    setState((current) => ({
+      ...current,
       abilities: {
-        ...state.abilities,
+        ...current.abilities,
         [id]: nextValue,
       },
-    });
+    }));
   }
 
   const initialCost = result.totals.initialCostCopper ?? 0;
@@ -354,15 +359,20 @@ export function App() {
   }
 
   const debugCalculationLine = runtimeFlags.debug
-    ? (lang === 'ja' ? '計算' : 'Calc') + ': ' + formatNumber(result.totals.calculationMs ?? 0, 1) + 'ms / ' + (lang === 'ja' ? '燃料反復' : 'Fuel iterations') + ': ' + String(result.totals.fuelIterations ?? 0)
+    ? (lang === 'ja' ? '計算' : 'Calc') + ': ' + formatNumber(result.totals.calculationMs ?? 0, 1) + 'ms'
     : '';
 
   const visibleTabs: AppState['activeTab'][] = runtimeFlags.debug
-    ? ['graph', 'table', 'settings', 'about', 'debug']
+    ? ['graph', 'table', 'settings', 'about', 'graphDebug', 'debug']
     : ['graph', 'table', 'settings', 'about'];
 
   function requestGraphSave() {
     window.dispatchEvent(new CustomEvent('alchemyfactory:save-live-graph'));
+  }
+
+  function focusGraphNode(nodeId: string): void {
+    setFocusGraphRequest({ nodeId, requestId: Date.now() });
+    setState((current) => ({ ...current, activeTab: 'graph' }));
   }
 
   return (
@@ -386,17 +396,14 @@ export function App() {
           </p>
 
           <nav className="tabs">
-            {(runtimeFlags.debug
-              ? (['graph', 'table', 'settings', 'about', 'debug'] as const)
-              : (['graph', 'table', 'settings', 'about'] as const)
-            ).map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab}
                 type="button"
                 className={state.activeTab === tab ? 'active' : ''}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab === 'debug' ? 'DEBUG' : t(tab, lang)}
+                {tab === 'debug' ? 'DEBUG' : tab === 'graphDebug' ? 'Graph[DEBUG]' : t(tab, lang)}
               </button>
             ))}
           </nav>
@@ -454,14 +461,14 @@ export function App() {
               value={lang}
               autoComplete="off"
               onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                setState({ ...state, language: event.target.value as AppState['language'] })
+                setState((current) => ({ ...current, language: event.target.value as AppState['language'] }))
               }
             >
               <option value="ja">日本語</option>
               <option value="en">English</option>
             </select>
           </div>
-          {state.activeTab === 'graph' && (
+          {(state.activeTab === 'graph' || state.activeTab === 'graphDebug') && (
             <button type="button" className="header-graph-save-button" onClick={requestGraphSave}>
               {lang === 'ja' ? 'グラフ保存' : 'Save graph'}
             </button>
@@ -492,7 +499,14 @@ export function App() {
       <main className={showSidebar ? 'main-layout' : 'main-layout main-layout-full'}>
         {showSidebar && (
           <aside className="side-pane">
-            <TargetEditor lang={lang} targets={state.targets} onChange={(targets) => setState({ ...state, targets })} onUserMessage={addUserMessage} />
+            <TargetEditor
+              lang={lang}
+              targets={state.targets}
+              targetDefaults={state.settings.targetDefaults}
+              onChange={(targets) => setState((current) => ({ ...current, targets }))}
+              onFocusGraphNode={focusGraphNode}
+              onUserMessage={addUserMessage}
+            />
           </aside>
         )}
 
@@ -508,12 +522,23 @@ export function App() {
               settings={state.settings}
               completedGraphNodeIds={state.completedGraphNodeIds}
               onToggleCompleted={toggleCompleted}
+              focusRequest={focusGraphRequest}
               debug={runtimeFlags.debug}
             />
           </div>
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} onBeginJsonImport={clearActiveUserMessages} onUserMessage={addUserMessage} appVersion={APP_VERSION} gameVersion={GAME_VERSION} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
+          {state.activeTab === 'graphDebug' && runtimeFlags.debug && (
+            <DebugGraphTab
+              lang={lang}
+              result={result}
+              settings={state.settings}
+              completedGraphNodeIds={state.completedGraphNodeIds}
+              onToggleCompleted={toggleCompleted}
+              focusRequest={focusGraphRequest}
+            />
+          )}
           {state.activeTab === 'debug' && runtimeFlags.debug && <DebugTab lang={lang} state={state} setState={setState} appVersion={APP_VERSION} gameVersion={GAME_VERSION} userMessages={userMessageHistory} onUserMessage={addUserMessage} onBeginJsonImport={clearActiveUserMessages} />}
         </section>
       </main>

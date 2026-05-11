@@ -379,9 +379,7 @@ function outputRateForDiagnosticRecipe(recipe: Recipe, itemId: string, input: Ca
 }
 
 function selectedSteamBoilerRecipe(input: CalculateInput): Recipe | undefined {
-  const preferred = input.recipePreferences.steam;
-  if (preferred && recipeById[preferred]) return recipeById[preferred];
-  return recipeById.steam_boiler_low;
+  return chooseRecipeForItem('steam', input.recipePreferences);
 }
 
 function collectSelectedRecipeClosure(seedRecipeIds: Iterable<string>, input: CalculateInput): string[] {
