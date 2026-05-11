@@ -531,7 +531,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 28,
+      debugSchemaVersion: 29,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -566,8 +566,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.5ではGraph[DEBUG]にELKベース軽補正v2を適用し、悪化時は本番Graph相当へ自動fallbackします。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.5 applies ELK-based light-adjustment v2 to Graph[DEBUG] and automatically falls back to the production-like layout when it gets worse.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。v0.9.6ではGraph[DEBUG]にELKベース軽補正v2を適用し、改善が明確でない場合は本番Graph相当へ自動fallbackします。MaterialPlanner shadow比較も保存します。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. v0.9.6 applies ELK-based light-adjustment v2 to Graph[DEBUG] and automatically falls back to the production-like layout unless the improvement is clear. It also saves MaterialPlanner shadow comparison artifacts.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -700,7 +700,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 28,
+      debugSchemaVersion: 29,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1119,7 +1119,14 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       totals: artifact.result.totals,
       summary: artifact.debugLog.summary,
       diagnosticComparison: artifact.enrichedDebugLog.diagnosticComparison,
+      materialPlannerShadowSummary: (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: { status?: string }; comparison?: unknown } }).materialPlannerShadow?.comparison,
     }, null, 2));
+    const materialPlannerShadow = (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: unknown; comparison?: unknown; cycleComponents?: unknown[]; planModel?: unknown } }).materialPlannerShadow;
+    if (materialPlannerShadow) {
+      zip.file(baseName + '__material-planner-shadow.json', JSON.stringify(materialPlannerShadow, null, 2));
+      zip.file(baseName + '__planner-comparison.json', JSON.stringify(materialPlannerShadow.comparison ?? {}, null, 2));
+      zip.file(baseName + '__cycle-components.json', JSON.stringify(materialPlannerShadow.cycleComponents ?? [], null, 2));
+    }
 
     if (calculationInvalid) {
       zip.file(
@@ -1220,7 +1227,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 28,
+      debugSchemaVersion: 29,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

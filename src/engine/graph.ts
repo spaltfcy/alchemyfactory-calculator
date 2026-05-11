@@ -1236,12 +1236,15 @@ function withLayoutDecision(
 function fallbackReasonForDebugLayout(normal: FlowGraphLayoutMetrics, candidate: FlowGraphLayoutMetrics): string | undefined {
   const normalScore = normal.layoutScore ?? scoreFlowGraphLayoutMetrics(normal);
   const candidateScore = candidate.layoutScore ?? scoreFlowGraphLayoutMetrics(candidate);
+  const crossingDelta = candidate.estimatedCrossings - normal.estimatedCrossings;
+  const scoreRatio = normalScore > 0 ? candidateScore / normalScore : 1;
   if (candidate.width > normal.width * 2) return 'debug width is more than 2x normal';
   if (candidate.height > normal.height * 2.5) return 'debug height is more than 2.5x normal';
   if (candidate.maxEdgeLength > Math.max(1, normal.maxEdgeLength) * 2) return 'debug max edge length is more than 2x normal';
-  if (candidateScore > normalScore * 1.05 && candidate.estimatedCrossings >= normal.estimatedCrossings) return 'debug score is worse and crossings did not improve';
-  if (candidateScore > normalScore * 1.25) return 'debug score is more than 25% worse';
-  return undefined;
+  if (candidateScore <= normalScore) return undefined;
+  if (crossingDelta <= -5 && scoreRatio <= 1.02) return undefined;
+  if (crossingDelta < 0 && scoreRatio <= 1.005 && candidate.maxEdgeLength <= Math.max(1, normal.maxEdgeLength) * 1.05) return undefined;
+  return 'debug layout did not improve enough; selected normal-fallback';
 }
 
 function serializeGraphModel(variant: 'normal' | 'debug', layout: ReturnType<typeof layoutSvgNodes>, graph: { nodes: Node[]; edges: Edge[] }) {
@@ -1331,13 +1334,13 @@ export function compareFlowGraphLayoutMetrics(normal: FlowGraphLayoutMetrics, de
     worseByLength,
     worseByCanvasSize,
     notesJa: [
-      'Graph[DEBUG]はELKベース軽補正v2です。本番Graphにはまだ反映していません。',
+      'Graph[DEBUG]はELKベース軽補正v2です。本番Graphにはまだ反映していません。v0.9.6では改善が明確でない場合はnormal-fallbackを選択します。',
       'debug layoutが大きく悪化した場合はnormal-fallbackを選択します。',
       'estimatedCrossingsとedge lengthは概算です。改善方向の比較値として使用してください。',
     ],
     notesEn: [
       'Graph[DEBUG] uses ELK-based light-adjustment v2 and is not applied to the production Graph yet.',
-      'If the debug layout gets significantly worse, normal-fallback is selected.',
+      'If the debug layout does not clearly improve, normal-fallback is selected.',
       'estimatedCrossings and edge length are approximate comparison metrics.',
     ],
     delta,

@@ -229,6 +229,9 @@ export type CalculationDebugLog = {
     calculationTargetCount: number;
     enabledTargetCount: number;
     disabledTargetCount: number;
+    planModelSummary?: unknown;
+    materialPlannerShadowMode?: string;
+    materialPlannerShadowStatus?: string;
   };
   diagnosticComparison?: {
     resultFlowCount: number;
@@ -249,6 +252,8 @@ export type CalculationDebugLog = {
     debug?: { metrics: unknown };
     diff?: unknown;
   };
+  materialPlannerShadow?: unknown;
+  planModel?: unknown;
 };
 
 export type CalculationDebugResult = {

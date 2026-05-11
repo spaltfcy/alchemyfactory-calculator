@@ -17,6 +17,9 @@ import {
 import { itemById } from '../data/items';
 import { recipeById } from '../data/recipes';
 import { chooseRecipeForItem } from './itemSourceResolver';
+import { buildPlanModel } from './planner/planModel';
+import { runMaterialPlannerShadow } from './planner/materialPlanner';
+import { comparePlannerResults } from './planner/comparePlannerResults';
 
 const EPS = 1e-9;
 
@@ -29,8 +32,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v0950';
-const SOLVE_PLAN_VERSION = '0.9.5';
+const SOLVE_PLAN_MODE = 'solvePlan-v0960';
+const SOLVE_PLAN_VERSION = '0.9.6';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -79,15 +82,26 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
     unusedCandidateItemIds,
     unusedCandidateRecipeCount: unusedCandidateRecipeIds.length,
     unusedCandidateItemCount: unusedCandidateItemIds.length,
+    recipeSets: {
+      activePlanRecipes: resultRecipeIds,
+      candidateRecipes: linearRecipeIds,
+      unusedCandidateRecipes: unusedCandidateRecipeIds,
+    },
+    itemSets: {
+      activePlanItems: resultItemIds,
+      candidateItems: linearItemIds,
+      unusedCandidateItems: unusedCandidateItemIds,
+    },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0950',
-    noteJa: 'v0.9.5では実resultに存在しない診断候補をcandidate-onlyとして分離します。実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
-    noteEn: 'v0.9.5 separates diagnostic-only candidates from the actual result. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v0960',
+    noteJa: 'v0.9.6ではactive/candidate/unusedを明示し、MaterialPlanner shadow comparisonを追加します。実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
+    noteEn: 'v0.9.6 explicitly separates active/candidate/unused diagnostics and adds MaterialPlanner shadow comparison. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
 }
 
 export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {}): SolvePlanResult {
   const debug = options.debug === true;
+  const planModel = buildPlanModel(input);
   const linearModelDiagnostics = debug ? buildLinearModelDiagnostics(input) : undefined;
   const newSolverResult = calculateWithNewSolver(input, linearModelDiagnostics);
   const result = newSolverResult.result;
@@ -97,6 +111,22 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const debugLog = buildDebugLogFromResult(input, result);
   const diagnostics = newSolverResult.linearModelDiagnostics ?? linearModelDiagnostics;
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
+  const shadowResult = runMaterialPlannerShadow(planModel, result);
+  const plannerComparison = comparePlannerResults(result, shadowResult);
+  const materialPlannerShadow = {
+    enabled: true as const,
+    mode: 'shadow-dag-v0960' as const,
+    planModel,
+    shadowResult,
+    comparison: plannerComparison,
+    cycleComponents: shadowResult.cycleComponents,
+    alphaResultSummary: {
+      recipeCount: Object.keys(result.recipeStats).length,
+      itemCount: Object.keys(result.itemStats).length,
+      flowCount: result.flows.length,
+      calculationStatus: result.calculationStatus,
+    },
+  };
   const extendedDebugLog = {
     ...debugLog,
     issues: diagnosticComparison.severeMismatch
@@ -124,9 +154,21 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
       calculationTargetCount: input.targets.length,
       enabledTargetCount: enabledTargetCount(input),
       disabledTargetCount: disabledTargetCount(input),
+      planModelSummary: planModel.summary,
+      materialPlannerShadowMode: materialPlannerShadow.mode,
+      materialPlannerShadowStatus: shadowResult.status,
     },
     diagnosticComparison,
-    linearModelDiagnostics: diagnostics,
+    materialPlannerShadow,
+    planModel,
+    linearModelDiagnostics: diagnostics ? {
+      ...diagnostics,
+      linearBalanceModel: {
+        ...diagnostics.linearBalanceModel,
+        recipeSets: diagnosticComparison.recipeSets,
+        itemSets: diagnosticComparison.itemSets,
+      },
+    } : diagnostics,
     alphaBalanceTrace: newSolverResult.alphaBalanceTrace,
   } as CalculationDebugResult['debugLog'] & {
     resultEngine: typeof newSolverResult.engineId;
