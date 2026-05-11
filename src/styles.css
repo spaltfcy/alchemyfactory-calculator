@@ -1766,3 +1766,70 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* v0.9.1: target editor layout fix */
+/*
+ * The v0.9.0 target card temporarily placed the enable checkbox as its own grid cell
+ * and kept the action buttons absolute-positioned. That made the checkbox look like it
+ * belonged to the input row and caused ×/↑/↓ to overlap. In v0.9.1 the checkbox is
+ * part of the item label and action buttons are normal layout content.
+ */
+.target-card {
+  grid-template-columns: var(--target-item-width) var(--target-value-width) var(--target-mode-width) max-content;
+  align-items: end;
+  column-gap: var(--target-gap);
+  padding-right: var(--target-card-padding-x);
+}
+
+.target-item-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 1.2rem;
+  line-height: 1.2;
+}
+
+.target-enabled-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: auto;
+  justify-self: auto;
+  padding-top: 0;
+  line-height: 1;
+}
+
+.target-enabled-checkbox input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.target-card-actions {
+  position: static;
+  display: flex;
+  gap: 0.25rem;
+  align-items: end;
+  justify-content: flex-start;
+  min-width: max-content;
+  padding-bottom: 0;
+}
+
+.target-card-actions .target-remove,
+.target-card .target-remove {
+  position: static;
+}
+
+.target-card-actions button,
+.target-card-actions .target-remove,
+.target-card-actions .target-order-button {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 56rem) {
+  .target-card {
+    grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width) max-content;
+  }
+}

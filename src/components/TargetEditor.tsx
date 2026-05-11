@@ -258,16 +258,17 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
             onDrop={(event) => onDrop(event, target.id)}
             onDoubleClick={() => onFocusGraphNode?.(targetRecipeNodeId(target))}
           >
-            <label className="target-enabled-checkbox" title={enabledLabel} aria-label={enabledLabel} onDoubleClick={(event) => event.stopPropagation()}>
-              <input
-                type="checkbox"
-                checked={target.enabled ?? true}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => updateTarget(target.id, { enabled: event.target.checked })}
-              />
-            </label>
-
             <label className="target-field target-item-field" onDoubleClick={(event) => event.stopPropagation()}>
-              <span>{itemLabel}</span>
+              <span className="target-item-heading">
+                <span className="target-enabled-checkbox" title={enabledLabel} aria-label={enabledLabel} onDoubleClick={(event) => event.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={target.enabled ?? true}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => updateTarget(target.id, { enabled: event.target.checked })}
+                  />
+                </span>
+                <span>{itemLabel}</span>
+              </span>
               <select
                 value={target.outputItemId}
                 onChange={(event: ChangeEvent<HTMLSelectElement>) =>
