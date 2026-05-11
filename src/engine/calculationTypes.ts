@@ -141,7 +141,7 @@ export type InitialInvestmentFlow = {
   belts: number;
   transportKind: InitialInvestmentTransportKind;
   transportUnits: number;
-  role: 'material';
+  role: 'material' | 'cycleInput';
 };
 
 export type InitialInvestmentGroup = {

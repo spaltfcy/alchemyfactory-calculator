@@ -47,8 +47,8 @@ export function DebugGraphTab({ lang, result, settings, completedGraphNodeIds, o
           <h2>Graph[DEBUG]</h2>
           <p>
             {lang === 'ja'
-              ? '本番Graphとは別の実験用タブです。v0.9.5ではELKベース軽補正v2とfallback判定を確認します。'
-              : 'Experimental graph tab. v0.9.5 previews ELK-based light-adjustment v2 and fallback decisions.'}
+              ? '本番Graphとは別の実験用タブです。Graph[DEBUG]では通常Graphとの比較・fallback判定・layout metricsを確認します。'
+              : 'Experimental graph tab for comparing against the production Graph, fallback decisions, and layout metrics.'}
           </p>
         </div>
         <dl className="debug-graph-metrics">

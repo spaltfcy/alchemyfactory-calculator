@@ -108,6 +108,7 @@ type VerificationExpectation = {
   expectedLegacyFallbackUsed?: boolean;
   expectedAcceptedResultEngine?: string;
   expectedGraphStartupLabel?: boolean;
+  expectedLegacyAlphaCalled?: boolean;
 };
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
@@ -163,6 +164,10 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
   if (expectation.expectedAcceptedResultEngine) {
     const actual = debugLog?.structuredMaterialPlan?.acceptedResultEngine ?? debugLog?.legacyAlphaComparison?.acceptedResultEngine ?? debugLog?.resultEngine ?? debugLog?.solver?.resultEngine;
     if (actual !== expectation.expectedAcceptedResultEngine) return false;
+  }
+  if (typeof expectation.expectedLegacyAlphaCalled === 'boolean') {
+    const actual = Boolean(debugLog?.legacyAlphaComparison && (debugLog.legacyAlphaComparison as { legacyCalled?: boolean }).legacyCalled === true);
+    if (actual !== expectation.expectedLegacyAlphaCalled) return false;
   }
   if (expectation.expectedGraphStartupLabel) {
     const graphArtifacts = artifact?.graphArtifacts as { normal?: { model?: { edges?: Array<{ rateLabel?: string; role?: string; itemName?: string }> } } } | undefined;
@@ -608,7 +613,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 32,
+      debugSchemaVersion: 33,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -777,7 +782,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 32,
+      debugSchemaVersion: 33,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1331,7 +1336,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 32,
+      debugSchemaVersion: 33,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

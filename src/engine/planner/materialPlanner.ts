@@ -11,14 +11,14 @@ function positiveRecord(entries: Array<[string, number]>): Record<string, number
   return result;
 }
 
-export function runMaterialPlannerShadow(planModel: PlanModel, alphaResult: CalculationResult): MaterialPlannerShadowResult {
-  const recipeRuns = positiveRecord(Object.entries(alphaResult.recipeStats).map(([recipeId, stat]) => [recipeId, stat.runsPerMinute]));
-  const itemDemand = positiveRecord(Object.entries(alphaResult.itemStats).map(([itemId, stat]) => [itemId, stat.consumed]));
-  const itemProduced = positiveRecord(Object.entries(alphaResult.itemStats).map(([itemId, stat]) => [itemId, stat.produced]));
-  const purchased = positiveRecord(Object.entries(alphaResult.itemStats).map(([itemId, stat]) => [itemId, stat.purchased]));
-  const unresolved = positiveRecord((alphaResult.residualUnresolvedFlows ?? []).map((flow) => [flow.itemId, flow.rate]));
-  const surplus = positiveRecord(Object.entries(alphaResult.itemStats).map(([itemId, stat]) => [itemId, stat.surplus]));
-  const discarded = positiveRecord(Object.entries(alphaResult.itemStats).map(([itemId, stat]) => [itemId, stat.discarded]));
+export function runMaterialPlannerShadow(planModel: PlanModel, structuredBaseResult: CalculationResult): MaterialPlannerShadowResult {
+  const recipeRuns = positiveRecord(Object.entries(structuredBaseResult.recipeStats).map(([recipeId, stat]) => [recipeId, stat.runsPerMinute]));
+  const itemDemand = positiveRecord(Object.entries(structuredBaseResult.itemStats).map(([itemId, stat]) => [itemId, stat.consumed]));
+  const itemProduced = positiveRecord(Object.entries(structuredBaseResult.itemStats).map(([itemId, stat]) => [itemId, stat.produced]));
+  const purchased = positiveRecord(Object.entries(structuredBaseResult.itemStats).map(([itemId, stat]) => [itemId, stat.purchased]));
+  const unresolved = positiveRecord((structuredBaseResult.residualUnresolvedFlows ?? []).map((flow) => [flow.itemId, flow.rate]));
+  const surplus = positiveRecord(Object.entries(structuredBaseResult.itemStats).map(([itemId, stat]) => [itemId, stat.surplus]));
+  const discarded = positiveRecord(Object.entries(structuredBaseResult.itemStats).map(([itemId, stat]) => [itemId, stat.discarded]));
   const unsupportedReasons: PlannerUnsupportedReason[] = planModel.dependencyGraph.cycleComponents.map((cycle) => ({
     code: 'SHADOW_CYCLE_COMPONENT_DETECTED',
     messageJa: 'structured planner が循環成分を検出しました。cycleDecisionとして本番Resultへ反映し、安全なcycleInputは初期投資扱いにします。',
@@ -112,7 +112,7 @@ function initialInvestmentFlowFor(componentId: string, recipeId: string, itemId:
     belts: 0,
     transportKind: 'belt',
     transportUnits: 0,
-    role: 'material',
+    role: 'cycleInput',
   };
 }
 
@@ -147,22 +147,22 @@ function appendCycleInitialInvestment(base: InitialInvestmentData | undefined, d
   return next;
 }
 
-function buildStructuredAcceptedResult(planModel: PlanModel, legacyAlphaResult: CalculationResult): CalculationResult {
+function buildStructuredAcceptedResult(planModel: PlanModel, structuredBaseResult: CalculationResult): CalculationResult {
   const cycleDecisions = planModel.dependencyGraph.cycleDecisions;
   const safeCycleInputs = cycleDecisions.filter((decision) => decision.classification === 'cycleInput' && decision.safeForMainResult);
   const allDecisionsSafe = cycleDecisions.length > 0 && cycleDecisions.every((decision) => decision.safeForMainResult);
-  const canPromoteCycleInput = safeCycleInputs.length > 0 && allDecisionsSafe && legacyAlphaResult.calculationStatus === 'invalid' && cycleErrorsOnly(legacyAlphaResult);
+  const canPromoteCycleInput = safeCycleInputs.length > 0 && allDecisionsSafe && structuredBaseResult.calculationStatus === 'invalid' && cycleErrorsOnly(structuredBaseResult);
   const result: CalculationResult = {
-    ...legacyAlphaResult,
-    itemStats: Object.fromEntries(Object.entries(legacyAlphaResult.itemStats).map(([itemId, stat]) => [itemId, cloneItemStat(stat)])),
-    recipeStats: { ...legacyAlphaResult.recipeStats },
-    flows: [...legacyAlphaResult.flows],
-    conveyorEdges: [...legacyAlphaResult.conveyorEdges],
-    outputEdges: [...legacyAlphaResult.outputEdges],
-    warnings: [...legacyAlphaResult.warnings],
-    residualUnresolvedFlows: legacyAlphaResult.residualUnresolvedFlows ? [...legacyAlphaResult.residualUnresolvedFlows] : undefined,
-    errorSummaries: legacyAlphaResult.errorSummaries ? [...legacyAlphaResult.errorSummaries] : undefined,
-    totals: { ...legacyAlphaResult.totals },
+    ...structuredBaseResult,
+    itemStats: Object.fromEntries(Object.entries(structuredBaseResult.itemStats).map(([itemId, stat]) => [itemId, cloneItemStat(stat)])),
+    recipeStats: { ...structuredBaseResult.recipeStats },
+    flows: [...structuredBaseResult.flows],
+    conveyorEdges: [...structuredBaseResult.conveyorEdges],
+    outputEdges: [...structuredBaseResult.outputEdges],
+    warnings: [...structuredBaseResult.warnings],
+    residualUnresolvedFlows: structuredBaseResult.residualUnresolvedFlows ? [...structuredBaseResult.residualUnresolvedFlows] : undefined,
+    errorSummaries: structuredBaseResult.errorSummaries ? [...structuredBaseResult.errorSummaries] : undefined,
+    totals: { ...structuredBaseResult.totals },
     cycleDecisions: cycleDecisions.map((decision) => ({
       componentId: decision.componentId,
       classification: decision.classification,
@@ -220,21 +220,21 @@ function buildStructuredAcceptedResult(planModel: PlanModel, legacyAlphaResult: 
   return result;
 }
 
-export function solveStructuredMaterialPlan(planModel: PlanModel, legacyAlphaResult: CalculationResult) {
-  const base = runMaterialPlannerShadow(planModel, legacyAlphaResult);
+export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBaseResult: CalculationResult) {
+  const base = runMaterialPlannerShadow(planModel, structuredBaseResult);
   const cycleDecisions = planModel.dependencyGraph.cycleDecisions;
-  const acceptedResult = buildStructuredAcceptedResult(planModel, legacyAlphaResult);
+  const acceptedResult = buildStructuredAcceptedResult(planModel, structuredBaseResult);
 
   const structuredPlan = {
     ...base,
-    mode: 'structured-material-v0990' as const,
+    mode: 'structured-material-v09100' as const,
     status: acceptedResult.calculationStatus === 'invalid' ? 'partial' as const : 'ok' as const,
     cycleComponents: planModel.dependencyGraph.cycleComponents,
     cycleDecisions,
     acceptedResultStatus: acceptedResult.calculationStatus,
     legacyFallbackUsed: false,
     structuredResultAdopted: true,
-    acceptedResultEngine: 'structured-material-v0990',
+    acceptedResultEngine: 'structured-material-v09100',
     trace: [
       ...base.trace,
       {
@@ -245,8 +245,8 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, legacyAlphaRes
       },
       {
         phase: 'structuredResultAdoption',
-        messageJa: 'StructuredMaterialPlan由来のCalculationResultを採用しています。alpha solverはDEBUG比較用にのみ記録します。',
-        messageEn: 'The CalculationResult produced from StructuredMaterialPlan is adopted. The alpha solver is recorded only for DEBUG comparison.',
+        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。legacy alphaはDEBUG比較専用です。',
+        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. Legacy alpha is DEBUG comparison only.',
         data: { acceptedResultStatus: acceptedResult.calculationStatus, legacyFallbackUsed: false },
       },
     ],
