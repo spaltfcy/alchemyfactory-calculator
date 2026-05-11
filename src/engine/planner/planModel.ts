@@ -281,7 +281,88 @@ function firstPositiveInitialItem(cycle: PlanCycleComponent): string | undefined
   return cycle.buyableItemIds[0] ?? cycle.itemIds[0];
 }
 
-function decideCycleComponent(cycle: PlanCycleComponent, settings: AppSettings): PlanCycleDecision {
+type StartupCycleSafety = {
+  safe: boolean;
+  reasonJa: string;
+  reasonEn: string;
+  netByItem: Record<string, number>;
+};
+
+function cycleItemNetByItem(cycle: PlanCycleComponent, settings: AppSettings): Record<string, number> {
+  const cycleItems = new Set(cycle.itemIds);
+  const net: Record<string, number> = Object.fromEntries(cycle.itemIds.map((itemId) => [itemId, 0]));
+  for (const recipeId of cycle.recipeIds) {
+    const baseRecipe = recipeById[recipeId];
+    if (!baseRecipe) continue;
+    const effective = getEffectiveRecipeForCalculation(baseRecipe, settings);
+    for (const input of effective.inputs) {
+      if (cycleItems.has(input.itemId)) net[input.itemId] = (net[input.itemId] ?? 0) - input.amount;
+    }
+    for (const output of effective.outputs) {
+      if (cycleItems.has(output.itemId)) net[output.itemId] = (net[output.itemId] ?? 0) + output.amount;
+    }
+  }
+  return net;
+}
+
+function cycleNonCycleOutputIds(cycle: PlanCycleComponent, settings: AppSettings): string[] {
+  const cycleItems = new Set(cycle.itemIds);
+  const result = new Set<string>();
+  for (const recipeId of cycle.recipeIds) {
+    const baseRecipe = recipeById[recipeId];
+    if (!baseRecipe) continue;
+    const effective = getEffectiveRecipeForCalculation(baseRecipe, settings);
+    for (const output of effective.outputs) if (!cycleItems.has(output.itemId)) result.add(output.itemId);
+  }
+  return uniqueSorted(result);
+}
+
+function assessStartupCycleSafety(
+  cycle: PlanCycleComponent,
+  settings: AppSettings,
+  targetOutputItemIds: Set<string>,
+): StartupCycleSafety {
+  const netByItem = cycleItemNetByItem(cycle, settings);
+  const targetCycleItems = cycle.itemIds.filter((itemId) => targetOutputItemIds.has(itemId));
+  if (targetCycleItems.length > 0) {
+    return {
+      safe: false,
+      netByItem,
+      reasonJa: '循環内アイテムそのものが目標出力になっているため、初期投入だけでは安全に解決できません。',
+      reasonEn: 'A cycle item is itself a target output, so startup input alone cannot safely resolve the cycle.',
+    };
+  }
+
+  const negativeItems = Object.entries(netByItem)
+    .filter(([, value]) => value < -1e-9)
+    .map(([itemId]) => itemId);
+  if (negativeItems.length > 0) {
+    return {
+      safe: false,
+      netByItem,
+      reasonJa: '循環内で消費量が戻り量を上回るアイテムがあるため、初期投入だけでは維持できません。',
+      reasonEn: 'At least one cycle item is consumed faster than it is returned, so startup input alone cannot sustain the cycle.',
+    };
+  }
+
+  if (cycleNonCycleOutputIds(cycle, settings).length === 0) {
+    return {
+      safe: false,
+      netByItem,
+      reasonJa: '循環外へ取り出せる出力がないため、初期投入ラインとして採用できません。',
+      reasonEn: 'The cycle has no output outside the cycle, so it cannot be accepted as a startup-input production line.',
+    };
+  }
+
+  return {
+    safe: true,
+    netByItem,
+    reasonJa: '循環内アイテムの戻り量が消費量以上で、初期投入として安全に扱えます。',
+    reasonEn: 'The cycle returns at least as much of each cycle item as it consumes, so it is safe as startup input.',
+  };
+}
+
+function decideCycleComponent(cycle: PlanCycleComponent, settings: AppSettings, targetOutputItemIds: Set<string>): PlanCycleDecision {
   if (cycle.classification === 'externalBreakable') {
     const runningExternalInputs: Record<string, number> = {};
     const externalItems = [
@@ -305,43 +386,50 @@ function decideCycleComponent(cycle: PlanCycleComponent, settings: AppSettings):
   }
 
   if (cycle.classification === 'purchaseBreakable') {
-    const itemId = cycle.buyableItemIds[0];
+    const itemId = firstPositiveInitialItem(cycle);
+    const safety = assessStartupCycleSafety(cycle, settings, targetOutputItemIds);
     return {
       componentId: cycle.id,
       candidateClassification: cycle.classification,
-      classification: itemId ? 'cycleInput' : 'unsupported',
+      classification: itemId && safety.safe ? 'cycleInput' : 'unsupported',
       recipeIds: cycle.recipeIds,
       itemIds: cycle.itemIds,
-      requiredInitialItems: itemId ? { [itemId]: 1 } : {},
+      requiredInitialItems: itemId && safety.safe ? { [itemId]: 1 } : {},
       runningExternalInputs: {},
-      safeForMainResult: Boolean(itemId),
-      reasonJa: itemId
+      safeForMainResult: Boolean(itemId) && safety.safe,
+      reasonJa: itemId && safety.safe
         ? '購入可能素材を初期投入として使えば循環を起動できます。毎分購入としては扱いません。'
-        : '購入可能素材で分断できる候補ですが、初期投入素材を確定できませんでした。',
-      reasonEn: itemId
+        : safety.reasonJa,
+      reasonEn: itemId && safety.safe
         ? 'A buyable item can be used as startup input for the cycle. It is not treated as a per-minute purchase.'
-        : 'The cycle looked purchase-breakable, but no startup item could be determined.',
+        : safety.reasonEn,
     };
   }
 
   if (cycle.classification === 'cycleInputCandidate') {
     const itemId = firstPositiveInitialItem(cycle);
-    const simpleEnough = cycle.recipeIds.length <= 3 && cycle.itemIds.length <= 4 && Boolean(itemId);
+    const structurallySimple = cycle.recipeIds.length <= 3 && cycle.itemIds.length <= 4 && Boolean(itemId);
+    const safety = assessStartupCycleSafety(cycle, settings, targetOutputItemIds);
+    const safe = structurallySimple && safety.safe;
     return {
       componentId: cycle.id,
       candidateClassification: cycle.classification,
-      classification: simpleEnough ? 'cycleInput' : 'unsupported',
+      classification: safe ? 'cycleInput' : 'unsupported',
       recipeIds: cycle.recipeIds,
       itemIds: cycle.itemIds,
-      requiredInitialItems: simpleEnough && itemId ? { [itemId]: 1 } : {},
+      requiredInitialItems: safe && itemId ? { [itemId]: 1 } : {},
       runningExternalInputs: {},
-      safeForMainResult: simpleEnough,
-      reasonJa: simpleEnough
+      safeForMainResult: safe,
+      reasonJa: safe
         ? '単純な循環として初期投入候補を特定しました。本流の毎分購入には混ぜず、初期投資として扱います。'
-        : '循環は検出できましたが、初期投入だけで安全に扱える単純循環とは判定できませんでした。',
-      reasonEn: simpleEnough
+        : structurallySimple
+          ? safety.reasonJa
+          : '循環は検出できましたが、初期投入だけで安全に扱える単純循環とは判定できませんでした。',
+      reasonEn: safe
         ? 'Identified startup input for a simple cycle. It is treated as initial investment without mixing it into per-minute purchases.'
-        : 'A cycle was detected, but it was not proven safe as a simple startup-input cycle.',
+        : structurallySimple
+          ? safety.reasonEn
+          : 'A cycle was detected, but it was not proven safe as a simple startup-input cycle.',
     };
   }
 
@@ -359,8 +447,8 @@ function decideCycleComponent(cycle: PlanCycleComponent, settings: AppSettings):
   };
 }
 
-function buildCycleDecisions(cycles: PlanCycleComponent[], settings: AppSettings): PlanCycleDecision[] {
-  return cycles.map((cycle) => decideCycleComponent(cycle, settings));
+function buildCycleDecisions(cycles: PlanCycleComponent[], settings: AppSettings, targetOutputItemIds: Set<string>): PlanCycleDecision[] {
+  return cycles.map((cycle) => decideCycleComponent(cycle, settings, targetOutputItemIds));
 }
 
 export function buildPlanModel(input: CalculateInput): PlanModel {
@@ -378,7 +466,8 @@ export function buildPlanModel(input: CalculateInput): PlanModel {
   const selectedByOutputItemId = buildSelectedByOutputItemId(input);
   const buyableItemIds = Object.keys(itemById).filter(isBuyableItem).sort((a, b) => a.localeCompare(b));
   const cycleComponents = buildCycleComponents(activeGraph.recipeIds, activeGraph.edges, input.settings);
-  const cycleDecisions = buildCycleDecisions(cycleComponents, input.settings);
+  const targetOutputItemIds = new Set(calculation.map((target) => target.outputItemId));
+  const cycleDecisions = buildCycleDecisions(cycleComponents, input.settings, targetOutputItemIds);
   return {
     input,
     targets: { all: allTargets, enabled, disabled, calculation },

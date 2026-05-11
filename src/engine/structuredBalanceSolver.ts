@@ -36,8 +36,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 
 const EPS = 1e-9;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.11' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09110';
+const BALANCE_SOLVER_VERSION = '0.9.12' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09120';
 
 
 function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearModelDiagnostics): number {
@@ -85,7 +85,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09110';
+  mode: 'structured-balance-v09120';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   queueSafetyLimit?: number;
