@@ -36,8 +36,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 
 const EPS = 1e-9;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.12' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09120';
+const BALANCE_SOLVER_VERSION = '0.9.13' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09130';
 
 
 function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearModelDiagnostics): number {
@@ -61,7 +61,7 @@ type RunMap = Map<string, number>;
 type DemandLot = { itemId: string; rate: number; consumerRecipeId: string; role: CalculatedFlowRole };
 type SupplyLot = { recipeId: string; itemId: string; rate: number; originalRate: number };
 type SourceMode = 'buy' | 'external' | 'cycleInput' | 'unresolved';
-type SourceKind = 'materialBuy' | 'fuelExternal' | 'fertilizerExternal';
+type SourceKind = 'materialBuy' | 'fuelBuy' | 'fertilizerBuy' | 'fuelExternal' | 'fertilizerExternal';
 type SourceRole = Extract<CalculatedFlowRole, 'material' | 'fuel' | 'fertilizer'>;
 type SourceLot = {
   key: string;
@@ -85,7 +85,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09120';
+  mode: 'structured-balance-v09130';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   queueSafetyLimit?: number;
@@ -95,6 +95,8 @@ type StructuredBalanceTrace = {
   unresolvedItemIds?: string[];
   sourceBuckets?: {
     materialBuy: Record<string, number>;
+    fuelBuy: Record<string, number>;
+    fertilizerBuy: Record<string, number>;
     fuelExternal: Record<string, number>;
     fertilizerExternal: Record<string, number>;
   };
@@ -287,6 +289,14 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
   const targetRuns = new Map<string, number>();
   const targetRates = new Map<string, number>();
   const invalidTargets: string[] = [];
+  const requiredRunsByRecipeAndOutput = new Map<string, Map<string, number>>();
+
+  function addRequiredRun(recipeId: string, outputItemId: string, runsPerMinute: number): void {
+    if (runsPerMinute <= EPS) return;
+    const byOutput = requiredRunsByRecipeAndOutput.get(recipeId) ?? new Map<string, number>();
+    byOutput.set(outputItemId, (byOutput.get(outputItemId) ?? 0) + runsPerMinute);
+    requiredRunsByRecipeAndOutput.set(recipeId, byOutput);
+  }
 
   for (const target of input.targets) {
     const targetValue = Number(target.value);
@@ -318,13 +328,22 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
       }
       targetRate = outputPerRun(recipe, target.outputItemId) * runsPerMinute;
     }
-    addToMap(runs, recipe.id, runsPerMinute);
-    addToMap(targetRuns, recipe.id, runsPerMinute);
+    addRequiredRun(recipe.id, target.outputItemId, runsPerMinute);
     targetRates.set(target.outputItemId, (targetRates.get(target.outputItemId) ?? 0) + targetRate);
   }
+
+  // Multi-output targets that use the same recipe are satisfied by the same recipe runs.
+  // Same-output targets are additive; different outputs share the recipe line and use the max required run.
+  for (const [recipeId, byOutput] of requiredRunsByRecipeAndOutput.entries()) {
+    const requiredRuns = Math.max(...byOutput.values());
+    if (Number.isFinite(requiredRuns) && requiredRuns > EPS) {
+      runs.set(recipeId, requiredRuns);
+      targetRuns.set(recipeId, requiredRuns);
+    }
+  }
+
   return { runs, targetRuns, targetRates, invalidTargets };
 }
-
 function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultiplier: number): { produced: Map<string, number>; consumed: Map<string, number>; demandLots: DemandLot[]; heatRequiredPerMin: number; fertilizerNutrientsRequiredPerMin: number } {
   const produced = new Map<string, number>();
   const consumed = new Map<string, number>();
@@ -394,6 +413,34 @@ function addRunForDemandWithTracking(
   addRunForDemand(runs, recipe, itemId, missingRate, input, productionSpeedMultiplier, conveyorItemsPerMinute);
   const delta = (runs.get(recipe.id) ?? 0) - before;
   if (delta > EPS) addRunToMap(trackedRuns, recipe.id, delta);
+}
+
+function addProjectedRecipeOutputs(supplyLotsByItem: Map<string, SupplyLot[]>, recipe: Recipe, runsDelta: number): void {
+  if (!Number.isFinite(runsDelta) || runsDelta <= EPS) return;
+  for (const output of recipe.outputs) {
+    const rate = output.amount * (output.probability ?? 1) * runsDelta;
+    if (rate <= EPS) continue;
+    const lots = supplyLotsByItem.get(output.itemId) ?? [];
+    lots.push({ recipeId: recipe.id, itemId: output.itemId, rate, originalRate: rate });
+    supplyLotsByItem.set(output.itemId, lots);
+  }
+}
+
+function addRunForDemandWithProjection(
+  runs: RunMap,
+  supplyLotsByItem: Map<string, SupplyLot[]>,
+  recipe: Recipe,
+  itemId: string,
+  missingRate: number,
+  input: CalculateInput,
+  productionSpeedMultiplier: number,
+  conveyorItemsPerMinute: number,
+): number {
+  const before = runs.get(recipe.id) ?? 0;
+  addRunForDemand(runs, recipe, itemId, missingRate, input, productionSpeedMultiplier, conveyorItemsPerMinute);
+  const delta = (runs.get(recipe.id) ?? 0) - before;
+  if (delta > EPS) addProjectedRecipeOutputs(supplyLotsByItem, recipe, delta);
+  return Math.max(0, delta);
 }
 
 function consumeLots(lots: SupplyLot[] | undefined, rate: number): number {
@@ -710,11 +757,11 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
         if (input.settings.useByproductFuel) {
           remaining = consumeByproductFuelLots(supplyLotsByItem, demand.itemId, remaining, input).remainingPreferredFuelRate;
         }
-        remaining = consumeSourceBucket(sourceLots, demand.itemId, 'fuel', ['fuelExternal'], remaining).remaining;
+        remaining = consumeSourceBucket(sourceLots, demand.itemId, 'fuel', ['fuelBuy', 'fuelExternal'], remaining).remaining;
       } else if (demand.role === 'fertilizer') {
         // Fertilizer has its own internal/external source path and must not consume arbitrary material outputs.
         remaining = consumeRecipeLots(fertilizerSupplyLotsByItem.get(demand.itemId), remaining).remaining;
-        remaining = consumeSourceBucket(sourceLots, demand.itemId, 'fertilizer', ['fertilizerExternal'], remaining).remaining;
+        remaining = consumeSourceBucket(sourceLots, demand.itemId, 'fertilizer', ['fertilizerBuy', 'fertilizerExternal'], remaining).remaining;
       }
 
       if (remaining <= 0.000001) continue;
@@ -732,7 +779,7 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
           continue;
         }
         if (isBuyableItem(demand.itemId)) {
-          addSource(sources, 'materialBuy', demand.itemId, 'material', remaining, 'buy');
+          addSource(sources, 'fuelBuy', demand.itemId, 'fuel', remaining, 'buy');
           changed = true;
           continue;
         }
@@ -753,7 +800,7 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
           continue;
         }
         if (isBuyableItem(demand.itemId)) {
-          addSource(sources, 'materialBuy', demand.itemId, 'material', remaining, 'buy');
+          addSource(sources, 'fertilizerBuy', demand.itemId, 'fertilizer', remaining, 'buy');
           changed = true;
           continue;
         }
@@ -824,7 +871,7 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
       }
 
       if (recipeToUse) {
-        addRunForDemand(nextRuns, recipeToUse, demand.itemId, remaining, input, productionSpeedMultiplier, conveyorItemsPerMinute);
+        addRunForDemandWithProjection(nextRuns, supplyLotsByItem, recipeToUse, demand.itemId, remaining, input, productionSpeedMultiplier, conveyorItemsPerMinute);
         changed = true;
         continue;
       }
@@ -874,12 +921,12 @@ function scaleCycleInputBucketInto(target: CycleInputBucket, source: CycleInputB
   for (const lot of source.values()) addCycleInput(target, lot.itemId, lot.rate * multiplier);
 }
 
-function specialCostForItem(itemId: string, input: CalculateInput, diagnostics: LinearModelDiagnostics): SpecialItemCost {
+function specialCostForItem(itemId: string, role: Extract<SourceRole, 'fuel' | 'fertilizer'>, input: CalculateInput, diagnostics: LinearModelDiagnostics): SpecialItemCost {
   const recipe = chooseRecipeForItem(itemId, input.recipePreferences);
   if (!recipe) {
     const sources: SourceBucket = new Map();
     const unresolved = new Set<string>();
-    if (isBuyableItem(itemId)) addSource(sources, 'materialBuy', itemId, 'material', 1, 'buy');
+    if (isBuyableItem(itemId)) addSource(sources, role === 'fuel' ? 'fuelBuy' : 'fertilizerBuy', itemId, role, 1, 'buy');
     else unresolved.add(itemId);
     return {
       itemId,
@@ -927,10 +974,10 @@ function solveSpecialResources(base: SolveRunMapResult, input: CalculateInput, d
   let fertilizerCost: SpecialItemCost | undefined;
   const hasBaseSpecialResourceDemand = baseHeat > EPS || baseNutrients > EPS;
   if (hasBaseSpecialResourceDemand && fuelEnabled && input.settings.fuel?.sourceMode === 'internal') {
-    fuelCost = specialCostForItem(fuelItemId, input, diagnostics);
+    fuelCost = specialCostForItem(fuelItemId, 'fuel', input, diagnostics);
   }
   if (hasBaseSpecialResourceDemand && fertilizerEnabled && input.settings.fertilizer?.sourceMode === 'internal') {
-    fertilizerCost = specialCostForItem(fertilizerItemId, input, diagnostics);
+    fertilizerCost = specialCostForItem(fertilizerItemId, 'fertilizer', input, diagnostics);
   }
 
   const hf = fuelCost?.heatPerItemPerMin ?? 0;
@@ -1300,21 +1347,21 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
         pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: use.sourceMode }, consumer, use.itemId, use.rate, 'material', conveyorItemsPerMinute));
       }
     } else if (demand.role === 'fuel') {
-      const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'fuel', ['fuelExternal'], remaining);
+      const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'fuel', ['fuelBuy', 'fuelExternal'], remaining);
       remaining = sourceUse.remaining;
       for (const use of sourceUse.uses) {
         actualSourceUses.push(use);
         const fuelStat = stat(use.itemId);
         fuelStat.requested += use.rate;
         fuelStat.consumed += use.rate;
-        pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: 'external' }, consumer, use.itemId, use.rate, 'fuel', conveyorItemsPerMinute));
+        pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: use.sourceMode }, consumer, use.itemId, use.rate, 'fuel', conveyorItemsPerMinute));
       }
     } else if (demand.role === 'fertilizer') {
-      const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'fertilizer', ['fertilizerExternal'], remaining);
+      const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'fertilizer', ['fertilizerBuy', 'fertilizerExternal'], remaining);
       remaining = sourceUse.remaining;
       for (const use of sourceUse.uses) {
         actualSourceUses.push(use);
-        pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: 'external' }, consumer, use.itemId, use.rate, 'fertilizer', conveyorItemsPerMinute));
+        pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: use.sourceMode }, consumer, use.itemId, use.rate, 'fertilizer', conveyorItemsPerMinute));
       }
     }
 
@@ -1481,6 +1528,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
       unresolvedItemIds: invalidRootItemIds,
       sourceBuckets: {
         materialBuy: sourceUseRatesByKind(actualSourceUses, 'materialBuy'),
+        fuelBuy: sourceUseRatesByKind(actualSourceUses, 'fuelBuy'),
+        fertilizerBuy: sourceUseRatesByKind(actualSourceUses, 'fertilizerBuy'),
         fuelExternal: sourceUseRatesByKind(actualSourceUses, 'fuelExternal'),
         fertilizerExternal: sourceUseRatesByKind(actualSourceUses, 'fertilizerExternal'),
       },
@@ -1494,8 +1543,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
         uses: byproductFuelUses,
       },
       specialResourceSolution: specialApplication.solution,
-      notesJa: ['v0.8.11 の収支ベースsolver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
-      notesEn: ['Balance-based solver result for v0.8.11. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
+      notesJa: ['v0.9.13 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Structured balance solver result for v0.9.13. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
     },
   };
 }

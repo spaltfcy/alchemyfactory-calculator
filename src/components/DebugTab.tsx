@@ -109,6 +109,14 @@ type VerificationExpectation = {
   expectedAcceptedResultEngine?: string;
   expectedGraphStartupLabel?: boolean;
   expectedLegacyAlphaCalled?: boolean;
+  expectedSourceKinds?: string[];
+  expectedNoSourceKinds?: string[];
+  expectedPurchasedItems?: string[];
+  expectedPurchaseCostPositive?: boolean;
+  expectedPurchaseCostZero?: boolean;
+  expectedSurplusOnlyItems?: string[];
+  expectedNoSurplusItems?: string[];
+  expectedNoUnresolvedItems?: string[];
 };
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
@@ -131,6 +139,8 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     resultEngine?: string;
     structuredMaterialPlan?: { legacyFallbackUsed?: boolean; acceptedResultEngine?: string };
     legacyAlphaComparison?: { acceptedResultEngine?: string; statusComparison?: unknown; numericComparison?: unknown };
+    structuredBalanceTrace?: { sourceBuckets?: Record<string, Record<string, number>>; unresolvedItemIds?: string[] };
+    totals?: { purchaseCostCopperPerMin?: number };
   } | undefined;
   if (expectation.expectedErrorCodes && expectation.expectedErrorCodes.length > 0) {
     const codes = new Set((debugLog?.errorSummaries ?? []).map((summary) => summary.code).filter(Boolean));
@@ -168,6 +178,55 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
   if (typeof expectation.expectedLegacyAlphaCalled === 'boolean') {
     const actual = Boolean(debugLog?.legacyAlphaComparison && (debugLog.legacyAlphaComparison as { legacyCalled?: boolean }).legacyCalled === true);
     if (actual !== expectation.expectedLegacyAlphaCalled) return false;
+  }
+  const sourceBuckets = debugLog?.structuredBalanceTrace?.sourceBuckets ?? {};
+  if (expectation.expectedSourceKinds && expectation.expectedSourceKinds.length > 0) {
+    for (const kind of expectation.expectedSourceKinds) {
+      const bucket = sourceBuckets[kind] ?? {};
+      const hasPositive = Object.values(bucket).some((value) => Number(value) > 0.000001);
+      if (!hasPositive) return false;
+    }
+  }
+  if (expectation.expectedNoSourceKinds && expectation.expectedNoSourceKinds.length > 0) {
+    for (const kind of expectation.expectedNoSourceKinds) {
+      const bucket = sourceBuckets[kind] ?? {};
+      const hasPositive = Object.values(bucket).some((value) => Number(value) > 0.000001);
+      if (hasPositive) return false;
+    }
+  }
+  if (expectation.expectedPurchasedItems && expectation.expectedPurchasedItems.length > 0) {
+    const stats = new Map((debugLog?.itemStats ?? []).map((stat) => [stat.itemId, stat]));
+    for (const itemId of expectation.expectedPurchasedItems) {
+      const purchased = Number(stats.get(itemId)?.purchased ?? 0);
+      if (!Number.isFinite(purchased) || purchased <= 0.000001) return false;
+    }
+  }
+  if (typeof expectation.expectedPurchaseCostPositive === 'boolean') {
+    const cost = Number(debugLog?.totals?.purchaseCostCopperPerMin ?? 0);
+    if (expectation.expectedPurchaseCostPositive && !(Number.isFinite(cost) && cost > 0.000001)) return false;
+    if (!expectation.expectedPurchaseCostPositive && Math.abs(cost) > 0.000001) return false;
+  }
+  if (typeof expectation.expectedPurchaseCostZero === 'boolean' && expectation.expectedPurchaseCostZero) {
+    const cost = Number(debugLog?.totals?.purchaseCostCopperPerMin ?? 0);
+    if (Math.abs(cost) > 0.000001) return false;
+  }
+  if (expectation.expectedSurplusOnlyItems && expectation.expectedSurplusOnlyItems.length > 0) {
+    const allowed = new Set(expectation.expectedSurplusOnlyItems);
+    const stats = debugLog?.itemStats ?? [];
+    const surplusItems = stats.filter((stat) => Number((stat as { surplus?: number }).surplus ?? 0) > 0.000001).map((stat) => String(stat.itemId));
+    for (const itemId of allowed) if (!surplusItems.includes(itemId)) return false;
+    for (const itemId of surplusItems) if (!allowed.has(itemId)) return false;
+  }
+  if (expectation.expectedNoSurplusItems && expectation.expectedNoSurplusItems.length > 0) {
+    const stats = new Map((debugLog?.itemStats ?? []).map((stat) => [stat.itemId, stat]));
+    for (const itemId of expectation.expectedNoSurplusItems) {
+      const surplus = Number((stats.get(itemId) as { surplus?: number } | undefined)?.surplus ?? 0);
+      if (Number.isFinite(surplus) && surplus > 0.000001) return false;
+    }
+  }
+  if (expectation.expectedNoUnresolvedItems && expectation.expectedNoUnresolvedItems.length > 0) {
+    const unresolved = new Set(debugLog?.structuredBalanceTrace?.unresolvedItemIds ?? []);
+    for (const itemId of expectation.expectedNoUnresolvedItems) if (unresolved.has(itemId)) return false;
   }
   if (expectation.expectedGraphStartupLabel) {
     const graphArtifacts = artifact?.graphArtifacts as { normal?: { model?: { edges?: Array<{ rateLabel?: string; role?: string; itemName?: string }> } } } | undefined;
@@ -613,7 +672,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 35,
+      debugSchemaVersion: 36,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -782,7 +841,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 35,
+      debugSchemaVersion: 36,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1209,6 +1268,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       cycleDecisionCount: ((artifact.enrichedDebugLog as { cycleDecisions?: unknown[] }).cycleDecisions ?? []).length,
       solver: (artifact.enrichedDebugLog as { solver?: unknown }).solver,
       legacyAlphaComparison: (artifact.enrichedDebugLog as { legacyAlphaComparison?: unknown }).legacyAlphaComparison,
+      structuredBalanceTrace: (artifact.enrichedDebugLog as { structuredBalanceTrace?: unknown }).structuredBalanceTrace,
     }, null, 2));
     const materialPlannerShadow = (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: unknown; comparison?: unknown; cycleComponents?: unknown[]; planModel?: unknown } }).materialPlannerShadow;
     if (materialPlannerShadow) {
@@ -1216,6 +1276,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       zip.file(baseName + '__planner-comparison.json', JSON.stringify(materialPlannerShadow.comparison ?? {}, null, 2));
       zip.file(baseName + '__cycle-components.json', JSON.stringify(materialPlannerShadow.cycleComponents ?? [], null, 2));
     }
+    const structuredBalanceTrace = (artifact.enrichedDebugLog as { structuredBalanceTrace?: unknown }).structuredBalanceTrace;
+    if (structuredBalanceTrace) zip.file(baseName + '__structured-balance-trace.json', JSON.stringify(structuredBalanceTrace, null, 2));
     const structuredMaterialPlan = (artifact.enrichedDebugLog as { structuredMaterialPlan?: unknown }).structuredMaterialPlan;
     if (structuredMaterialPlan) zip.file(baseName + '__structured-material-plan.json', JSON.stringify(structuredMaterialPlan, null, 2));
     const cycleDecisions = (artifact.enrichedDebugLog as { cycleDecisions?: unknown }).cycleDecisions;
@@ -1336,7 +1398,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 35,
+      debugSchemaVersion: 36,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

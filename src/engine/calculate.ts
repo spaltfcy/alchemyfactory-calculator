@@ -34,8 +34,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09120';
-const SOLVE_PLAN_VERSION = '0.9.12';
+const SOLVE_PLAN_MODE = 'solvePlan-v09130';
+const SOLVE_PLAN_VERSION = '0.9.13';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -95,7 +95,7 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09120',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09130',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
@@ -181,7 +181,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v09120' as const,
+    mode: 'structured-material-v09130' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -212,11 +212,11 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
     enabled: true as const,
     legacyCalled: true as const,
     purpose: 'debug-comparison-only' as const,
-    mode: 'legacy-alpha-vs-structured-v09120' as const,
+    mode: 'legacy-alpha-vs-structured-v09130' as const,
     comparison: structuredComparison,
     numericComparison: structuredComparison,
     statusComparison,
-    acceptedResultEngine: 'structured-material-v09120',
+    acceptedResultEngine: 'structured-material-v09130',
     legacyAlphaSummary: materialPlannerShadow.alphaResultSummary,
     structuredSummary,
     noteJa: 'legacy alphaはDEBUG比較専用です。通常計算結果はStructuredBalanceSolver + cycleDecision反映後のstructured resultです。',
@@ -236,14 +236,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09120',
-    solverEngine: 'structured-material-v09120',
+    resultEngine: 'structured-material-v09130',
+    solverEngine: 'structured-material-v09130',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09120',
-      solverEngine: 'structured-material-v09120',
+      resultEngine: 'structured-material-v09130',
+      solverEngine: 'structured-material-v09130',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -257,6 +257,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
     },
     diagnosticComparison,
     materialPlannerShadow,
+    structuredBalanceTrace: structuredBalance.trace,
     structuredMaterialPlan: structuredSolve.structuredPlan,
     cycleDecisions: structuredSolve.structuredPlan.cycleDecisions,
     legacyAlphaComparison,
