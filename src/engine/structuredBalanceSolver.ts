@@ -36,8 +36,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 
 const EPS = 1e-9;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.13' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09130';
+const BALANCE_SOLVER_VERSION = '0.9.14' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09140';
 
 
 function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearModelDiagnostics): number {
@@ -85,7 +85,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09130';
+  mode: 'structured-balance-v09140';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   queueSafetyLimit?: number;
@@ -100,6 +100,7 @@ type StructuredBalanceTrace = {
     fuelExternal: Record<string, number>;
     fertilizerExternal: Record<string, number>;
   };
+  coProductReconciliation?: CoProductReconciliationTrace;
   alternateRecipeCompletion: {
     enabled: boolean;
     uses: AlternateRecipeUse[];
@@ -702,6 +703,140 @@ type SpecialResourceApplication = {
   fertilizerCost?: SpecialItemCost;
 };
 
+type CoProductReduction = {
+  recipeId: string;
+  beforeRunsPerMinute: number;
+  afterRunsPerMinute: number;
+  reducedRunsPerMinute: number;
+  surplusBeforeByItemId: Record<string, number>;
+};
+
+type CoProductReconciliationTrace = {
+  mode: 'co-product-reconcile-v09140';
+  applied: boolean;
+  iterations: number;
+  reductions: CoProductReduction[];
+  skippedReason?: string;
+};
+
+
+function estimateDemandByItemForRuns(
+  runs: RunMap,
+  targetRates: Map<string, number>,
+  input: CalculateInput,
+  solution: SpecialResourceSolutionTrace,
+  productionSpeedMultiplier: number,
+): Map<string, number> {
+  const analysis = analyzeRuns(runs, input, productionSpeedMultiplier);
+  const demand = new Map<string, number>();
+  for (const [itemId, rate] of analysis.consumed.entries()) addToMap(demand, itemId, rate);
+  for (const [itemId, rate] of targetRates.entries()) addToMap(demand, itemId, rate);
+  for (const lot of buildSpecialDemandLots(runs, input, solution, productionSpeedMultiplier)) addToMap(demand, lot.itemId, lot.rate);
+  return demand;
+}
+
+function estimateSurplusByItemForRuns(
+  runs: RunMap,
+  targetRates: Map<string, number>,
+  input: CalculateInput,
+  solution: SpecialResourceSolutionTrace,
+  productionSpeedMultiplier: number,
+): Map<string, number> {
+  const analysis = analyzeRuns(runs, input, productionSpeedMultiplier);
+  const demand = estimateDemandByItemForRuns(runs, targetRates, input, solution, productionSpeedMultiplier);
+  const surplus = new Map<string, number>();
+  for (const [itemId, produced] of analysis.produced.entries()) {
+    const extra = produced - (demand.get(itemId) ?? 0);
+    if (extra > 0.000001) surplus.set(itemId, extra);
+  }
+  return surplus;
+}
+
+function reconcileCoProductsAfterSpecialResources(
+  base: SolveRunMapResult,
+  input: CalculateInput,
+  solution: SpecialResourceSolutionTrace,
+): { solved: SolveRunMapResult; trace: CoProductReconciliationTrace } {
+  if (!solution.finite) {
+    return {
+      solved: base,
+      trace: { mode: 'co-product-reconcile-v09140', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
+    };
+  }
+
+  const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
+  const runs = cloneRunMapValues(base.runs);
+  const reductions: CoProductReduction[] = [];
+  let applied = false;
+  let iterations = 0;
+  const maxPasses = Math.max(4, Math.min(32, runs.size * 2 + 4));
+
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    iterations = pass + 1;
+    const surplus = estimateSurplusByItemForRuns(runs, base.targetRates, input, solution, productionSpeedMultiplier);
+    let changed = false;
+
+    for (const [recipeId, currentRuns] of [...runs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      if (currentRuns <= EPS) continue;
+      const baseRecipe = recipeById[recipeId];
+      if (!baseRecipe) continue;
+      const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
+      if (recipe.outputs.length < 2) continue;
+      const minimumRuns = base.targetRuns.get(recipeId) ?? 0;
+      const maxRemovableByTarget = Math.max(0, currentRuns - minimumRuns);
+      if (maxRemovableByTarget <= EPS) continue;
+
+      let removableRuns = Number.POSITIVE_INFINITY;
+      const surplusBeforeByItemId: Record<string, number> = {};
+      for (const output of recipe.outputs) {
+        const perRun = output.amount * (output.probability ?? 1);
+        if (perRun <= EPS) continue;
+        const itemSurplus = surplus.get(output.itemId) ?? 0;
+        surplusBeforeByItemId[output.itemId] = itemSurplus;
+        if (itemSurplus <= 0.000001) {
+          removableRuns = 0;
+          break;
+        }
+        removableRuns = Math.min(removableRuns, itemSurplus / perRun);
+      }
+      if (!Number.isFinite(removableRuns)) continue;
+      const delta = Math.min(removableRuns, maxRemovableByTarget);
+      if (delta <= 0.000001) continue;
+
+      const after = currentRuns - delta;
+      if (after <= EPS) runs.delete(recipeId);
+      else runs.set(recipeId, after);
+      reductions.push({
+        recipeId,
+        beforeRunsPerMinute: currentRuns,
+        afterRunsPerMinute: Math.max(0, after),
+        reducedRunsPerMinute: delta,
+        surplusBeforeByItemId,
+      });
+      applied = true;
+      changed = true;
+    }
+
+    if (!changed) break;
+  }
+
+  const analysis = analyzeRuns(runs, input, productionSpeedMultiplier);
+  return {
+    solved: {
+      ...base,
+      runs,
+      heatRequiredPerMin: analysis.heatRequiredPerMin,
+      fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
+    },
+    trace: {
+      mode: 'co-product-reconcile-v09140',
+      applied,
+      iterations,
+      reductions,
+    },
+  };
+}
+
 function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics): SolveRunMapResult {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
@@ -1202,7 +1337,9 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
   const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
   const baseSolved = solveRunMap(input, diagnostics);
   const specialApplication = solveSpecialResources(baseSolved, input, diagnostics);
-  const solved = applySpecialResourceApplication(baseSolved, input, specialApplication);
+  const appliedSolved = applySpecialResourceApplication(baseSolved, input, specialApplication);
+  const coProductReconciliation = reconcileCoProductsAfterSpecialResources(appliedSolved, input, specialApplication.solution);
+  const solved = coProductReconciliation.solved;
   const itemStats: Record<string, ItemStat> = {};
   const recipeStats: Record<string, RecipeStat> = {};
   const flows: CalculatedFlow[] = [];
@@ -1533,6 +1670,7 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
         fuelExternal: sourceUseRatesByKind(actualSourceUses, 'fuelExternal'),
         fertilizerExternal: sourceUseRatesByKind(actualSourceUses, 'fertilizerExternal'),
       },
+      coProductReconciliation: coProductReconciliation.trace,
       alternateRecipeCompletion: {
         enabled: input.settings.allowAlternateRecipeCompletion,
         uses: solved.alternateRecipeUses,
@@ -1543,8 +1681,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
         uses: byproductFuelUses,
       },
       specialResourceSolution: specialApplication.solution,
-      notesJa: ['v0.9.13 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
-      notesEn: ['Structured balance solver result for v0.9.13. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
+      notesJa: ['v0.9.14 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Structured balance solver result for v0.9.14. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
     },
   };
 }

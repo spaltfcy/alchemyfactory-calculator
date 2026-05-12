@@ -34,8 +34,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09130';
-const SOLVE_PLAN_VERSION = '0.9.13';
+const SOLVE_PLAN_MODE = 'solvePlan-v09140';
+const SOLVE_PLAN_VERSION = '0.9.14';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -95,7 +95,7 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09130',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09140',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
@@ -181,7 +181,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v09130' as const,
+    mode: 'structured-material-v09140' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -212,11 +212,11 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
     enabled: true as const,
     legacyCalled: true as const,
     purpose: 'debug-comparison-only' as const,
-    mode: 'legacy-alpha-vs-structured-v09130' as const,
+    mode: 'legacy-alpha-vs-structured-v09140' as const,
     comparison: structuredComparison,
     numericComparison: structuredComparison,
     statusComparison,
-    acceptedResultEngine: 'structured-material-v09130',
+    acceptedResultEngine: 'structured-material-v09140',
     legacyAlphaSummary: materialPlannerShadow.alphaResultSummary,
     structuredSummary,
     noteJa: 'legacy alphaはDEBUG比較専用です。通常計算結果はStructuredBalanceSolver + cycleDecision反映後のstructured resultです。',
@@ -236,14 +236,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09130',
-    solverEngine: 'structured-material-v09130',
+    resultEngine: 'structured-material-v09140',
+    solverEngine: 'structured-material-v09140',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09130',
-      solverEngine: 'structured-material-v09130',
+      resultEngine: 'structured-material-v09140',
+      solverEngine: 'structured-material-v09140',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -464,6 +464,46 @@ function buildDebugLogFromResult(input: CalculateInput, result: CalculationResul
       messageJa: '有限数ではないレシピ集計があります。',
       messageEn: 'Some recipe statistics contain non-finite numbers.',
       data: invalidRecipeStats,
+    });
+  }
+
+  const multiOutputBothSurplus = Object.values(result.recipeStats)
+    .map((stat) => ({
+      recipeId: stat.recipeId,
+      recipeNameJa: debugRecipeNameJa(stat.recipeId),
+      surplusOutputs: Object.entries(stat.surplusOutputRates)
+        .filter(([, rate]) => Number(rate) > 0.000001)
+        .map(([itemId, rate]) => ({ itemId, itemNameJa: debugItemNameJa(itemId), rate })),
+    }))
+    .filter((entry) => {
+      const recipe = recipeById[entry.recipeId];
+      return (recipe?.outputs.length ?? 0) >= 2 && entry.surplusOutputs.length >= 2;
+    });
+  if (multiOutputBothSurplus.length > 0) {
+    issues.push({
+      severity: 'warning',
+      code: 'MULTI_OUTPUT_MULTIPLE_OUTPUTS_SURPLUS',
+      messageJa: '多出力レシピで複数の出力が同時に余剰になっています。co-product再調整不足の可能性があります。',
+      messageEn: 'A multi-output recipe has multiple outputs marked as surplus. Co-product reconciliation may be incomplete.',
+      data: multiOutputBothSurplus,
+    });
+  }
+
+  const discardWhileConsumed = Object.values(result.itemStats)
+    .filter((stat) => stat.consumed > 0.000001 && stat.discarded > 0.000001)
+    .map((stat) => ({
+      itemId: stat.itemId,
+      itemNameJa: debugItemNameJa(stat.itemId),
+      consumed: stat.consumed,
+      discarded: stat.discarded,
+    }));
+  if (discardWhileConsumed.length > 0) {
+    issues.push({
+      severity: 'warning',
+      code: 'DISCARD_WHILE_ITEM_CONSUMED',
+      messageJa: '同じアイテムを消費している一方で破棄しています。供給lotの再割当不足の可能性があります。',
+      messageEn: 'An item is consumed while another lot of the same item is discarded. Supply-lot reassignment may be incomplete.',
+      data: discardWhileConsumed,
     });
   }
 

@@ -116,6 +116,9 @@ type VerificationExpectation = {
   expectedPurchaseCostZero?: boolean;
   expectedSurplusOnlyItems?: string[];
   expectedNoSurplusItems?: string[];
+  expectedNoJointSurplusGroups?: string[][];
+  expectedNoDiscardWhileConsumedItems?: string[];
+  expectedIssueCodes?: string[];
   expectedNoUnresolvedItems?: string[];
 };
 
@@ -133,7 +136,7 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
   const debugLog = artifact?.enrichedDebugLog as {
     cycleDecisions?: Array<{ classification?: string; requiredInitialItems?: Record<string, number> }>;
     initialInvestment?: { requiredByRecipe?: Record<string, string[]>; purchasedItemIds?: string[] };
-    itemStats?: Array<{ itemId?: string; purchased?: number; initialPurchased?: number }>;
+    itemStats?: Array<{ itemId?: string; purchased?: number; initialPurchased?: number; surplus?: number; discarded?: number; consumed?: number }>;
     errorSummaries?: Array<{ code?: string }>;
     solver?: { resultEngine?: string; solverEngine?: string };
     resultEngine?: string;
@@ -141,6 +144,7 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     legacyAlphaComparison?: { acceptedResultEngine?: string; statusComparison?: unknown; numericComparison?: unknown };
     structuredBalanceTrace?: { sourceBuckets?: Record<string, Record<string, number>>; unresolvedItemIds?: string[] };
     totals?: { purchaseCostCopperPerMin?: number };
+    issues?: Array<{ code?: string }>;
   } | undefined;
   if (expectation.expectedErrorCodes && expectation.expectedErrorCodes.length > 0) {
     const codes = new Set((debugLog?.errorSummaries ?? []).map((summary) => summary.code).filter(Boolean));
@@ -223,6 +227,29 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
       const surplus = Number((stats.get(itemId) as { surplus?: number } | undefined)?.surplus ?? 0);
       if (Number.isFinite(surplus) && surplus > 0.000001) return false;
     }
+  }
+  if (expectation.expectedNoJointSurplusGroups && expectation.expectedNoJointSurplusGroups.length > 0) {
+    const stats = new Map((debugLog?.itemStats ?? []).map((stat) => [stat.itemId, stat]));
+    for (const group of expectation.expectedNoJointSurplusGroups) {
+      const surplusItems = group.filter((itemId) => {
+        const surplus = Number((stats.get(itemId) as { surplus?: number } | undefined)?.surplus ?? 0);
+        return Number.isFinite(surplus) && surplus > 0.000001;
+      });
+      if (surplusItems.length >= 2) return false;
+    }
+  }
+  if (expectation.expectedNoDiscardWhileConsumedItems && expectation.expectedNoDiscardWhileConsumedItems.length > 0) {
+    const stats = new Map((debugLog?.itemStats ?? []).map((stat) => [stat.itemId, stat]));
+    for (const itemId of expectation.expectedNoDiscardWhileConsumedItems) {
+      const stat = stats.get(itemId) as { consumed?: number; discarded?: number } | undefined;
+      const consumed = Number(stat?.consumed ?? 0);
+      const discarded = Number(stat?.discarded ?? 0);
+      if (Number.isFinite(consumed) && Number.isFinite(discarded) && consumed > 0.000001 && discarded > 0.000001) return false;
+    }
+  }
+  if (expectation.expectedIssueCodes && expectation.expectedIssueCodes.length > 0) {
+    const issueCodes = new Set((debugLog?.issues ?? []).map((issue) => issue.code).filter(Boolean));
+    for (const code of expectation.expectedIssueCodes) if (!issueCodes.has(code)) return false;
   }
   if (expectation.expectedNoUnresolvedItems && expectation.expectedNoUnresolvedItems.length > 0) {
     const unresolved = new Set(debugLog?.structuredBalanceTrace?.unresolvedItemIds ?? []);
@@ -672,7 +699,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 36,
+      debugSchemaVersion: 37,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -841,7 +868,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 36,
+      debugSchemaVersion: 37,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1398,7 +1425,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 36,
+      debugSchemaVersion: 37,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
