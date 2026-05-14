@@ -271,8 +271,10 @@ export type CalculationDebugLog = {
     runsPerMinute: number;
     runsPerMachinePerMinute: number;
     heatPerSecond: number;
+    heatPerMachinePerMinute: number;
     heatConsumptionMultiplier: number;
-    heatPerRun: number;
+    baseHeatPerRun: number;
+    effectiveHeatPerRun: number;
     heatRequiredPerMin: number;
   }>;
   solver?: {

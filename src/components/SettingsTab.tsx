@@ -335,7 +335,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 41,
+      debugSchemaVersion: 42,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,

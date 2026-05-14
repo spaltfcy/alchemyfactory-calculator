@@ -2,7 +2,6 @@ export * from './calculationTypes';
 
 import {
   buildLinearModelDiagnostics,
-  calculateWithNewSolver,
   type LinearModelDiagnostics,
 } from './newSolver';
 import { calculateStructuredBalance } from './structuredBalanceSolver';
@@ -21,8 +20,8 @@ import { recipeById } from '../data/recipes';
 import { HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { chooseRecipeForItem } from './itemSourceResolver';
 import { buildPlanModel } from './planner/planModel';
-import { runMaterialPlannerShadow, solveStructuredMaterialPlan } from './planner/materialPlanner';
-import { comparePlannerResults } from './planner/comparePlannerResults';
+import { solveStructuredMaterialPlan } from './planner/materialPlanner';
+import { buildStructuredAdoptionComparison } from './planner/comparePlannerResults';
 
 const EPS = 1e-9;
 
@@ -35,8 +34,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09180';
-const SOLVE_PLAN_VERSION = '0.9.18';
+const SOLVE_PLAN_MODE = 'solvePlan-v09190';
+const SOLVE_PLAN_VERSION = '0.9.19';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -96,7 +95,7 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09180',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09190',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
@@ -175,53 +174,36 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
 
   if (!debug) return { result };
 
-  const linearModelDiagnostics = buildLinearModelDiagnostics(input);
-  const legacyNewSolverResult = calculateWithNewSolver(input, linearModelDiagnostics);
+  const diagnostics = buildLinearModelDiagnostics(input);
   const debugLog = buildDebugLogFromResult(input, result);
-  const diagnostics = legacyNewSolverResult.linearModelDiagnostics ?? linearModelDiagnostics;
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
-  const materialPlannerShadow = {
-    enabled: true as const,
-    mode: 'structured-material-v09180' as const,
-    planModel,
-    shadowResult: structuredSolve.structuredPlan,
-    structuredPlan: structuredSolve.structuredPlan,
-    comparison: comparePlannerResults(legacyNewSolverResult.result, structuredSolve.structuredPlan),
-    cycleComponents: structuredSolve.structuredPlan.cycleComponents,
-    cycleDecisions: structuredSolve.structuredPlan.cycleDecisions,
-    alphaResultSummary: {
-      recipeCount: Object.keys(legacyNewSolverResult.result.recipeStats).length,
-      itemCount: Object.keys(legacyNewSolverResult.result.itemStats).length,
-      flowCount: legacyNewSolverResult.result.flows.length,
-      calculationStatus: legacyNewSolverResult.result.calculationStatus,
-    },
-  };
-  const structuredSummary = {
+  const structuredAdoptionComparison = buildStructuredAdoptionComparison(structuredSolve.structuredPlan);
+  const acceptedResultSummary = {
     recipeCount: Object.keys(result.recipeStats).length,
     itemCount: Object.keys(result.itemStats).length,
     flowCount: result.flows.length,
     calculationStatus: result.calculationStatus,
   };
-  const structuredComparison = comparePlannerResults(legacyNewSolverResult.result, structuredSolve.structuredPlan);
-  const statusComparison = {
-    status: materialPlannerShadow.alphaResultSummary.calculationStatus === result.calculationStatus ? 'match' as const : 'changed' as const,
-    legacyStatus: materialPlannerShadow.alphaResultSummary.calculationStatus,
-    structuredStatus: result.calculationStatus,
-    acceptedStatus: result.calculationStatus,
+  const materialPlannerShadow = {
+    enabled: true as const,
+    mode: 'structured-material-v09190' as const,
+    planModel,
+    shadowResult: structuredSolve.structuredPlan,
+    structuredPlan: structuredSolve.structuredPlan,
+    comparison: structuredAdoptionComparison,
+    cycleComponents: structuredSolve.structuredPlan.cycleComponents,
+    cycleDecisions: structuredSolve.structuredPlan.cycleDecisions,
+    acceptedResultSummary,
   };
   const legacyAlphaComparison = {
-    enabled: true as const,
-    legacyCalled: true as const,
-    purpose: 'debug-comparison-only' as const,
-    mode: 'legacy-alpha-vs-structured-v09180' as const,
-    comparison: structuredComparison,
-    numericComparison: structuredComparison,
-    statusComparison,
-    acceptedResultEngine: 'structured-material-v09180',
-    legacyAlphaSummary: materialPlannerShadow.alphaResultSummary,
-    structuredSummary,
-    noteJa: 'legacy alphaはDEBUG比較専用です。通常計算結果はStructuredBalanceSolver + cycleDecision反映後のstructured resultです。',
-    noteEn: 'Legacy alpha is used only for DEBUG comparison. The accepted normal calculation result is the structured result from StructuredBalanceSolver with cycle decisions applied.',
+    enabled: false as const,
+    legacyCalled: false as const,
+    purpose: 'removed-from-debug-path' as const,
+    mode: 'legacy-alpha-disabled-v09190' as const,
+    acceptedResultEngine: 'structured-material-v09190',
+    structuredSummary: acceptedResultSummary,
+    noteJa: 'v0.9.19以降、legacy alpha solverはDEBUG経路でも実行しません。旧solver差分は熱抽出機高さ倍率・錬金倍率の旧仕様が混ざるため、通常検証の判断材料から外しています。',
+    noteEn: 'Since v0.9.19, the legacy alpha solver is not executed even in DEBUG mode. Legacy diffs were based on outdated thermal-extractor height and alchemy multiplier semantics, so they are no longer used for normal verification.',
   };
   const extendedDebugLog = {
     ...debugLog,
@@ -237,14 +219,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09180',
-    solverEngine: 'structured-material-v09180',
+    resultEngine: 'structured-material-v09190',
+    solverEngine: 'structured-material-v09190',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09180',
-      solverEngine: 'structured-material-v09180',
+      resultEngine: 'structured-material-v09190',
+      solverEngine: 'structured-material-v09190',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -254,7 +236,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
       materialPlannerShadowMode: materialPlannerShadow.mode,
       materialPlannerShadowStatus: structuredSolve.structuredPlan.status,
       normalPathLegacyAlphaCalled: false,
-      debugLegacyAlphaCalled: true,
+      debugLegacyAlphaCalled: false,
     },
     diagnosticComparison,
     materialPlannerShadow,
@@ -271,12 +253,12 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
         itemSets: diagnosticComparison.itemSets,
       },
     } : diagnostics,
-    alphaBalanceTrace: legacyNewSolverResult.alphaBalanceTrace,
+    alphaBalanceTrace: undefined,
   } as CalculationDebugResult['debugLog'] & {
     resultEngine: string;
     solverEngine: string;
     linearModelDiagnostics: typeof diagnostics;
-    alphaBalanceTrace: typeof legacyNewSolverResult.alphaBalanceTrace;
+    alphaBalanceTrace?: unknown;
   };
 
   return { result, debugLog: extendedDebugLog };
@@ -354,10 +336,14 @@ function buildHeatRequiredByRecipeAudit(result: CalculationResult): NonNullable<
         ? stat.actualMachines
         : 0;
     if (!Number.isFinite(machineBasis) || Math.abs(machineBasis) <= EPS) continue;
-    const heatRequiredPerMin = heatPerSecond * 60 * finiteHeatMultiplier * machineBasis;
+    const heatPerMachinePerMinute = heatPerSecond * 60 * finiteHeatMultiplier;
+    const heatRequiredPerMin = heatPerMachinePerMinute * machineBasis;
     if (!Number.isFinite(heatRequiredPerMin) || heatRequiredPerMin <= EPS) continue;
+    const recipe = recipeById[stat.recipeId];
+    const recipeTimeSec = Number(recipe?.timeSec ?? 0);
+    const baseHeatPerRun = Number.isFinite(recipeTimeSec) && recipeTimeSec > EPS ? heatPerSecond * recipeTimeSec : 0;
     const runsPerMachinePerMinute = stat.runsPerMinute / machineBasis;
-    const heatPerRun = Math.abs(stat.runsPerMinute) > EPS ? heatRequiredPerMin / stat.runsPerMinute : 0;
+    const effectiveHeatPerRun = Math.abs(stat.runsPerMinute) > EPS ? heatRequiredPerMin / stat.runsPerMinute : 0;
     out[stat.recipeId] = {
       recipeId: stat.recipeId,
       machineId: stat.machineId,
@@ -366,8 +352,10 @@ function buildHeatRequiredByRecipeAudit(result: CalculationResult): NonNullable<
       runsPerMinute: stat.runsPerMinute,
       runsPerMachinePerMinute,
       heatPerSecond,
+      heatPerMachinePerMinute,
       heatConsumptionMultiplier: finiteHeatMultiplier,
-      heatPerRun,
+      baseHeatPerRun,
+      effectiveHeatPerRun,
       heatRequiredPerMin,
     };
   }

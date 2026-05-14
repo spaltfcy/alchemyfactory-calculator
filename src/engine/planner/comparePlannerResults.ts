@@ -41,7 +41,7 @@ export function comparePlannerResults(alphaResult: CalculationResult, shadow: Ma
   const diffCount = recipeDiffs.length + itemDiffs.length + sourceDiffs.length;
   return {
     status: diffCount > 0 ? 'diff' : 'match',
-    mode: shadow.mode === 'structured-material-v09180' ? 'legacy-alpha-vs-structured-v09180' : shadow.mode === 'structured-material-v0990' ? 'legacy-alpha-vs-structured-v0990' : shadow.mode === 'structured-material-v0980' ? 'legacy-alpha-vs-structured-v0980' : shadow.mode === 'structured-material-v0970' ? 'legacy-alpha-vs-structured-v0970' : 'alpha-vs-shadow-v0960',
+    mode: shadow.mode === 'structured-material-v09190' ? 'legacy-alpha-vs-structured-v09190' : shadow.mode === 'structured-material-v0990' ? 'legacy-alpha-vs-structured-v0990' : shadow.mode === 'structured-material-v0980' ? 'legacy-alpha-vs-structured-v0980' : shadow.mode === 'structured-material-v0970' ? 'legacy-alpha-vs-structured-v0970' : 'alpha-vs-shadow-v0960',
     epsilon: { absolute: ABS_EPS, relative: REL_EPS },
     summary: {
       alphaRecipeCount: Object.keys(alphaResult.recipeStats).length,
@@ -65,5 +65,35 @@ export function comparePlannerResults(alphaResult: CalculationResult, shadow: Ma
     reasonCandidates: shadow.unsupportedReasons,
     noteJa: 'structured plannerの採用結果とlegacy alpha比較用の数値差分です。status差分はlegacyAlphaComparison.statusComparisonを確認してください。',
     noteEn: 'Numeric differences between the accepted structured planner result and the legacy alpha comparison. See legacyAlphaComparison.statusComparison for status differences.',
+  };
+}
+
+export function buildStructuredAdoptionComparison(shadow: MaterialPlannerShadowResult): PlannerComparisonResult {
+  return {
+    status: 'not-compared',
+    mode: 'structured-adoption-v09190',
+    epsilon: { absolute: ABS_EPS, relative: REL_EPS },
+    summary: {
+      alphaRecipeCount: 0,
+      shadowRecipeCount: Object.keys(shadow.recipeRuns).length,
+      alphaItemCount: 0,
+      shadowItemCount: new Set([
+        ...Object.keys(shadow.itemDemand),
+        ...Object.keys(shadow.itemProduced),
+        ...Object.keys(shadow.purchased),
+        ...Object.keys(shadow.surplus),
+        ...Object.keys(shadow.discarded),
+      ]).size,
+      recipeDiffCount: 0,
+      itemDiffCount: 0,
+      sourceDiffCount: 0,
+      unsupportedCycleCount: shadow.cycleComponents.length,
+    },
+    recipeDiffs: [],
+    itemDiffs: [],
+    sourceDiffs: [],
+    reasonCandidates: shadow.unsupportedReasons,
+    noteJa: 'v0.9.19以降はlegacy alpha solverをDEBUG経路でも実行しません。このファイルは旧solverとの差分ではなく、structured result採用状態の記録です。',
+    noteEn: 'Since v0.9.19, the legacy alpha solver is not executed even in DEBUG mode. This artifact records structured result adoption, not a numeric diff against the legacy solver.',
   };
 }

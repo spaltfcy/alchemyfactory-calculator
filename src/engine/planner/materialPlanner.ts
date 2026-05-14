@@ -58,7 +58,7 @@ export function runMaterialPlannerShadow(planModel: PlanModel, structuredBaseRes
       },
       {
         phase: 'shadowResult',
-        messageJa: 'structured plannerのmaterial summaryを生成します。legacy alphaはDEBUG比較専用です。',
+        messageJa: 'structured plannerのmaterial summaryを生成します。legacy alphaはv0.9.19以降、DEBUG経路でも実行しません。',
         messageEn: 'Builds a material summary for the structured planner. Legacy alpha is DEBUG comparison only.',
       },
     ],
@@ -227,14 +227,14 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
 
   const structuredPlan = {
     ...base,
-    mode: 'structured-material-v09180' as const,
+    mode: 'structured-material-v09190' as const,
     status: acceptedResult.calculationStatus === 'invalid' ? 'partial' as const : 'ok' as const,
     cycleComponents: planModel.dependencyGraph.cycleComponents,
     cycleDecisions,
     acceptedResultStatus: acceptedResult.calculationStatus,
     legacyFallbackUsed: false,
     structuredResultAdopted: true,
-    acceptedResultEngine: 'structured-material-v09180',
+    acceptedResultEngine: 'structured-material-v09190',
     trace: [
       ...base.trace,
       {
@@ -245,8 +245,8 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
       },
       {
         phase: 'structuredResultAdoption',
-        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。legacy alphaはDEBUG比較専用です。',
-        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. Legacy alpha is DEBUG comparison only.',
+        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。legacy alphaはv0.9.19以降、DEBUG経路でも実行しません。',
+        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. Legacy alpha is not executed in DEBUG mode since v0.9.19.',
         data: { acceptedResultStatus: acceptedResult.calculationStatus, legacyFallbackUsed: false },
       },
     ],

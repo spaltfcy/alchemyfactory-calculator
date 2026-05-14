@@ -110,6 +110,9 @@ type VerificationExpectation = {
   expectedAcceptedResultEngine?: string;
   expectedGraphStartupLabel?: boolean;
   expectedLegacyAlphaCalled?: boolean;
+  expectedDebugSchemaVersion?: number;
+  expectedPlannerComparisonStatus?: 'match' | 'diff' | 'not-compared';
+  expectedPlannerComparisonMode?: string;
   expectedSourceKinds?: string[];
   expectedNoSourceKinds?: string[];
   expectedPurchasedItems?: string[];
@@ -125,7 +128,7 @@ type VerificationExpectation = {
   expectedTotalValues?: Partial<Record<'heatRequiredPerMin' | 'fuelRequiredPerMin' | 'fertilizerNutrientsRequiredPerMin' | 'fertilizerRequiredPerMin' | 'purchaseCostCopperPerMin' | 'profitCopperPerMin', number>>;
   expectedRecipeRateValues?: Record<string, { runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
   expectedEffectiveRecipeRateValues?: Record<string, { runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
-  expectedHeatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; runsPerMachinePerMinute?: number; heatPerSecond?: number; heatConsumptionMultiplier?: number; heatPerRun?: number; heatRequiredPerMin?: number }>;
+  expectedHeatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; runsPerMachinePerMinute?: number; heatPerSecond?: number; heatPerMachinePerMinute?: number; heatConsumptionMultiplier?: number; baseHeatPerRun?: number; effectiveHeatPerRun?: number; heatRequiredPerMin?: number }>;
   expectedRecipeNetPositive?: Record<string, string[]>;
   expectedRecipeNetNonPositive?: Record<string, string[]>;
   expectedItemNamesJa?: Record<string, string>;
@@ -148,12 +151,13 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     itemStats?: Array<{ itemId?: string; requested?: number; consumed?: number; produced?: number; purchased?: number; initialPurchased?: number; reused?: number; surplus?: number; discarded?: number; targetRequested?: number; targetActual?: number; purchaseCostCopperPerMin?: number; initialCostCopper?: number; revenueCopperPerMin?: number }>;
     recipeStats?: Array<{ recipeId?: string; runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
     effectiveRecipeRateAudit?: Array<{ recipeId?: string; runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
-    heatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; runsPerMachinePerMinute?: number; heatPerSecond?: number; heatConsumptionMultiplier?: number; heatPerRun?: number; heatRequiredPerMin?: number }>;
+    heatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; runsPerMachinePerMinute?: number; heatPerSecond?: number; heatPerMachinePerMinute?: number; heatConsumptionMultiplier?: number; baseHeatPerRun?: number; effectiveHeatPerRun?: number; heatRequiredPerMin?: number }>;
     errorSummaries?: Array<{ code?: string }>;
     solver?: { resultEngine?: string; solverEngine?: string };
     resultEngine?: string;
     structuredMaterialPlan?: { legacyFallbackUsed?: boolean; acceptedResultEngine?: string };
-    legacyAlphaComparison?: { acceptedResultEngine?: string; statusComparison?: unknown; numericComparison?: unknown };
+    legacyAlphaComparison?: { acceptedResultEngine?: string; statusComparison?: unknown; numericComparison?: unknown; legacyCalled?: boolean };
+    materialPlannerShadow?: { comparison?: { status?: string; mode?: string } };
     structuredBalanceTrace?: { sourceBuckets?: Record<string, Record<string, number>>; unresolvedItemIds?: string[] };
     totals?: { purchaseCostCopperPerMin?: number };
     issues?: Array<{ code?: string }>;
@@ -204,6 +208,16 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
   if (typeof expectation.expectedLegacyAlphaCalled === 'boolean') {
     const actual = Boolean(debugLog?.legacyAlphaComparison && (debugLog.legacyAlphaComparison as { legacyCalled?: boolean }).legacyCalled === true);
     if (actual !== expectation.expectedLegacyAlphaCalled) return false;
+  }
+  if (typeof expectation.expectedDebugSchemaVersion === 'number') {
+    const actual = Number((debugLog as { debugSchemaVersion?: unknown } | undefined)?.debugSchemaVersion ?? 0);
+    if (!Number.isFinite(actual) || actual !== expectation.expectedDebugSchemaVersion) return false;
+  }
+  if (expectation.expectedPlannerComparisonStatus || expectation.expectedPlannerComparisonMode) {
+    const comparison = debugLog?.materialPlannerShadow?.comparison as { status?: string; mode?: string } | undefined;
+    if (!comparison) return false;
+    if (expectation.expectedPlannerComparisonStatus && comparison.status !== expectation.expectedPlannerComparisonStatus) return false;
+    if (expectation.expectedPlannerComparisonMode && comparison.mode !== expectation.expectedPlannerComparisonMode) return false;
   }
   const sourceBuckets = debugLog?.structuredBalanceTrace?.sourceBuckets ?? {};
   if (expectation.expectedSourceKinds && expectation.expectedSourceKinds.length > 0) {
@@ -348,7 +362,7 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
       const actualHeat = heatByRecipe[recipeId];
       if (!actualHeat) return false;
       if (typeof expectedHeat.machineId === 'string' && actualHeat.machineId !== expectedHeat.machineId) return false;
-      for (const field of ['theoreticalMachines', 'actualMachines', 'runsPerMinute', 'runsPerMachinePerMinute', 'heatPerSecond', 'heatConsumptionMultiplier', 'heatPerRun', 'heatRequiredPerMin'] as const) {
+      for (const field of ['theoreticalMachines', 'actualMachines', 'runsPerMinute', 'runsPerMachinePerMinute', 'heatPerSecond', 'heatPerMachinePerMinute', 'heatConsumptionMultiplier', 'baseHeatPerRun', 'effectiveHeatPerRun', 'heatRequiredPerMin'] as const) {
         const expected = expectedHeat[field];
         if (typeof expected !== 'number') continue;
         const actual = Number((actualHeat as Record<string, unknown>)[field] ?? 0);
@@ -823,7 +837,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 41,
+      debugSchemaVersion: 42,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -858,8 +872,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisions/legacyAlphaComparisonも保存します。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. keeps Graph[DEBUG] fallback behavior and also saves StructuredMaterialPlan/cycleDecisions/legacyAlphaComparison artifacts.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。legacy alphaはv0.9.19以降DEBUG経路でも実行しません。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. Legacy alpha is not executed in DEBUG mode since v0.9.19.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -992,7 +1006,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 41,
+      debugSchemaVersion: 42,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1420,7 +1434,12 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       structuredMaterialPlanSummary: (artifact.enrichedDebugLog as { structuredMaterialPlan?: { status?: string; mode?: string; cycleDecisions?: unknown[] } }).structuredMaterialPlan,
       cycleDecisionCount: ((artifact.enrichedDebugLog as { cycleDecisions?: unknown[] }).cycleDecisions ?? []).length,
       solver: (artifact.enrichedDebugLog as { solver?: unknown }).solver,
-      legacyAlphaComparison: (artifact.enrichedDebugLog as { legacyAlphaComparison?: unknown }).legacyAlphaComparison,
+      legacyAlphaComparison: (() => {
+        const comparison = (artifact.enrichedDebugLog as { legacyAlphaComparison?: { enabled?: boolean; legacyCalled?: boolean; noteJa?: string; noteEn?: string } }).legacyAlphaComparison;
+        if (!comparison) return undefined;
+        if (comparison.enabled === true || comparison.legacyCalled === true) return comparison;
+        return { enabled: false, legacyCalled: false, noteJa: comparison.noteJa, noteEn: comparison.noteEn };
+      })(),
       structuredBalanceTrace: (artifact.enrichedDebugLog as { structuredBalanceTrace?: unknown }).structuredBalanceTrace,
     }, null, 2));
     const materialPlannerShadow = (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: unknown; comparison?: unknown; cycleComponents?: unknown[]; planModel?: unknown } }).materialPlannerShadow;
@@ -1435,8 +1454,10 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     if (structuredMaterialPlan) zip.file(baseName + '__structured-material-plan.json', JSON.stringify(structuredMaterialPlan, null, 2));
     const cycleDecisions = (artifact.enrichedDebugLog as { cycleDecisions?: unknown }).cycleDecisions;
     if (cycleDecisions) zip.file(baseName + '__cycle-decisions.json', JSON.stringify(cycleDecisions, null, 2));
-    const legacyAlphaComparison = (artifact.enrichedDebugLog as { legacyAlphaComparison?: unknown }).legacyAlphaComparison;
-    if (legacyAlphaComparison) zip.file(baseName + '__legacy-alpha-comparison.json', JSON.stringify(legacyAlphaComparison, null, 2));
+    const legacyAlphaComparison = (artifact.enrichedDebugLog as { legacyAlphaComparison?: { enabled?: boolean; legacyCalled?: boolean } }).legacyAlphaComparison;
+    if (legacyAlphaComparison?.enabled === true || legacyAlphaComparison?.legacyCalled === true) {
+      zip.file(baseName + '__legacy-alpha-comparison.json', JSON.stringify(legacyAlphaComparison, null, 2));
+    }
 
     if (calculationInvalid) {
       zip.file(
@@ -1551,7 +1572,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 41,
+      debugSchemaVersion: 42,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
