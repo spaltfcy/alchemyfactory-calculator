@@ -2940,7 +2940,7 @@ export const RECIPES: Recipe[] = [
   {
     id: 'sol',
     name: {
-      ja: 'ソル',
+      ja: 'ソーラ',
       en: 'Sol'
     },
     machineId: 'arcane_shaper',

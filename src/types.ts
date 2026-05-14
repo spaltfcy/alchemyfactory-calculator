@@ -121,6 +121,7 @@ export type ExternalSourceMode = 'internal' | 'external';
 export type HeatingMode = 'direct' | 'steam';
 export type CrucibleMachinePreference = 'crucible' | 'stackable_crucible';
 export type GrinderMachinePreference = 'grinder' | 'enhanced_grinder';
+export type ExtractorMachinePreference = 'extractor' | 'thermal_extractor';
 
 export type ParadoxSettings = {
   oblivionInputItemId: string;
@@ -129,6 +130,11 @@ export type ParadoxSettings = {
 export type MachinePreferences = {
   crucible: CrucibleMachinePreference;
   grinder: GrinderMachinePreference;
+  extractor: ExtractorMachinePreference;
+};
+
+export type ThermalExtractorSettings = {
+  height: number;
 };
 
 export type FuelSettings = {
@@ -177,6 +183,7 @@ export type AppSettings = {
   paradox: ParadoxSettings;
   fuel: FuelSettings;
   fertilizer: FertilizerSettings;
+  thermalExtractor: ThermalExtractorSettings;
 };
 
 export type AppState = {

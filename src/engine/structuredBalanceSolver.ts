@@ -7,6 +7,7 @@ import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import {
   getConveyorItemsPerMinute,
+  getAlchemyOutputMultiplierForMachine,
   getFertilizerNutritionMultiplier,
   getFuelHeatValueMultiplier,
   getHeatConsumptionMultiplier,
@@ -36,8 +37,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 
 const EPS = 1e-9;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.16' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09160';
+const BALANCE_SOLVER_VERSION = '0.9.17' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09170';
 
 
 function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearModelDiagnostics): number {
@@ -85,7 +86,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09160';
+  mode: 'structured-balance-v09170';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   queueSafetyLimit?: number;
@@ -153,12 +154,40 @@ function createItemStat(itemId: string): ItemStat {
   };
 }
 
+
+export function getThermalExtractorHeight(settings: AppSettings): number {
+  const raw = Number(settings.thermalExtractor?.height ?? 255);
+  if (!Number.isFinite(raw)) return 255;
+  return Math.floor(raw);
+}
+
+export function getThermalExtractorBonusPercent(settings: AppSettings): number {
+  return Math.min(200, Math.max(0, getThermalExtractorHeight(settings)) * 25 / 32);
+}
+
+export function getThermalExtractorHeightMultiplier(settings: AppSettings): number {
+  return 1 + getThermalExtractorBonusPercent(settings) / 100;
+}
+
+function thermalHeightMultiplierForRecipe(recipe: Recipe, input: CalculateInput): number {
+  return getEffectiveRecipeMachineId(recipe, input.settings) === 'thermal_extractor'
+    ? getThermalExtractorHeightMultiplier(input.settings)
+    : 1;
+}
+
+function alchemyOutputMultiplierForRecipe(recipe: Recipe, input: CalculateInput): number {
+  return getAlchemyOutputMultiplierForMachine(getEffectiveRecipeMachineId(recipe, input.settings), input.abilities);
+}
+
 function createRecipeStat(recipe: Recipe, runsPerMinute: number, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): RecipeStat {
   const machineRunRate = runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
+  const effectiveMachineId = getEffectiveRecipeMachineId(recipe, input.settings);
+  const thermalHeightMultiplier = thermalHeightMultiplierForRecipe(recipe, input);
+  const alchemyOutputMultiplier = alchemyOutputMultiplierForRecipe(recipe, input);
   return {
     recipeId: recipe.id,
-    machineId: getEffectiveRecipeMachineId(recipe, input.settings),
+    machineId: effectiveMachineId,
     theoreticalMachines,
     actualMachines: theoreticalMachines,
     runsPerMinute,
@@ -168,46 +197,55 @@ function createRecipeStat(recipe: Recipe, runsPerMinute: number, input: Calculat
     surplusOutputRates: {},
     discardedOutputRates: {},
     targetIds: [],
+    factorySpeedMultiplier: productionSpeedMultiplier,
+    thermalHeightMultiplier,
+    thermalExtractorHeight: effectiveMachineId === 'thermal_extractor' ? getThermalExtractorHeight(input.settings) : undefined,
+    thermalExtractorBonusPercent: effectiveMachineId === 'thermal_extractor' ? getThermalExtractorBonusPercent(input.settings) : undefined,
+    alchemyOutputMultiplier,
+    effectiveOutputPerMinuteMultiplier: productionSpeedMultiplier * thermalHeightMultiplier * alchemyOutputMultiplier,
   };
 }
 
-function recipeTotalOutputAmount(recipe: Recipe): number {
-  return recipe.outputs.reduce((sum, output) => sum + output.amount * (output.probability ?? 1), 0);
+function recipeTotalOutputAmount(recipe: Recipe, input: CalculateInput): number {
+  return recipe.outputs.reduce((sum, output) => sum + output.amount * (output.probability ?? 1) * alchemyOutputMultiplierForRecipe(recipe, input), 0);
 }
 
 function runRateForRecipe(recipe: Recipe, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): number {
   const baseRunRate = 60 / getEffectiveRecipeTimeSec(recipe, input.settings);
+  const thermalHeightMultiplier = thermalHeightMultiplierForRecipe(recipe, input);
+  const baseWithSpeed = baseRunRate * productionSpeedMultiplier * thermalHeightMultiplier;
   const nutrientInputPerRun = Math.max(0, recipe.nutrientInputPerRun ?? 0);
-  if (!input.settings.fertilizer?.enabled || nutrientInputPerRun <= EPS) return baseRunRate * productionSpeedMultiplier;
+  if (!input.settings.fertilizer?.enabled || nutrientInputPerRun <= EPS) return baseWithSpeed;
 
   if (recipe.nutrientRunRateMode === 'logisticsCap') {
     const fertilizerItemId = input.settings.fertilizer.fertilizerItemId;
     const fertilizerNutrientsPerSec = Math.max(0, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID[fertilizerItemId] ?? 0);
     const nutrientLimitedRunRate = fertilizerNutrientsPerSec > EPS ? (fertilizerNutrientsPerSec * 60) / nutrientInputPerRun : 0;
-    const outputAmountPerRun = Math.max(EPS, recipeTotalOutputAmount(recipe));
+    const outputAmountPerRun = Math.max(EPS, recipeTotalOutputAmount(recipe, input));
     const logisticsLimitedRunRate = conveyorItemsPerMinute > EPS ? conveyorItemsPerMinute / outputAmountPerRun : 0;
     return Math.min(nutrientLimitedRunRate, logisticsLimitedRunRate);
   }
 
-  if (recipe.nutrientRunRateMode === 'fixedTime') return baseRunRate;
+  if (recipe.nutrientRunRateMode === 'fixedTime') return baseRunRate * thermalHeightMultiplier;
 
-  return baseRunRate * productionSpeedMultiplier;
+  return baseWithSpeed;
 }
 
 function inputPerRun(recipe: Recipe, itemId: string): number {
   return recipe.inputs.reduce((sum, entry) => entry.kind !== 'paradoxableItem' && entry.itemId === itemId ? sum + entry.amount : sum, 0);
 }
 
-function outputPerRun(recipe: Recipe, itemId: string): number {
-  return recipe.outputs.reduce((sum, entry) => entry.itemId === itemId ? sum + entry.amount * (entry.probability ?? 1) : sum, 0);
+function outputPerRun(recipe: Recipe, itemId: string, input: CalculateInput): number {
+  const multiplier = alchemyOutputMultiplierForRecipe(recipe, input);
+  return recipe.outputs.reduce((sum, entry) => entry.itemId === itemId ? sum + entry.amount * (entry.probability ?? 1) * multiplier : sum, 0);
 }
 
-function rateBalancePerRun(recipe: Recipe, itemId: string): number {
-  return outputPerRun(recipe, itemId) - inputPerRun(recipe, itemId);
+function rateBalancePerRun(recipe: Recipe, itemId: string, input: CalculateInput): number {
+  return outputPerRun(recipe, itemId, input) - inputPerRun(recipe, itemId);
 }
 
-function positiveRatePerRun(recipe: Recipe, itemId: string): number {
-  return Math.max(0, rateBalancePerRun(recipe, itemId));
+function positiveRatePerRun(recipe: Recipe, itemId: string, input: CalculateInput): number {
+  return Math.max(0, rateBalancePerRun(recipe, itemId, input));
 }
 
 function recipeItemIds(recipe: Recipe): string[] {
@@ -293,7 +331,7 @@ function fertilizerNutrientsPerRun(recipe: Recipe, input: CalculateInput): numbe
 
 function addRunForDemand(runs: RunMap, recipe: Recipe, itemId: string, missingRate: number, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): void {
   const effectiveRecipe = getEffectiveRecipeForCalculation(recipe, input.settings);
-  const perRun = positiveRatePerRun(effectiveRecipe, itemId);
+  const perRun = positiveRatePerRun(effectiveRecipe, itemId, input);
   if (perRun <= EPS) return;
   let neededRuns = missingRate / perRun;
   if (shouldRoundMachines(input.settings.machineRounding)) {
@@ -335,14 +373,14 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
     let targetRate: number;
     if (target.mode === 'machines') {
       runsPerMinute = Math.max(0, targetValue) * runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
-      const perRun = positiveRatePerRun(effectiveRecipe, target.outputItemId);
+      const perRun = positiveRatePerRun(effectiveRecipe, target.outputItemId, input);
       if (perRun <= EPS) {
         invalidNetOutputTargets.push({ itemId: target.outputItemId, recipeId: recipe.id });
         continue;
       }
       targetRate = perRun * runsPerMinute;
     } else {
-      const perRun = positiveRatePerRun(effectiveRecipe, target.outputItemId);
+      const perRun = positiveRatePerRun(effectiveRecipe, target.outputItemId, input);
       if (perRun <= EPS) {
         invalidNetOutputTargets.push({ itemId: target.outputItemId, recipeId: recipe.id });
         continue;
@@ -353,7 +391,7 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
         const machines = machineRunRate > EPS ? safeCeil(runsPerMinute / machineRunRate) : 0;
         runsPerMinute = machines * machineRunRate;
       }
-      targetRate = positiveRatePerRun(effectiveRecipe, target.outputItemId) * runsPerMinute;
+      targetRate = positiveRatePerRun(effectiveRecipe, target.outputItemId, input) * runsPerMinute;
     }
     addRequiredRun(recipe.id, target.outputItemId, runsPerMinute);
     targetRates.set(target.outputItemId, (targetRates.get(target.outputItemId) ?? 0) + targetRate);
@@ -389,7 +427,7 @@ function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultipl
     if (!baseRecipe || runsPerMinute <= EPS) continue;
     const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
     for (const itemId of recipeItemIds(recipe)) {
-      const difference = rateBalancePerRun(recipe, itemId) * runsPerMinute;
+      const difference = rateBalancePerRun(recipe, itemId, input) * runsPerMinute;
       if (difference > EPS) addToMap(produced, itemId, difference);
       else if (difference < -EPS) addDemand(recipe.id, itemId, -difference, 'material');
     }
@@ -405,14 +443,14 @@ function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultipl
   return { produced, consumed, demandLots, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin };
 }
 
-function buildSupplyLots(runs: RunMap, settings: AppSettings): Map<string, SupplyLot[]> {
+function buildSupplyLots(runs: RunMap, input: CalculateInput): Map<string, SupplyLot[]> {
   const map = new Map<string, SupplyLot[]>();
   for (const [recipeId, runsPerMinute] of runs.entries()) {
     const baseRecipe = recipeById[recipeId];
     if (!baseRecipe || runsPerMinute <= EPS) continue;
-    const recipe = getEffectiveRecipeForCalculation(baseRecipe, settings);
+    const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
     for (const itemId of recipeItemIds(recipe)) {
-      const rate = positiveRatePerRun(recipe, itemId) * runsPerMinute;
+      const rate = positiveRatePerRun(recipe, itemId, input) * runsPerMinute;
       if (rate <= EPS) continue;
       const lots = map.get(itemId) ?? [];
       lots.push({ recipeId, itemId, rate, originalRate: rate });
@@ -446,7 +484,7 @@ function addProjectedRecipeOutputs(supplyLotsByItem: Map<string, SupplyLot[]>, r
   if (!Number.isFinite(runsDelta) || runsDelta <= EPS) return;
   const effectiveRecipe = getEffectiveRecipeForCalculation(recipe, input.settings);
   for (const itemId of recipeItemIds(effectiveRecipe)) {
-    const rate = positiveRatePerRun(effectiveRecipe, itemId) * runsDelta;
+    const rate = positiveRatePerRun(effectiveRecipe, itemId, input) * runsDelta;
     if (rate <= EPS) continue;
     const lots = supplyLotsByItem.get(itemId) ?? [];
     lots.push({ recipeId: recipe.id, itemId, rate, originalRate: rate });
@@ -740,7 +778,7 @@ type CoProductReduction = {
 };
 
 type CoProductReconciliationTrace = {
-  mode: 'co-product-reconcile-v09160';
+  mode: 'co-product-reconcile-v09170';
   applied: boolean;
   iterations: number;
   reductions: CoProductReduction[];
@@ -788,7 +826,7 @@ function reconcileCoProductsAfterSpecialResources(
   if (!solution.finite) {
     return {
       solved: base,
-      trace: { mode: 'co-product-reconcile-v09160', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
+      trace: { mode: 'co-product-reconcile-v09170', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
     };
   }
 
@@ -809,7 +847,7 @@ function reconcileCoProductsAfterSpecialResources(
       const baseRecipe = recipeById[recipeId];
       if (!baseRecipe) continue;
       const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
-      const positiveOutputItemIds = recipeItemIds(recipe).filter((itemId) => positiveRatePerRun(recipe, itemId) > EPS);
+      const positiveOutputItemIds = recipeItemIds(recipe).filter((itemId) => positiveRatePerRun(recipe, itemId, input) > EPS);
       if (positiveOutputItemIds.length < 2) continue;
       const minimumRuns = base.targetRuns.get(recipeId) ?? 0;
       const maxRemovableByTarget = Math.max(0, currentRuns - minimumRuns);
@@ -818,7 +856,7 @@ function reconcileCoProductsAfterSpecialResources(
       let removableRuns = Number.POSITIVE_INFINITY;
       const surplusBeforeByItemId: Record<string, number> = {};
       for (const itemId of positiveOutputItemIds) {
-        const perRun = positiveRatePerRun(recipe, itemId);
+        const perRun = positiveRatePerRun(recipe, itemId, input);
         if (perRun <= EPS) continue;
         const itemSurplus = surplus.get(itemId) ?? 0;
         surplusBeforeByItemId[itemId] = itemSurplus;
@@ -858,7 +896,7 @@ function reconcileCoProductsAfterSpecialResources(
       fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
     },
     trace: {
-      mode: 'co-product-reconcile-v09160',
+      mode: 'co-product-reconcile-v09170',
       applied,
       iterations,
       reductions,
@@ -890,9 +928,9 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
     fertilizerNutrientsRequiredPerMin = analysis.fertilizerNutrientsRequiredPerMin;
 
     const nextRuns: RunMap = new Map(runs);
-    const supplyLotsByItem = buildSupplyLots(runs, input.settings);
-    const fuelSupplyLotsByItem = buildSupplyLots(fuelRuns, input.settings);
-    const fertilizerSupplyLotsByItem = buildSupplyLots(fertilizerRuns, input.settings);
+    const supplyLotsByItem = buildSupplyLots(runs, input);
+    const fuelSupplyLotsByItem = buildSupplyLots(fuelRuns, input);
+    const fertilizerSupplyLotsByItem = buildSupplyLots(fertilizerRuns, input);
     const sourceLots = cloneSourceBucket(sources);
     const cycleInputLots = cloneCycleInputBucket(cycleInputs);
 
@@ -1394,12 +1432,12 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
     const recipeStat = createRecipeStat(recipe, runsPerMinute, input, productionSpeedMultiplier, conveyorItemsPerMinute);
     recipeStats[recipeId] = recipeStat;
     for (const inputEntry of recipe.inputs) addToRecord(recipeStat.inputRates, inputEntry.itemId, inputEntry.amount * runsPerMinute);
-    for (const output of recipe.outputs) {
-      const rate = output.amount * (output.probability ?? 1) * runsPerMinute;
-      addToRecord(recipeStat.outputRates, output.itemId, rate);
+    for (const itemId of recipeItemIds(recipe)) {
+      const rate = outputPerRun(recipe, itemId, input) * runsPerMinute;
+      if (rate > EPS) addToRecord(recipeStat.outputRates, itemId, rate);
     }
     for (const itemId of recipeItemIds(recipe)) {
-      const difference = rateBalancePerRun(recipe, itemId) * runsPerMinute;
+      const difference = rateBalancePerRun(recipe, itemId, input) * runsPerMinute;
       addToRecord(recipeStat.netRates, itemId, difference);
       if (difference > EPS) stat(itemId).produced += difference;
     }
@@ -1436,7 +1474,7 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
 
   const analysis = analyzeRuns(solved.runs, input, productionSpeedMultiplier);
   const specialDemandLots = buildSpecialDemandLots(solved.runs, input, specialApplication.solution, productionSpeedMultiplier);
-  const supplyLotsByItem = buildSupplyLots(solved.runs, input.settings);
+  const supplyLotsByItem = buildSupplyLots(solved.runs, input);
 
   for (const [itemId, targetRate] of solved.targetRates.entries()) {
     const consumed = consumeRecipeLots(supplyLotsByItem.get(itemId), targetRate);
@@ -1726,8 +1764,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
         uses: byproductFuelUses,
       },
       specialResourceSolution: specialApplication.solution,
-      notesJa: ['v0.9.16 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
-      notesEn: ['Structured balance solver result for v0.9.16. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
+      notesJa: ['v0.9.17 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Structured balance solver result for v0.9.17. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
     },
   };
 }

@@ -43,6 +43,9 @@ export const DEFAULT_STATE: AppState = {
       fertilizerItemId: 'basic_fertilizer',
       sourceMode: 'internal',
     },
+    thermalExtractor: {
+      height: 255,
+    },
   },
   abilities: DEFAULT_ABILITIES,
   recipePreferences: {

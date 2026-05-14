@@ -9,6 +9,7 @@ import { getMachinePreferences } from '../data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from '../data/paradox';
 import { normalizeAbilitySettings } from '../data/abilityTables';
 import { buildFlowGraphDebugArtifacts, buildFlowGraphSvg, compareFlowGraphLayoutMetrics } from '../engine/graph';
+import { itemById } from '../data/items';
 
 type DebugTabProps = {
   lang: Lang;
@@ -121,10 +122,12 @@ type VerificationExpectation = {
   expectedIssueCodes?: string[];
   expectedNoUnresolvedItems?: string[];
   expectedItemStatValues?: Record<string, Partial<Record<'requested' | 'consumed' | 'produced' | 'purchased' | 'initialPurchased' | 'reused' | 'surplus' | 'discarded' | 'targetRequested' | 'targetActual' | 'purchaseCostCopperPerMin' | 'initialCostCopper' | 'revenueCopperPerMin', number>>>;
+  expectedTotalValues?: Partial<Record<'heatRequiredPerMin' | 'fuelRequiredPerMin' | 'fertilizerNutrientsRequiredPerMin' | 'fertilizerRequiredPerMin' | 'purchaseCostCopperPerMin' | 'profitCopperPerMin', number>>;
   expectedRecipeRateValues?: Record<string, { runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
-  expectedEffectiveRecipeRateValues?: Record<string, { runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number> }>;
+  expectedEffectiveRecipeRateValues?: Record<string, { runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
   expectedRecipeNetPositive?: Record<string, string[]>;
   expectedRecipeNetNonPositive?: Record<string, string[]>;
+  expectedItemNamesJa?: Record<string, string>;
 };
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
@@ -143,7 +146,7 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     initialInvestment?: { requiredByRecipe?: Record<string, string[]>; purchasedItemIds?: string[] };
     itemStats?: Array<{ itemId?: string; requested?: number; consumed?: number; produced?: number; purchased?: number; initialPurchased?: number; reused?: number; surplus?: number; discarded?: number; targetRequested?: number; targetActual?: number; purchaseCostCopperPerMin?: number; initialCostCopper?: number; revenueCopperPerMin?: number }>;
     recipeStats?: Array<{ recipeId?: string; runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
-    effectiveRecipeRateAudit?: Array<{ recipeId?: string; runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number> }>;
+    effectiveRecipeRateAudit?: Array<{ recipeId?: string; runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
     errorSummaries?: Array<{ code?: string }>;
     solver?: { resultEngine?: string; solverEngine?: string };
     resultEngine?: string;
@@ -158,6 +161,11 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     const rel = abs / Math.max(1, Math.abs(expected));
     return abs <= 0.0001 || rel <= 0.000001;
   };
+  if (expectation.expectedItemNamesJa) {
+    for (const [itemId, expectedName] of Object.entries(expectation.expectedItemNamesJa)) {
+      if ((itemById[itemId]?.name.ja ?? '') !== expectedName) return false;
+    }
+  }
   if (expectation.expectedErrorCodes && expectation.expectedErrorCodes.length > 0) {
     const codes = new Set((debugLog?.errorSummaries ?? []).map((summary) => summary.code).filter(Boolean));
     for (const code of expectation.expectedErrorCodes) if (!codes.has(code)) return false;
@@ -267,6 +275,13 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     const unresolved = new Set(debugLog?.structuredBalanceTrace?.unresolvedItemIds ?? []);
     for (const itemId of expectation.expectedNoUnresolvedItems) if (unresolved.has(itemId)) return false;
   }
+  if (expectation.expectedTotalValues) {
+    const totals = debugLog?.totals as Record<string, unknown> | undefined;
+    for (const [field, expected] of Object.entries(expectation.expectedTotalValues)) {
+      const actual = Number(totals?.[field] ?? 0);
+      if (!Number.isFinite(actual) || !closeTo(actual, Number(expected))) return false;
+    }
+  }
   if (expectation.expectedItemStatValues) {
     const stats = new Map((debugLog?.itemStats ?? []).map((stat) => [String(stat.itemId), stat]));
     for (const [itemId, expectedFields] of Object.entries(expectation.expectedItemStatValues)) {
@@ -307,6 +322,12 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
       if (typeof expectedRecipe.runsPerMachinePerMinute === 'number') {
         const actual = Number(audit.runsPerMachinePerMinute ?? 0);
         if (!Number.isFinite(actual) || !closeTo(actual, expectedRecipe.runsPerMachinePerMinute)) return false;
+      }
+      for (const field of ['thermalHeightMultiplier', 'thermalExtractorHeight', 'thermalExtractorBonusPercent', 'alchemyOutputMultiplier', 'effectiveOutputPerMinuteMultiplier'] as const) {
+        const expected = expectedRecipe[field];
+        if (typeof expected !== 'number') continue;
+        const actual = Number((audit as Record<string, unknown>)[field] ?? 0);
+        if (!Number.isFinite(actual) || !closeTo(actual, expected)) return false;
       }
       for (const section of ['inputsPerMachinePerMinute', 'outputsPerMachinePerMinute', 'differencesPerMachinePerMinute'] as const) {
         const expectedRates = expectedRecipe[section];
@@ -785,7 +806,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 39,
+      debugSchemaVersion: 40,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -954,7 +975,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 39,
+      debugSchemaVersion: 40,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1513,7 +1534,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 39,
+      debugSchemaVersion: 40,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

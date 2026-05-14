@@ -3,6 +3,7 @@ import type { AppSettings, MachinePreferences, Recipe } from '../types';
 export const DEFAULT_MACHINE_PREFERENCES: MachinePreferences = {
   crucible: 'crucible',
   grinder: 'grinder',
+  extractor: 'extractor',
 };
 
 export function getMachinePreferences(settings?: { machinePreferences?: Partial<MachinePreferences> }): MachinePreferences {
@@ -16,6 +17,7 @@ export function getEffectiveRecipeMachineId(recipe: Recipe, settings: AppSetting
   const preferences = getMachinePreferences(settings);
   if (recipe.machineId === 'crucible') return preferences.crucible;
   if (recipe.machineId === 'grinder') return preferences.grinder;
+  if (recipe.machineId === 'extractor') return preferences.extractor;
   return recipe.machineId;
 }
 

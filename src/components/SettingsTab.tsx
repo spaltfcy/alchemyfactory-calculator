@@ -13,6 +13,7 @@ import { DEFAULT_MACHINE_PREFERENCES, getMachinePreferences } from '../data/mach
 import { DEFAULT_PARADOX_SETTINGS, getParadoxSettings, isParadoxableItem, paradoxableItemIds } from '../data/paradox';
 import { getEffectiveRecipeForCalculation, isItemRecipeInput } from '../data/effectiveRecipes';
 import { normalizeAbilitySettings } from '../data/abilityTables';
+import { getThermalExtractorBonusPercent } from '../engine/structuredBalanceSolver';
 
 export type SettingsTabProps = {
   state: AppState;
@@ -36,6 +37,14 @@ const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
   fertilizerItemId: 'basic_fertilizer',
   sourceMode: 'internal',
 };
+
+const DEFAULT_THERMAL_EXTRACTOR_SETTINGS: AppSettings['thermalExtractor'] = {
+  height: 255,
+};
+
+function getThermalExtractorSettings(state: AppState): AppSettings['thermalExtractor'] {
+  return { ...DEFAULT_THERMAL_EXTRACTOR_SETTINGS, ...(state.settings.thermalExtractor ?? {}) };
+}
 
 function getFertilizerSettings(state: AppState): AppSettings['fertilizer'] {
   return { ...DEFAULT_FERTILIZER_SETTINGS, ...(state.settings.fertilizer ?? {}) };
@@ -247,6 +256,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
   const fuel = getFuelSettings(state);
   const fertilizer = getFertilizerSettings(state);
   const machinePreferences = getMachinePreferenceSettings(state);
+  const thermalExtractor = getThermalExtractorSettings(state);
   const paradox = getParadoxSettingValues(state);
   const [importError, setImportError] = useState('');
 
@@ -306,13 +316,26 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     });
   }
 
+  function patchThermalExtractorSettings(patch: Partial<AppSettings['thermalExtractor']>) {
+    setState({
+      ...state,
+      settings: {
+        ...state.settings,
+        thermalExtractor: {
+          ...thermalExtractor,
+          ...patch,
+        },
+      },
+    });
+  }
+
   function saveDebugLogFromSettings(): void {
     const input = buildInputFromState(state);
     const { result, debugLog } = calculateWithDebug(input);
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 39,
+      debugSchemaVersion: 40,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,
@@ -545,6 +568,42 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                   <option value="grinder">{text(machineById.grinder.name, lang)}</option>
                   <option value="enhanced_grinder">{text(machineById.enhanced_grinder.name, lang)}</option>
                 </select>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '抽出系設備' : 'Extraction machine'}</span>
+                <select
+                  id="preferred-extractor-machine"
+                  name="preferred-extractor-machine"
+                  value={machinePreferences.extractor}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchMachinePreferences({ extractor: event.target.value as MachinePreferences['extractor'] })
+                  }
+                >
+                  <option value="extractor">{text(machineById.extractor.name, lang)}</option>
+                  <option value="thermal_extractor">{text(machineById.thermal_extractor.name, lang)}</option>
+                </select>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '熱抽出機 高さ' : 'Thermal extractor height'}</span>
+                <input
+                  id="thermal-extractor-height"
+                  name="thermal-extractor-height"
+                  type="number"
+                  step={1}
+                  value={thermalExtractor.height}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    patchThermalExtractorSettings({ height: Math.floor(value) });
+                  }}
+                />
+                <small>
+                  {lang === 'ja'
+                    ? `生産ボーナス ${Math.round(getThermalExtractorBonusPercent({ ...state.settings, thermalExtractor }) * 10) / 10}%（256以上で200%）`
+                    : `Production bonus ${Math.round(getThermalExtractorBonusPercent({ ...state.settings, thermalExtractor }) * 10) / 10}% (200% at 256+)`}
+                </small>
               </label>
               <label className="form-field">
                 <span>{lang === 'ja' ? '消滅エッセンス素材' : 'Oblivion essence input'}</span>

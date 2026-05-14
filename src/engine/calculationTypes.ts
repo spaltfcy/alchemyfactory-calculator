@@ -29,6 +29,12 @@ export type RecipeStat = {
   surplusOutputRates: Record<string, number>;
   discardedOutputRates: Record<string, number>;
   targetIds: string[];
+  factorySpeedMultiplier?: number;
+  thermalHeightMultiplier?: number;
+  thermalExtractorHeight?: number;
+  thermalExtractorBonusPercent?: number;
+  alchemyOutputMultiplier?: number;
+  effectiveOutputPerMinuteMultiplier?: number;
 };
 
 export type CalculatedEndpoint =
@@ -250,6 +256,12 @@ export type CalculationDebugLog = {
     inputsPerMachinePerMinute: Record<string, number>;
     outputsPerMachinePerMinute: Record<string, number>;
     differencesPerMachinePerMinute: Record<string, number>;
+    factorySpeedMultiplier?: number;
+    thermalHeightMultiplier?: number;
+    thermalExtractorHeight?: number;
+    thermalExtractorBonusPercent?: number;
+    alchemyOutputMultiplier?: number;
+    effectiveOutputPerMinuteMultiplier?: number;
   }>;
   solver?: {
     mode: string;

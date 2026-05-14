@@ -152,3 +152,19 @@ export function getFertilizerNutritionMultiplier(abilities: AbilitySettings): nu
   const addPercent = sumLevels(ABILITY_TABLES.fertilizerEfficiency.fertilizerNutritionPercentAdd, abilities.fertilizerEfficiency);
   return 1 + addPercent / 100;
 }
+
+export function getDistillerOutputMultiplier(abilities: AbilitySettings): number {
+  const addPercent = sumLevels(ABILITY_TABLES.alchemySkill.distillerOutputPercentAdd, abilities.alchemySkill);
+  return 1 + addPercent / 100;
+}
+
+export function getExtractorOutputMultiplier(abilities: AbilitySettings): number {
+  const addPercent = sumLevels(ABILITY_TABLES.alchemySkill.extractorOutputPercentAdd, abilities.alchemySkill);
+  return 1 + addPercent / 100;
+}
+
+export function getAlchemyOutputMultiplierForMachine(machineId: string, abilities: AbilitySettings): number {
+  if (machineId === 'alembic' || machineId === 'advanced_alembic') return getDistillerOutputMultiplier(abilities);
+  if (machineId === 'extractor' || machineId === 'thermal_extractor') return getExtractorOutputMultiplier(abilities);
+  return 1;
+}
