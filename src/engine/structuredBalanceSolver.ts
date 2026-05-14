@@ -36,8 +36,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 
 const EPS = 1e-9;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.15' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09150';
+const BALANCE_SOLVER_VERSION = '0.9.16' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09160';
 
 
 function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearModelDiagnostics): number {
@@ -85,7 +85,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09150';
+  mode: 'structured-balance-v09160';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   queueSafetyLimit?: number;
@@ -740,7 +740,7 @@ type CoProductReduction = {
 };
 
 type CoProductReconciliationTrace = {
-  mode: 'co-product-reconcile-v09150';
+  mode: 'co-product-reconcile-v09160';
   applied: boolean;
   iterations: number;
   reductions: CoProductReduction[];
@@ -788,7 +788,7 @@ function reconcileCoProductsAfterSpecialResources(
   if (!solution.finite) {
     return {
       solved: base,
-      trace: { mode: 'co-product-reconcile-v09150', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
+      trace: { mode: 'co-product-reconcile-v09160', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
     };
   }
 
@@ -858,7 +858,7 @@ function reconcileCoProductsAfterSpecialResources(
       fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
     },
     trace: {
-      mode: 'co-product-reconcile-v09150',
+      mode: 'co-product-reconcile-v09160',
       applied,
       iterations,
       reductions,
@@ -1726,8 +1726,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
         uses: byproductFuelUses,
       },
       specialResourceSolution: specialApplication.solution,
-      notesJa: ['v0.9.15 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
-      notesEn: ['Structured balance solver result for v0.9.15. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
+      notesJa: ['v0.9.16 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Structured balance solver result for v0.9.16. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
     },
   };
 }

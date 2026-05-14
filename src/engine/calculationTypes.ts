@@ -241,6 +241,16 @@ export type CalculationDebugLog = {
   flows: CalculatedFlow[];
   itemStats: ItemStat[];
   recipeStats: RecipeStat[];
+  effectiveRecipeRateAudit?: Array<{
+    recipeId: string;
+    machineId: string;
+    theoreticalMachines: number;
+    actualMachines: number;
+    runsPerMachinePerMinute: number;
+    inputsPerMachinePerMinute: Record<string, number>;
+    outputsPerMachinePerMinute: Record<string, number>;
+    differencesPerMachinePerMinute: Record<string, number>;
+  }>;
   solver?: {
     mode: string;
     version: string;

@@ -34,8 +34,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09150';
-const SOLVE_PLAN_VERSION = '0.9.15';
+const SOLVE_PLAN_MODE = 'solvePlan-v09160';
+const SOLVE_PLAN_VERSION = '0.9.16';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -95,7 +95,7 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09150',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09160',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
@@ -181,7 +181,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v09150' as const,
+    mode: 'structured-material-v09160' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -212,11 +212,11 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
     enabled: true as const,
     legacyCalled: true as const,
     purpose: 'debug-comparison-only' as const,
-    mode: 'legacy-alpha-vs-structured-v09150' as const,
+    mode: 'legacy-alpha-vs-structured-v09160' as const,
     comparison: structuredComparison,
     numericComparison: structuredComparison,
     statusComparison,
-    acceptedResultEngine: 'structured-material-v09150',
+    acceptedResultEngine: 'structured-material-v09160',
     legacyAlphaSummary: materialPlannerShadow.alphaResultSummary,
     structuredSummary,
     noteJa: 'legacy alphaはDEBUG比較専用です。通常計算結果はStructuredBalanceSolver + cycleDecision反映後のstructured resultです。',
@@ -236,14 +236,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09150',
-    solverEngine: 'structured-material-v09150',
+    resultEngine: 'structured-material-v09160',
+    solverEngine: 'structured-material-v09160',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09150',
-      solverEngine: 'structured-material-v09150',
+      resultEngine: 'structured-material-v09160',
+      solverEngine: 'structured-material-v09160',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -299,6 +299,37 @@ function debugItemNameJa(itemId: string): string {
 
 function debugRecipeNameJa(recipeId: string): string {
   return recipeById[recipeId]?.name.ja ?? recipeId;
+}
+
+
+function buildEffectiveRecipeRateAudit(result: CalculationResult): NonNullable<CalculationDebugLog['effectiveRecipeRateAudit']> {
+  const divideRates = (rates: Record<string, number>, divisor: number): Record<string, number> => {
+    if (!Number.isFinite(divisor) || Math.abs(divisor) <= EPS) return {};
+    const out: Record<string, number> = {};
+    for (const [itemId, value] of Object.entries(rates)) {
+      if (Number.isFinite(value)) out[itemId] = value / divisor;
+    }
+    return out;
+  };
+  return Object.values(result.recipeStats)
+    .sort((a, b) => a.recipeId.localeCompare(b.recipeId))
+    .map((stat) => {
+      const divisor = Math.abs(stat.theoreticalMachines) > EPS
+        ? stat.theoreticalMachines
+        : Math.abs(stat.actualMachines) > EPS
+          ? stat.actualMachines
+          : 0;
+      return {
+        recipeId: stat.recipeId,
+        machineId: stat.machineId,
+        theoreticalMachines: stat.theoreticalMachines,
+        actualMachines: stat.actualMachines,
+        runsPerMachinePerMinute: divisor > EPS ? stat.runsPerMinute / divisor : stat.runsPerMinute,
+        inputsPerMachinePerMinute: divideRates(stat.inputRates, divisor),
+        outputsPerMachinePerMinute: divideRates(stat.outputRates, divisor),
+        differencesPerMachinePerMinute: divideRates(stat.netRates, divisor),
+      };
+    });
 }
 
 function debugEndpointJa(endpoint: CalculatedFlow['from'] | CalculatedFlow['to']): string {
@@ -570,6 +601,7 @@ function buildDebugLogFromResult(input: CalculateInput, result: CalculationResul
     flows: result.flows,
     itemStats: Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId)),
     recipeStats: Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId)),
+    effectiveRecipeRateAudit: buildEffectiveRecipeRateAudit(result),
   };
 }
 

@@ -122,6 +122,7 @@ type VerificationExpectation = {
   expectedNoUnresolvedItems?: string[];
   expectedItemStatValues?: Record<string, Partial<Record<'requested' | 'consumed' | 'produced' | 'purchased' | 'initialPurchased' | 'reused' | 'surplus' | 'discarded' | 'targetRequested' | 'targetActual' | 'purchaseCostCopperPerMin' | 'initialCostCopper' | 'revenueCopperPerMin', number>>>;
   expectedRecipeRateValues?: Record<string, { runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
+  expectedEffectiveRecipeRateValues?: Record<string, { runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number> }>;
   expectedRecipeNetPositive?: Record<string, string[]>;
   expectedRecipeNetNonPositive?: Record<string, string[]>;
 };
@@ -142,6 +143,7 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     initialInvestment?: { requiredByRecipe?: Record<string, string[]>; purchasedItemIds?: string[] };
     itemStats?: Array<{ itemId?: string; requested?: number; consumed?: number; produced?: number; purchased?: number; initialPurchased?: number; reused?: number; surplus?: number; discarded?: number; targetRequested?: number; targetActual?: number; purchaseCostCopperPerMin?: number; initialCostCopper?: number; revenueCopperPerMin?: number }>;
     recipeStats?: Array<{ recipeId?: string; runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
+    effectiveRecipeRateAudit?: Array<{ recipeId?: string; runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number> }>;
     errorSummaries?: Array<{ code?: string }>;
     solver?: { resultEngine?: string; solverEngine?: string };
     resultEngine?: string;
@@ -289,6 +291,27 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
         const expectedRates = expectedRecipe[section];
         if (!expectedRates) continue;
         const actualRates = stat[section] ?? {};
+        for (const [itemId, expected] of Object.entries(expectedRates)) {
+          const actual = Number(actualRates[itemId] ?? 0);
+          if (!Number.isFinite(actual) || !closeTo(actual, Number(expected))) return false;
+        }
+      }
+    }
+  }
+
+  if (expectation.expectedEffectiveRecipeRateValues) {
+    const audits = new Map((debugLog?.effectiveRecipeRateAudit ?? []).map((entry) => [String(entry.recipeId), entry]));
+    for (const [recipeId, expectedRecipe] of Object.entries(expectation.expectedEffectiveRecipeRateValues)) {
+      const audit = audits.get(recipeId);
+      if (!audit) return false;
+      if (typeof expectedRecipe.runsPerMachinePerMinute === 'number') {
+        const actual = Number(audit.runsPerMachinePerMinute ?? 0);
+        if (!Number.isFinite(actual) || !closeTo(actual, expectedRecipe.runsPerMachinePerMinute)) return false;
+      }
+      for (const section of ['inputsPerMachinePerMinute', 'outputsPerMachinePerMinute', 'differencesPerMachinePerMinute'] as const) {
+        const expectedRates = expectedRecipe[section];
+        if (!expectedRates) continue;
+        const actualRates = audit[section] ?? {};
         for (const [itemId, expected] of Object.entries(expectedRates)) {
           const actual = Number(actualRates[itemId] ?? 0);
           if (!Number.isFinite(actual) || !closeTo(actual, Number(expected))) return false;
@@ -762,7 +785,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 38,
+      debugSchemaVersion: 39,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -931,7 +954,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 38,
+      debugSchemaVersion: 39,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1048,6 +1071,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     if (args.artifact) {
       zip.file(args.baseName + '__input.json', JSON.stringify(args.artifact.input, null, 2));
       zip.file(args.baseName + '__debug.json', JSON.stringify(args.artifact.enrichedDebugLog, null, 2));
+      zip.file(args.baseName + '__effective-recipe-rate-audit.json', JSON.stringify(args.artifact.enrichedDebugLog.effectiveRecipeRateAudit ?? [], null, 2));
       zip.file(args.baseName + '__graph-normal.svg', args.artifact.graphArtifacts.normal.svg);
       zip.file(args.baseName + '__graph-debug.svg', args.artifact.graphArtifacts.debug.svg);
       zip.file(args.baseName + '__graph-normal-model.json', JSON.stringify(args.artifact.graphArtifacts.normal.model, null, 2));
@@ -1327,6 +1351,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     zip.file(baseName + '__source.json', raw);
     zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
     zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
+    zip.file(baseName + '__effective-recipe-rate-audit.json', JSON.stringify(artifact.enrichedDebugLog.effectiveRecipeRateAudit ?? [], null, 2));
     zip.file(baseName + '__user-message-log.json', JSON.stringify({
       currentRunMessageLogs: messageLogs.currentRunMessageLogs,
       allMessageLogs: messageLogs.allMessageLogs,
@@ -1488,7 +1513,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 38,
+      debugSchemaVersion: 39,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
