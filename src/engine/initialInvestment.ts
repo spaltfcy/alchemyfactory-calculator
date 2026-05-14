@@ -23,9 +23,7 @@ function runRatePerMachine(recipe: Recipe, input: CalculateInput, productionSpee
 }
 
 function outputPerRun(recipe: Recipe, itemId: string): number {
-  const output = recipe.outputs.find((entry) => entry.itemId === itemId);
-  if (!output) return 0;
-  return output.amount * (output.probability ?? 1);
+  return recipe.outputs.reduce((sum, entry) => entry.itemId === itemId ? sum + entry.amount * (entry.probability ?? 1) : sum, 0);
 }
 
 function outputRatePerMachine(recipe: Recipe, itemId: string, input: CalculateInput, productionSpeedMultiplier: number): number {
@@ -56,8 +54,12 @@ function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMin
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
   const inputRates: Record<string, number> = {};
   const outputRates: Record<string, number> = {};
+  const netRates: Record<string, number> = {};
   for (const entry of recipe.inputs) if (isItemRecipeInput(entry)) inputRates[entry.itemId] = (inputRates[entry.itemId] ?? 0) + entry.amount * runsPerMinute;
   for (const entry of recipe.outputs) outputRates[entry.itemId] = (outputRates[entry.itemId] ?? 0) + entry.amount * (entry.probability ?? 1) * runsPerMinute;
+  for (const itemId of new Set([...Object.keys(inputRates), ...Object.keys(outputRates)])) {
+    netRates[itemId] = (outputRates[itemId] ?? 0) - (inputRates[itemId] ?? 0);
+  }
 
   const existing = group.recipeStats[recipe.id];
   if (!existing) {
@@ -69,6 +71,7 @@ function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMin
       runsPerMinute,
       inputRates,
       outputRates,
+      netRates,
       surplusOutputRates: {},
       discardedOutputRates: {},
       targetIds: [],
@@ -81,6 +84,7 @@ function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMin
   existing.runsPerMinute += runsPerMinute;
   for (const [itemId, rate] of Object.entries(inputRates)) existing.inputRates[itemId] = (existing.inputRates[itemId] ?? 0) + rate;
   for (const [itemId, rate] of Object.entries(outputRates)) existing.outputRates[itemId] = (existing.outputRates[itemId] ?? 0) + rate;
+  for (const [itemId, rate] of Object.entries(netRates)) existing.netRates[itemId] = (existing.netRates[itemId] ?? 0) + rate;
 }
 
 function addFlow(

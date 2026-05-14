@@ -36,8 +36,8 @@ import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './ne
 
 const EPS = 1e-9;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.14' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09140';
+const BALANCE_SOLVER_VERSION = '0.9.15' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09150';
 
 
 function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearModelDiagnostics): number {
@@ -85,7 +85,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09140';
+  mode: 'structured-balance-v09150';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   queueSafetyLimit?: number;
@@ -164,6 +164,7 @@ function createRecipeStat(recipe: Recipe, runsPerMinute: number, input: Calculat
     runsPerMinute,
     inputRates: {},
     outputRates: {},
+    netRates: {},
     surplusOutputRates: {},
     discardedOutputRates: {},
     targetIds: [],
@@ -193,10 +194,27 @@ function runRateForRecipe(recipe: Recipe, input: CalculateInput, productionSpeed
   return baseRunRate * productionSpeedMultiplier;
 }
 
+function inputPerRun(recipe: Recipe, itemId: string): number {
+  return recipe.inputs.reduce((sum, entry) => entry.kind !== 'paradoxableItem' && entry.itemId === itemId ? sum + entry.amount : sum, 0);
+}
+
 function outputPerRun(recipe: Recipe, itemId: string): number {
-  const output = recipe.outputs.find((entry) => entry.itemId === itemId);
-  if (!output) return 0;
-  return output.amount * (output.probability ?? 1);
+  return recipe.outputs.reduce((sum, entry) => entry.itemId === itemId ? sum + entry.amount * (entry.probability ?? 1) : sum, 0);
+}
+
+function rateBalancePerRun(recipe: Recipe, itemId: string): number {
+  return outputPerRun(recipe, itemId) - inputPerRun(recipe, itemId);
+}
+
+function positiveRatePerRun(recipe: Recipe, itemId: string): number {
+  return Math.max(0, rateBalancePerRun(recipe, itemId));
+}
+
+function recipeItemIds(recipe: Recipe): string[] {
+  const ids = new Set<string>();
+  for (const input of recipe.inputs) if (input.kind !== 'paradoxableItem') ids.add(input.itemId);
+  for (const output of recipe.outputs) ids.add(output.itemId);
+  return [...ids];
 }
 
 function isPipelineItem(itemId: string): boolean {
@@ -274,7 +292,8 @@ function fertilizerNutrientsPerRun(recipe: Recipe, input: CalculateInput): numbe
 }
 
 function addRunForDemand(runs: RunMap, recipe: Recipe, itemId: string, missingRate: number, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): void {
-  const perRun = outputPerRun(recipe, itemId);
+  const effectiveRecipe = getEffectiveRecipeForCalculation(recipe, input.settings);
+  const perRun = positiveRatePerRun(effectiveRecipe, itemId);
   if (perRun <= EPS) return;
   let neededRuns = missingRate / perRun;
   if (shouldRoundMachines(input.settings.machineRounding)) {
@@ -285,11 +304,12 @@ function addRunForDemand(runs: RunMap, recipe: Recipe, itemId: string, missingRa
   addToMap(runs, recipe.id, neededRuns);
 }
 
-function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): { runs: RunMap; targetRuns: Map<string, number>; targetRates: Map<string, number>; invalidTargets: string[] } {
+function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): { runs: RunMap; targetRuns: Map<string, number>; targetRates: Map<string, number>; invalidTargets: string[]; invalidNetOutputTargets: Array<{ itemId: string; recipeId: string }> } {
   const runs: RunMap = new Map();
   const targetRuns = new Map<string, number>();
   const targetRates = new Map<string, number>();
   const invalidTargets: string[] = [];
+  const invalidNetOutputTargets: Array<{ itemId: string; recipeId: string }> = [];
   const requiredRunsByRecipeAndOutput = new Map<string, Map<string, number>>();
 
   function addRequiredRun(recipeId: string, outputItemId: string, runsPerMinute: number): void {
@@ -310,15 +330,21 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
       targetRates.set(target.outputItemId, (targetRates.get(target.outputItemId) ?? 0) + targetValue);
       continue;
     }
+    const effectiveRecipe = getEffectiveRecipeForCalculation(recipe, input.settings);
     let runsPerMinute: number;
     let targetRate: number;
     if (target.mode === 'machines') {
       runsPerMinute = Math.max(0, targetValue) * runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
-      targetRate = outputPerRun(recipe, target.outputItemId) * runsPerMinute;
-    } else {
-      const perRun = outputPerRun(recipe, target.outputItemId);
+      const perRun = positiveRatePerRun(effectiveRecipe, target.outputItemId);
       if (perRun <= EPS) {
-        invalidTargets.push(target.outputItemId);
+        invalidNetOutputTargets.push({ itemId: target.outputItemId, recipeId: recipe.id });
+        continue;
+      }
+      targetRate = perRun * runsPerMinute;
+    } else {
+      const perRun = positiveRatePerRun(effectiveRecipe, target.outputItemId);
+      if (perRun <= EPS) {
+        invalidNetOutputTargets.push({ itemId: target.outputItemId, recipeId: recipe.id });
         continue;
       }
       runsPerMinute = targetValue / perRun;
@@ -327,7 +353,7 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
         const machines = machineRunRate > EPS ? safeCeil(runsPerMinute / machineRunRate) : 0;
         runsPerMinute = machines * machineRunRate;
       }
-      targetRate = outputPerRun(recipe, target.outputItemId) * runsPerMinute;
+      targetRate = positiveRatePerRun(effectiveRecipe, target.outputItemId) * runsPerMinute;
     }
     addRequiredRun(recipe.id, target.outputItemId, runsPerMinute);
     targetRates.set(target.outputItemId, (targetRates.get(target.outputItemId) ?? 0) + targetRate);
@@ -343,7 +369,7 @@ function initialRunsFromTargets(input: CalculateInput, productionSpeedMultiplier
     }
   }
 
-  return { runs, targetRuns, targetRates, invalidTargets };
+  return { runs, targetRuns, targetRates, invalidTargets, invalidNetOutputTargets };
 }
 function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultiplier: number): { produced: Map<string, number>; consumed: Map<string, number>; demandLots: DemandLot[]; heatRequiredPerMin: number; fertilizerNutrientsRequiredPerMin: number } {
   const produced = new Map<string, number>();
@@ -362,11 +388,10 @@ function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultipl
     const baseRecipe = recipeById[recipeId];
     if (!baseRecipe || runsPerMinute <= EPS) continue;
     const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
-    for (const output of recipe.outputs) {
-      addToMap(produced, output.itemId, output.amount * (output.probability ?? 1) * runsPerMinute);
-    }
-    for (const recipeInput of recipe.inputs) {
-      addDemand(recipe.id, recipeInput.itemId, recipeInput.amount * runsPerMinute, 'material');
+    for (const itemId of recipeItemIds(recipe)) {
+      const difference = rateBalancePerRun(recipe, itemId) * runsPerMinute;
+      if (difference > EPS) addToMap(produced, itemId, difference);
+      else if (difference < -EPS) addDemand(recipe.id, itemId, -difference, 'material');
     }
     const heatPerRun = fuelHeatPerRun(recipe, input, productionSpeedMultiplier);
     if (heatPerRun > EPS) heatRequiredPerMin += heatPerRun * runsPerMinute;
@@ -380,17 +405,18 @@ function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultipl
   return { produced, consumed, demandLots, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin };
 }
 
-function buildSupplyLots(runs: RunMap): Map<string, SupplyLot[]> {
+function buildSupplyLots(runs: RunMap, settings: AppSettings): Map<string, SupplyLot[]> {
   const map = new Map<string, SupplyLot[]>();
   for (const [recipeId, runsPerMinute] of runs.entries()) {
-    const recipe = recipeById[recipeId];
-    if (!recipe || runsPerMinute <= EPS) continue;
-    for (const output of recipe.outputs) {
-      const rate = output.amount * (output.probability ?? 1) * runsPerMinute;
+    const baseRecipe = recipeById[recipeId];
+    if (!baseRecipe || runsPerMinute <= EPS) continue;
+    const recipe = getEffectiveRecipeForCalculation(baseRecipe, settings);
+    for (const itemId of recipeItemIds(recipe)) {
+      const rate = positiveRatePerRun(recipe, itemId) * runsPerMinute;
       if (rate <= EPS) continue;
-      const lots = map.get(output.itemId) ?? [];
-      lots.push({ recipeId, itemId: output.itemId, rate, originalRate: rate });
-      map.set(output.itemId, lots);
+      const lots = map.get(itemId) ?? [];
+      lots.push({ recipeId, itemId, rate, originalRate: rate });
+      map.set(itemId, lots);
     }
   }
   return map;
@@ -416,14 +442,15 @@ function addRunForDemandWithTracking(
   if (delta > EPS) addRunToMap(trackedRuns, recipe.id, delta);
 }
 
-function addProjectedRecipeOutputs(supplyLotsByItem: Map<string, SupplyLot[]>, recipe: Recipe, runsDelta: number): void {
+function addProjectedRecipeOutputs(supplyLotsByItem: Map<string, SupplyLot[]>, recipe: Recipe, runsDelta: number, input: CalculateInput): void {
   if (!Number.isFinite(runsDelta) || runsDelta <= EPS) return;
-  for (const output of recipe.outputs) {
-    const rate = output.amount * (output.probability ?? 1) * runsDelta;
+  const effectiveRecipe = getEffectiveRecipeForCalculation(recipe, input.settings);
+  for (const itemId of recipeItemIds(effectiveRecipe)) {
+    const rate = positiveRatePerRun(effectiveRecipe, itemId) * runsDelta;
     if (rate <= EPS) continue;
-    const lots = supplyLotsByItem.get(output.itemId) ?? [];
-    lots.push({ recipeId: recipe.id, itemId: output.itemId, rate, originalRate: rate });
-    supplyLotsByItem.set(output.itemId, lots);
+    const lots = supplyLotsByItem.get(itemId) ?? [];
+    lots.push({ recipeId: recipe.id, itemId, rate, originalRate: rate });
+    supplyLotsByItem.set(itemId, lots);
   }
 }
 
@@ -440,7 +467,7 @@ function addRunForDemandWithProjection(
   const before = runs.get(recipe.id) ?? 0;
   addRunForDemand(runs, recipe, itemId, missingRate, input, productionSpeedMultiplier, conveyorItemsPerMinute);
   const delta = (runs.get(recipe.id) ?? 0) - before;
-  if (delta > EPS) addProjectedRecipeOutputs(supplyLotsByItem, recipe, delta);
+  if (delta > EPS) addProjectedRecipeOutputs(supplyLotsByItem, recipe, delta, input);
   return Math.max(0, delta);
 }
 
@@ -662,6 +689,7 @@ type SolveRunMapResult = {
   fertilizerNutrientsRequiredPerMin: number;
   alternateRecipeUses: AlternateRecipeUse[];
   selectedRecipeCycleBlocks: SelectedRecipeCycleBlock[];
+  invalidNetOutputTargets: Array<{ itemId: string; recipeId: string }>;
   fuelRuns: RunMap;
   fertilizerRuns: RunMap;
 };
@@ -712,7 +740,7 @@ type CoProductReduction = {
 };
 
 type CoProductReconciliationTrace = {
-  mode: 'co-product-reconcile-v09140';
+  mode: 'co-product-reconcile-v09150';
   applied: boolean;
   iterations: number;
   reductions: CoProductReduction[];
@@ -760,7 +788,7 @@ function reconcileCoProductsAfterSpecialResources(
   if (!solution.finite) {
     return {
       solved: base,
-      trace: { mode: 'co-product-reconcile-v09140', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
+      trace: { mode: 'co-product-reconcile-v09150', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
     };
   }
 
@@ -781,18 +809,19 @@ function reconcileCoProductsAfterSpecialResources(
       const baseRecipe = recipeById[recipeId];
       if (!baseRecipe) continue;
       const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
-      if (recipe.outputs.length < 2) continue;
+      const positiveOutputItemIds = recipeItemIds(recipe).filter((itemId) => positiveRatePerRun(recipe, itemId) > EPS);
+      if (positiveOutputItemIds.length < 2) continue;
       const minimumRuns = base.targetRuns.get(recipeId) ?? 0;
       const maxRemovableByTarget = Math.max(0, currentRuns - minimumRuns);
       if (maxRemovableByTarget <= EPS) continue;
 
       let removableRuns = Number.POSITIVE_INFINITY;
       const surplusBeforeByItemId: Record<string, number> = {};
-      for (const output of recipe.outputs) {
-        const perRun = output.amount * (output.probability ?? 1);
+      for (const itemId of positiveOutputItemIds) {
+        const perRun = positiveRatePerRun(recipe, itemId);
         if (perRun <= EPS) continue;
-        const itemSurplus = surplus.get(output.itemId) ?? 0;
-        surplusBeforeByItemId[output.itemId] = itemSurplus;
+        const itemSurplus = surplus.get(itemId) ?? 0;
+        surplusBeforeByItemId[itemId] = itemSurplus;
         if (itemSurplus <= 0.000001) {
           removableRuns = 0;
           break;
@@ -829,7 +858,7 @@ function reconcileCoProductsAfterSpecialResources(
       fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
     },
     trace: {
-      mode: 'co-product-reconcile-v09140',
+      mode: 'co-product-reconcile-v09150',
       applied,
       iterations,
       reductions,
@@ -840,12 +869,13 @@ function reconcileCoProductsAfterSpecialResources(
 function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics): SolveRunMapResult {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
-  const { runs, targetRuns, targetRates, invalidTargets } = initialRunsFromTargets(input, productionSpeedMultiplier, conveyorItemsPerMinute);
+  const { runs, targetRuns, targetRates, invalidTargets, invalidNetOutputTargets } = initialRunsFromTargets(input, productionSpeedMultiplier, conveyorItemsPerMinute);
   const sources: SourceBucket = new Map();
   const cycleInputs: CycleInputBucket = new Map();
   const fuelRuns: RunMap = new Map();
   const fertilizerRuns: RunMap = new Map();
   const unresolved = new Set<string>(invalidTargets);
+  if (invalidNetOutputTargets.length > 0) unresolved.add('__net_output_not_positive__');
   const cycleInputIds = cycleInputItemIds(diagnostics);
   const activeCycleRecipeIds = recipeIdsInActiveCycles(diagnostics);
   const alternateRecipeUses: AlternateRecipeUse[] = [];
@@ -860,9 +890,9 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
     fertilizerNutrientsRequiredPerMin = analysis.fertilizerNutrientsRequiredPerMin;
 
     const nextRuns: RunMap = new Map(runs);
-    const supplyLotsByItem = buildSupplyLots(runs);
-    const fuelSupplyLotsByItem = buildSupplyLots(fuelRuns);
-    const fertilizerSupplyLotsByItem = buildSupplyLots(fertilizerRuns);
+    const supplyLotsByItem = buildSupplyLots(runs, input.settings);
+    const fuelSupplyLotsByItem = buildSupplyLots(fuelRuns, input.settings);
+    const fertilizerSupplyLotsByItem = buildSupplyLots(fertilizerRuns, input.settings);
     const sourceLots = cloneSourceBucket(sources);
     const cycleInputLots = cloneCycleInputBucket(cycleInputs);
 
@@ -1022,18 +1052,18 @@ function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics)
     const cycleInputRates = [...cycleInputs.values()].map((lot) => lot.rate);
     if ([...nextRuns.values()].some(isNonFiniteOrHuge) || sourceRates.some(isNonFiniteOrHuge) || cycleInputRates.some(isNonFiniteOrHuge)) {
       unresolved.add('__non_finite_or_huge__');
-      return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
+      return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, invalidNetOutputTargets, fuelRuns, fertilizerRuns };
     }
 
     if (!changed || mapAlmostEqual(runs, nextRuns)) {
-      return { runs: nextRuns, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
+      return { runs: nextRuns, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: iteration + 1, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, invalidNetOutputTargets, fuelRuns, fertilizerRuns };
     }
     runs.clear();
     for (const [recipeId, rate] of nextRuns.entries()) runs.set(recipeId, rate);
   }
 
   unresolved.add('__solver_did_not_converge__');
-  return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: queueSafetyLimit, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, fuelRuns, fertilizerRuns };
+  return { runs, targetRuns, targetRates, sources, cycleInputs, unresolved, iterations: queueSafetyLimit, queueSafetyLimit, heatRequiredPerMin, fertilizerNutrientsRequiredPerMin, alternateRecipeUses, selectedRecipeCycleBlocks, invalidNetOutputTargets, fuelRuns, fertilizerRuns };
 }
 
 
@@ -1367,7 +1397,11 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
     for (const output of recipe.outputs) {
       const rate = output.amount * (output.probability ?? 1) * runsPerMinute;
       addToRecord(recipeStat.outputRates, output.itemId, rate);
-      stat(output.itemId).produced += rate;
+    }
+    for (const itemId of recipeItemIds(recipe)) {
+      const difference = rateBalancePerRun(recipe, itemId) * runsPerMinute;
+      addToRecord(recipeStat.netRates, itemId, difference);
+      if (difference > EPS) stat(itemId).produced += difference;
     }
   }
 
@@ -1402,7 +1436,7 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
 
   const analysis = analyzeRuns(solved.runs, input, productionSpeedMultiplier);
   const specialDemandLots = buildSpecialDemandLots(solved.runs, input, specialApplication.solution, productionSpeedMultiplier);
-  const supplyLotsByItem = buildSupplyLots(solved.runs);
+  const supplyLotsByItem = buildSupplyLots(solved.runs, input.settings);
 
   for (const [itemId, targetRate] of solved.targetRates.entries()) {
     const consumed = consumeRecipeLots(supplyLotsByItem.get(itemId), targetRate);
@@ -1543,6 +1577,17 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
       itemIds: invalidRootItemIds,
     });
   }
+  if (solved.unresolved.has('__net_output_not_positive__')) {
+    const itemIds = [...new Set(solved.invalidNetOutputTargets.map((target) => target.itemId))];
+    const recipeIds = [...new Set(solved.invalidNetOutputTargets.map((target) => target.recipeId))];
+    errorSummaries.push({
+      code: 'NET_OUTPUT_NOT_POSITIVE',
+      messageJa: '選択レシピは指定アイテムを差引で生産しません。入力と確率出力の差を確認してください。',
+      messageEn: 'The selected recipe does not produce the target item on balance. Check inputs and probabilistic outputs.',
+      itemIds,
+      recipeIds,
+    });
+  }
   if (solved.unresolved.has('__alternate_recipe_required_but_disabled__')) {
     errorSummaries.push({
       code: 'ALTERNATE_RECIPE_REQUIRED_BUT_DISABLED',
@@ -1681,8 +1726,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
         uses: byproductFuelUses,
       },
       specialResourceSolution: specialApplication.solution,
-      notesJa: ['v0.9.14 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
-      notesEn: ['Structured balance solver result for v0.9.14. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
+      notesJa: ['v0.9.15 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Structured balance solver result for v0.9.15. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
     },
   };
 }

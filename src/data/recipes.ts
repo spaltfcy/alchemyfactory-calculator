@@ -505,11 +505,13 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'coke',
-        amount: 1
+        amount: 1,
+        probability: 0.5
       },
       {
         itemId: 'charcoal',
-        amount: 2
+        amount: 2,
+        probability: 0.5
       }
     ]
   },
@@ -681,11 +683,13 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'copper_powder',
-        amount: 1
+        amount: 1,
+        probability: 0.5
       },
       {
         itemId: 'impure_copper_powder',
-        amount: 1
+        amount: 1,
+        probability: 0.5
       }
     ]
   },
@@ -1232,15 +1236,18 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'gold_dust',
-        amount: 1
+        amount: 1,
+        probability: 0.1
       },
       {
         itemId: 'impure_gold_dust',
-        amount: 1
+        amount: 1,
+        probability: 0.3
       },
       {
         itemId: 'crude_gold_dust',
-        amount: 1
+        amount: 1,
+        probability: 0.6
       }
     ]
   },
@@ -1520,15 +1527,18 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'lapis_lazuli',
-        amount: 1
+        amount: 1,
+        probability: 0.3333333333333333
       },
       {
         itemId: 'shattered_crystal',
-        amount: 1
+        amount: 1,
+        probability: 0.3333333333333333
       },
       {
         itemId: 'crude_shard',
-        amount: 1
+        amount: 1,
+        probability: 0.3333333333333333
       }
     ]
   },
@@ -1768,11 +1778,13 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'malachite',
-        amount: 1
+        amount: 1,
+        probability: 0.5
       },
       {
         itemId: 'crude_shard',
-        amount: 1
+        amount: 1,
+        probability: 0.5
       }
     ]
   },
@@ -1967,11 +1979,13 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'obsidian',
-        amount: 1
+        amount: 1,
+        probability: 0.5
       },
       {
         itemId: 'volcanic_ash',
-        amount: 1
+        amount: 1,
+        probability: 0.5
       }
     ]
   },
@@ -2581,11 +2595,13 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'salt',
-        amount: 1
+        amount: 1,
+        probability: 0.3333333333333333
       },
       {
         itemId: 'sand',
-        amount: 6
+        amount: 6,
+        probability: 0.6666666666666666
       }
     ]
   },
@@ -2844,11 +2860,13 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'silver_powder',
-        amount: 1
+        amount: 1,
+        probability: 0.2
       },
       {
         itemId: 'crude_silver_powder',
-        amount: 1
+        amount: 1,
+        probability: 0.8
       }
     ]
   },
@@ -3043,11 +3061,13 @@ export const RECIPES: Recipe[] = [
     outputs: [
       {
         itemId: 'steel_ingot',
-        amount: 1
+        amount: 1,
+        probability: 0.25
       },
       {
         itemId: 'iron_ingot',
-        amount: 1
+        amount: 1,
+        probability: 0.75
       }
     ]
   },
@@ -3565,6 +3585,37 @@ export const RECIPES: Recipe[] = [
   },
 ];
 
+
+export function recipeInputAmountPerRun(recipe: Recipe, itemId: string): number {
+  return recipe.inputs.reduce((sum, entry) => {
+    if (entry.kind === 'paradoxableItem') return sum;
+    return entry.itemId === itemId ? sum + entry.amount : sum;
+  }, 0);
+}
+
+export function recipeExpectedOutputAmountPerRun(recipe: Recipe, itemId: string): number {
+  return recipe.outputs.reduce((sum, entry) => {
+    return entry.itemId === itemId ? sum + entry.amount * (entry.probability ?? 1) : sum;
+  }, 0);
+}
+
+export function recipeRateBalancePerRun(recipe: Recipe, itemId: string): number {
+  return recipeExpectedOutputAmountPerRun(recipe, itemId) - recipeInputAmountPerRun(recipe, itemId);
+}
+
+export function recipeItemIds(recipe: Recipe): string[] {
+  const ids = new Set<string>();
+  for (const entry of recipe.inputs) {
+    if (entry.kind !== 'paradoxableItem') ids.add(entry.itemId);
+  }
+  for (const entry of recipe.outputs) ids.add(entry.itemId);
+  return [...ids];
+}
+
+export function recipeProducesItem(recipe: Recipe, itemId: string): boolean {
+  return recipeRateBalancePerRun(recipe, itemId) > 1e-9;
+}
+
 export const recipeById: Record<string, Recipe> = Object.fromEntries(
   RECIPES.map((recipe) => [recipe.id, recipe]),
 );
@@ -3575,10 +3626,11 @@ export const RECIPE_ORDER: Record<string, number> = Object.fromEntries(
 
 const recipesProducingByItemId: Record<string, Recipe[]> = {};
 for (const recipe of RECIPES) {
-  for (const output of recipe.outputs) {
-    const group = recipesProducingByItemId[output.itemId] ?? [];
+  for (const itemId of recipeItemIds(recipe)) {
+    if (!recipeProducesItem(recipe, itemId)) continue;
+    const group = recipesProducingByItemId[itemId] ?? [];
     group.push(recipe);
-    recipesProducingByItemId[output.itemId] = group;
+    recipesProducingByItemId[itemId] = group;
   }
 }
 

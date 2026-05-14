@@ -25,6 +25,7 @@ export type RecipeStat = {
   runsPerMinute: number;
   inputRates: Record<string, number>;
   outputRates: Record<string, number>;
+  netRates: Record<string, number>;
   surplusOutputRates: Record<string, number>;
   discardedOutputRates: Record<string, number>;
   targetIds: string[];

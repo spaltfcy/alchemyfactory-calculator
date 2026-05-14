@@ -142,6 +142,7 @@ function createRecipeStat(recipe: Recipe, runsPerMinute: number, input: Calculat
     runsPerMinute,
     inputRates: {},
     outputRates: {},
+    netRates: {},
     surplusOutputRates: {},
     discardedOutputRates: {},
     targetIds: [],

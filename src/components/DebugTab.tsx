@@ -120,6 +120,10 @@ type VerificationExpectation = {
   expectedNoDiscardWhileConsumedItems?: string[];
   expectedIssueCodes?: string[];
   expectedNoUnresolvedItems?: string[];
+  expectedItemStatValues?: Record<string, Partial<Record<'requested' | 'consumed' | 'produced' | 'purchased' | 'initialPurchased' | 'reused' | 'surplus' | 'discarded' | 'targetRequested' | 'targetActual' | 'purchaseCostCopperPerMin' | 'initialCostCopper' | 'revenueCopperPerMin', number>>>;
+  expectedRecipeRateValues?: Record<string, { runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
+  expectedRecipeNetPositive?: Record<string, string[]>;
+  expectedRecipeNetNonPositive?: Record<string, string[]>;
 };
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
@@ -136,7 +140,8 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
   const debugLog = artifact?.enrichedDebugLog as {
     cycleDecisions?: Array<{ classification?: string; requiredInitialItems?: Record<string, number> }>;
     initialInvestment?: { requiredByRecipe?: Record<string, string[]>; purchasedItemIds?: string[] };
-    itemStats?: Array<{ itemId?: string; purchased?: number; initialPurchased?: number; surplus?: number; discarded?: number; consumed?: number }>;
+    itemStats?: Array<{ itemId?: string; requested?: number; consumed?: number; produced?: number; purchased?: number; initialPurchased?: number; reused?: number; surplus?: number; discarded?: number; targetRequested?: number; targetActual?: number; purchaseCostCopperPerMin?: number; initialCostCopper?: number; revenueCopperPerMin?: number }>;
+    recipeStats?: Array<{ recipeId?: string; runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
     errorSummaries?: Array<{ code?: string }>;
     solver?: { resultEngine?: string; solverEngine?: string };
     resultEngine?: string;
@@ -146,6 +151,11 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     totals?: { purchaseCostCopperPerMin?: number };
     issues?: Array<{ code?: string }>;
   } | undefined;
+  const closeTo = (actual: number, expected: number): boolean => {
+    const abs = Math.abs(actual - expected);
+    const rel = abs / Math.max(1, Math.abs(expected));
+    return abs <= 0.0001 || rel <= 0.000001;
+  };
   if (expectation.expectedErrorCodes && expectation.expectedErrorCodes.length > 0) {
     const codes = new Set((debugLog?.errorSummaries ?? []).map((summary) => summary.code).filter(Boolean));
     for (const code of expectation.expectedErrorCodes) if (!codes.has(code)) return false;
@@ -254,6 +264,59 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
   if (expectation.expectedNoUnresolvedItems && expectation.expectedNoUnresolvedItems.length > 0) {
     const unresolved = new Set(debugLog?.structuredBalanceTrace?.unresolvedItemIds ?? []);
     for (const itemId of expectation.expectedNoUnresolvedItems) if (unresolved.has(itemId)) return false;
+  }
+  if (expectation.expectedItemStatValues) {
+    const stats = new Map((debugLog?.itemStats ?? []).map((stat) => [String(stat.itemId), stat]));
+    for (const [itemId, expectedFields] of Object.entries(expectation.expectedItemStatValues)) {
+      const stat = stats.get(itemId);
+      if (!stat) return false;
+      for (const [field, expected] of Object.entries(expectedFields)) {
+        const actual = Number((stat as Record<string, unknown>)[field] ?? 0);
+        if (!Number.isFinite(actual) || !closeTo(actual, Number(expected))) return false;
+      }
+    }
+  }
+  if (expectation.expectedRecipeRateValues) {
+    const stats = new Map((debugLog?.recipeStats ?? []).map((stat) => [String(stat.recipeId), stat]));
+    for (const [recipeId, expectedRecipe] of Object.entries(expectation.expectedRecipeRateValues)) {
+      const stat = stats.get(recipeId);
+      if (!stat) return false;
+      if (typeof expectedRecipe.runsPerMinute === 'number') {
+        const actual = Number(stat.runsPerMinute ?? 0);
+        if (!Number.isFinite(actual) || !closeTo(actual, expectedRecipe.runsPerMinute)) return false;
+      }
+      for (const section of ['inputRates', 'outputRates', 'netRates'] as const) {
+        const expectedRates = expectedRecipe[section];
+        if (!expectedRates) continue;
+        const actualRates = stat[section] ?? {};
+        for (const [itemId, expected] of Object.entries(expectedRates)) {
+          const actual = Number(actualRates[itemId] ?? 0);
+          if (!Number.isFinite(actual) || !closeTo(actual, Number(expected))) return false;
+        }
+      }
+    }
+  }
+  if (expectation.expectedRecipeNetPositive) {
+    const stats = new Map((debugLog?.recipeStats ?? []).map((stat) => [String(stat.recipeId), stat]));
+    for (const [recipeId, itemIds] of Object.entries(expectation.expectedRecipeNetPositive)) {
+      const stat = stats.get(recipeId);
+      if (!stat) return false;
+      for (const itemId of itemIds) {
+        const actual = Number((stat.netRates ?? {})[itemId] ?? 0);
+        if (!Number.isFinite(actual) || actual <= 0.000001) return false;
+      }
+    }
+  }
+  if (expectation.expectedRecipeNetNonPositive) {
+    const stats = new Map((debugLog?.recipeStats ?? []).map((stat) => [String(stat.recipeId), stat]));
+    for (const [recipeId, itemIds] of Object.entries(expectation.expectedRecipeNetNonPositive)) {
+      const stat = stats.get(recipeId);
+      if (!stat) return false;
+      for (const itemId of itemIds) {
+        const actual = Number((stat.netRates ?? {})[itemId] ?? 0);
+        if (Number.isFinite(actual) && actual > 0.000001) return false;
+      }
+    }
   }
   if (expectation.expectedGraphStartupLabel) {
     const graphArtifacts = artifact?.graphArtifacts as { normal?: { model?: { edges?: Array<{ rateLabel?: string; role?: string; itemName?: string }> } } } | undefined;
@@ -699,7 +762,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 37,
+      debugSchemaVersion: 38,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -868,7 +931,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 37,
+      debugSchemaVersion: 38,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1425,7 +1488,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 37,
+      debugSchemaVersion: 38,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
