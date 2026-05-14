@@ -263,6 +263,18 @@ export type CalculationDebugLog = {
     alchemyOutputMultiplier?: number;
     effectiveOutputPerMinuteMultiplier?: number;
   }>;
+  heatRequiredByRecipe?: Record<string, {
+    recipeId: string;
+    machineId: string;
+    theoreticalMachines: number;
+    actualMachines: number;
+    runsPerMinute: number;
+    runsPerMachinePerMinute: number;
+    heatPerSecond: number;
+    heatConsumptionMultiplier: number;
+    heatPerRun: number;
+    heatRequiredPerMin: number;
+  }>;
   solver?: {
     mode: string;
     version: string;

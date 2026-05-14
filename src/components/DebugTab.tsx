@@ -124,7 +124,8 @@ type VerificationExpectation = {
   expectedItemStatValues?: Record<string, Partial<Record<'requested' | 'consumed' | 'produced' | 'purchased' | 'initialPurchased' | 'reused' | 'surplus' | 'discarded' | 'targetRequested' | 'targetActual' | 'purchaseCostCopperPerMin' | 'initialCostCopper' | 'revenueCopperPerMin', number>>>;
   expectedTotalValues?: Partial<Record<'heatRequiredPerMin' | 'fuelRequiredPerMin' | 'fertilizerNutrientsRequiredPerMin' | 'fertilizerRequiredPerMin' | 'purchaseCostCopperPerMin' | 'profitCopperPerMin', number>>;
   expectedRecipeRateValues?: Record<string, { runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
-  expectedEffectiveRecipeRateValues?: Record<string, { runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
+  expectedEffectiveRecipeRateValues?: Record<string, { runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
+  expectedHeatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; runsPerMachinePerMinute?: number; heatPerSecond?: number; heatConsumptionMultiplier?: number; heatPerRun?: number; heatRequiredPerMin?: number }>;
   expectedRecipeNetPositive?: Record<string, string[]>;
   expectedRecipeNetNonPositive?: Record<string, string[]>;
   expectedItemNamesJa?: Record<string, string>;
@@ -147,6 +148,7 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     itemStats?: Array<{ itemId?: string; requested?: number; consumed?: number; produced?: number; purchased?: number; initialPurchased?: number; reused?: number; surplus?: number; discarded?: number; targetRequested?: number; targetActual?: number; purchaseCostCopperPerMin?: number; initialCostCopper?: number; revenueCopperPerMin?: number }>;
     recipeStats?: Array<{ recipeId?: string; runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
     effectiveRecipeRateAudit?: Array<{ recipeId?: string; runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
+    heatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; runsPerMachinePerMinute?: number; heatPerSecond?: number; heatConsumptionMultiplier?: number; heatPerRun?: number; heatRequiredPerMin?: number }>;
     errorSummaries?: Array<{ code?: string }>;
     solver?: { resultEngine?: string; solverEngine?: string };
     resultEngine?: string;
@@ -323,7 +325,7 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
         const actual = Number(audit.runsPerMachinePerMinute ?? 0);
         if (!Number.isFinite(actual) || !closeTo(actual, expectedRecipe.runsPerMachinePerMinute)) return false;
       }
-      for (const field of ['thermalHeightMultiplier', 'thermalExtractorHeight', 'thermalExtractorBonusPercent', 'alchemyOutputMultiplier', 'effectiveOutputPerMinuteMultiplier'] as const) {
+      for (const field of ['factorySpeedMultiplier', 'thermalHeightMultiplier', 'thermalExtractorHeight', 'thermalExtractorBonusPercent', 'alchemyOutputMultiplier', 'effectiveOutputPerMinuteMultiplier'] as const) {
         const expected = expectedRecipe[field];
         if (typeof expected !== 'number') continue;
         const actual = Number((audit as Record<string, unknown>)[field] ?? 0);
@@ -340,6 +342,21 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
       }
     }
   }
+  if (expectation.expectedHeatRequiredByRecipe) {
+    const heatByRecipe = debugLog?.heatRequiredByRecipe ?? {};
+    for (const [recipeId, expectedHeat] of Object.entries(expectation.expectedHeatRequiredByRecipe)) {
+      const actualHeat = heatByRecipe[recipeId];
+      if (!actualHeat) return false;
+      if (typeof expectedHeat.machineId === 'string' && actualHeat.machineId !== expectedHeat.machineId) return false;
+      for (const field of ['theoreticalMachines', 'actualMachines', 'runsPerMinute', 'runsPerMachinePerMinute', 'heatPerSecond', 'heatConsumptionMultiplier', 'heatPerRun', 'heatRequiredPerMin'] as const) {
+        const expected = expectedHeat[field];
+        if (typeof expected !== 'number') continue;
+        const actual = Number((actualHeat as Record<string, unknown>)[field] ?? 0);
+        if (!Number.isFinite(actual) || !closeTo(actual, expected)) return false;
+      }
+    }
+  }
+
   if (expectation.expectedRecipeNetPositive) {
     const stats = new Map((debugLog?.recipeStats ?? []).map((stat) => [String(stat.recipeId), stat]));
     for (const [recipeId, itemIds] of Object.entries(expectation.expectedRecipeNetPositive)) {
@@ -806,7 +823,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 40,
+      debugSchemaVersion: 41,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -975,7 +992,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 40,
+      debugSchemaVersion: 41,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1534,7 +1551,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 40,
+      debugSchemaVersion: 41,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

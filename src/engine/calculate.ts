@@ -18,6 +18,7 @@ import {
 } from './calculationTypes';
 import { itemById } from '../data/items';
 import { recipeById } from '../data/recipes';
+import { HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { chooseRecipeForItem } from './itemSourceResolver';
 import { buildPlanModel } from './planner/planModel';
 import { runMaterialPlannerShadow, solveStructuredMaterialPlan } from './planner/materialPlanner';
@@ -34,8 +35,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09170';
-const SOLVE_PLAN_VERSION = '0.9.17';
+const SOLVE_PLAN_MODE = 'solvePlan-v09180';
+const SOLVE_PLAN_VERSION = '0.9.18';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -95,7 +96,7 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09170',
+    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09180',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
@@ -181,7 +182,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v09170' as const,
+    mode: 'structured-material-v09180' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -212,11 +213,11 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
     enabled: true as const,
     legacyCalled: true as const,
     purpose: 'debug-comparison-only' as const,
-    mode: 'legacy-alpha-vs-structured-v09170' as const,
+    mode: 'legacy-alpha-vs-structured-v09180' as const,
     comparison: structuredComparison,
     numericComparison: structuredComparison,
     statusComparison,
-    acceptedResultEngine: 'structured-material-v09170',
+    acceptedResultEngine: 'structured-material-v09180',
     legacyAlphaSummary: materialPlannerShadow.alphaResultSummary,
     structuredSummary,
     noteJa: 'legacy alphaはDEBUG比較専用です。通常計算結果はStructuredBalanceSolver + cycleDecision反映後のstructured resultです。',
@@ -236,14 +237,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09170',
-    solverEngine: 'structured-material-v09170',
+    resultEngine: 'structured-material-v09180',
+    solverEngine: 'structured-material-v09180',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09170',
-      solverEngine: 'structured-material-v09170',
+      resultEngine: 'structured-material-v09180',
+      solverEngine: 'structured-material-v09180',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -328,8 +329,49 @@ function buildEffectiveRecipeRateAudit(result: CalculationResult): NonNullable<C
         inputsPerMachinePerMinute: divideRates(stat.inputRates, divisor),
         outputsPerMachinePerMinute: divideRates(stat.outputRates, divisor),
         differencesPerMachinePerMinute: divideRates(stat.netRates, divisor),
+        factorySpeedMultiplier: stat.factorySpeedMultiplier,
+        thermalHeightMultiplier: stat.thermalHeightMultiplier,
+        thermalExtractorHeight: stat.thermalExtractorHeight,
+        thermalExtractorBonusPercent: stat.thermalExtractorBonusPercent,
+        alchemyOutputMultiplier: stat.alchemyOutputMultiplier,
+        effectiveOutputPerMinuteMultiplier: stat.effectiveOutputPerMinuteMultiplier,
       };
     });
+}
+
+
+function buildHeatRequiredByRecipeAudit(result: CalculationResult): NonNullable<CalculationDebugLog['heatRequiredByRecipe']> {
+  const out: NonNullable<CalculationDebugLog['heatRequiredByRecipe']> = {};
+  const heatConsumptionMultiplier = Number(result.totals.heatConsumptionMultiplier ?? 1);
+  const finiteHeatMultiplier = Number.isFinite(heatConsumptionMultiplier) ? heatConsumptionMultiplier : 1;
+  const stats = Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId));
+  for (const stat of stats) {
+    const heatPerSecond = HEAT_CONSUMER_BY_MACHINE_ID[stat.machineId]?.heatPerSec ?? 0;
+    if (!Number.isFinite(heatPerSecond) || heatPerSecond <= EPS) continue;
+    const machineBasis = Math.abs(stat.theoreticalMachines) > EPS
+      ? stat.theoreticalMachines
+      : Math.abs(stat.actualMachines) > EPS
+        ? stat.actualMachines
+        : 0;
+    if (!Number.isFinite(machineBasis) || Math.abs(machineBasis) <= EPS) continue;
+    const heatRequiredPerMin = heatPerSecond * 60 * finiteHeatMultiplier * machineBasis;
+    if (!Number.isFinite(heatRequiredPerMin) || heatRequiredPerMin <= EPS) continue;
+    const runsPerMachinePerMinute = stat.runsPerMinute / machineBasis;
+    const heatPerRun = Math.abs(stat.runsPerMinute) > EPS ? heatRequiredPerMin / stat.runsPerMinute : 0;
+    out[stat.recipeId] = {
+      recipeId: stat.recipeId,
+      machineId: stat.machineId,
+      theoreticalMachines: stat.theoreticalMachines,
+      actualMachines: stat.actualMachines,
+      runsPerMinute: stat.runsPerMinute,
+      runsPerMachinePerMinute,
+      heatPerSecond,
+      heatConsumptionMultiplier: finiteHeatMultiplier,
+      heatPerRun,
+      heatRequiredPerMin,
+    };
+  }
+  return out;
 }
 
 function debugEndpointJa(endpoint: CalculatedFlow['from'] | CalculatedFlow['to']): string {
@@ -602,6 +644,7 @@ function buildDebugLogFromResult(input: CalculateInput, result: CalculationResul
     itemStats: Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId)),
     recipeStats: Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId)),
     effectiveRecipeRateAudit: buildEffectiveRecipeRateAudit(result),
+    heatRequiredByRecipe: buildHeatRequiredByRecipeAudit(result),
   };
 }
 
