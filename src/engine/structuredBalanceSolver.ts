@@ -156,8 +156,8 @@ function createItemStat(itemId: string): ItemStat {
 
 
 export function getThermalExtractorHeight(settings: AppSettings): number {
-  const raw = Number(settings.thermalExtractor?.height ?? 255);
-  if (!Number.isFinite(raw)) return 255;
+  const raw = Number(settings.thermalExtractor?.height ?? 256);
+  if (!Number.isFinite(raw)) return 256;
   return Math.floor(raw);
 }
 

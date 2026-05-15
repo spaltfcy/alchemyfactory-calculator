@@ -6,7 +6,7 @@ import { DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing, recipeById } from '../d
 import { getItemSortNameJa, validateItemSortNames } from '../data/itemSortNames';
 import { t, text } from '../i18n';
 
-export type TargetEditorProps = {
+export type ItemOutputSettingsProps = {
   lang: Lang;
   targets: ProductionTarget[];
   targetDefaults: TargetDefaults;
@@ -92,7 +92,7 @@ function targetRecipeNodeId(target: ProductionTarget): string {
   return 'recipe:' + recipeId;
 }
 
-export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusGraphNode, onUserMessage }: TargetEditorProps) {
+export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, onFocusGraphNode, onUserMessage }: ItemOutputSettingsProps) {
   const selectableItems = getSelectableOutputItems(lang);
   const [bulkValue, setBulkValue] = useState('');
   const [bulkMode, setBulkMode] = useState<BulkModeValue>('');
@@ -215,11 +215,11 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
   const focusLabel = lang === 'ja' ? 'ダブルクリックでグラフ上のノードへ移動' : 'Double-click to focus this node on the graph';
 
   return (
-    <section className="target-editor panel">
-      <div className="target-editor-header">
-        <h2>{t('targets', lang)}</h2>
-        <div className="target-editor-toolbar">
-          <label className="target-bulk-field target-bulk-value">
+    <section className="item-output-settings panel">
+      <div className="item-output-settings-header">
+        <h2>{t('itemOutputSettings', lang)}</h2>
+        <div className="item-output-toolbar">
+          <label className="item-output-bulk-field item-output-bulk-value">
             <span>{bulkOutputLabel}</span>
             <input
               type="number"
@@ -231,7 +231,7 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
               placeholder=""
             />
           </label>
-          <label className="target-bulk-field target-bulk-mode">
+          <label className="item-output-bulk-field item-output-bulk-mode">
             <span>{bulkModeLabel}</span>
             <select value={bulkMode} onChange={onBulkModeChange}>
               <option value="">{noBulkModeLabel}</option>
@@ -245,10 +245,10 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
         </div>
       </div>
 
-      <div className="target-list" aria-label={t('targets', lang)}>
+      <div className="item-output-list" aria-label={t('itemOutputSettings', lang)}>
         {draftTargets.map((target, index) => (
           <div
-            className={draggingTargetId === target.id ? 'target-card is-dragging' : 'target-card'}
+            className={draggingTargetId === target.id ? 'item-output-card is-dragging' : 'item-output-card'}
             key={target.id}
             draggable
             title={focusLabel}
@@ -258,9 +258,9 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
             onDrop={(event) => onDrop(event, target.id)}
             onDoubleClick={() => onFocusGraphNode?.(targetRecipeNodeId(target))}
           >
-            <label className="target-field target-item-field" onDoubleClick={(event) => event.stopPropagation()}>
-              <span className="target-item-heading">
-                <span className="target-enabled-checkbox" title={enabledLabel} aria-label={enabledLabel} onDoubleClick={(event) => event.stopPropagation()}>
+            <label className="item-output-field item-output-item-field" onDoubleClick={(event) => event.stopPropagation()}>
+              <span className="item-output-item-heading">
+                <span className="item-output-enabled-checkbox" title={enabledLabel} aria-label={enabledLabel} onDoubleClick={(event) => event.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={target.enabled ?? true}
@@ -283,7 +283,7 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
               </select>
             </label>
 
-            <label className="target-field" onDoubleClick={(event) => event.stopPropagation()}>
+            <label className="item-output-field" onDoubleClick={(event) => event.stopPropagation()}>
               <span>{outputLabel}</span>
               <input
                 type="number"
@@ -297,7 +297,7 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
               />
             </label>
 
-            <label className="target-field" onDoubleClick={(event) => event.stopPropagation()}>
+            <label className="item-output-field" onDoubleClick={(event) => event.stopPropagation()}>
               <span>{t('mode', lang)}</span>
               <select
                 value={target.mode}
@@ -310,10 +310,10 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
               </select>
             </label>
 
-            <div className="target-card-actions" aria-label={lang === 'ja' ? '削除と並び替え' : 'Remove and sort'} onDoubleClick={(event) => event.stopPropagation()}>
+            <div className="item-output-card-actions" aria-label={lang === 'ja' ? '削除と並び替え' : 'Remove and sort'} onDoubleClick={(event) => event.stopPropagation()}>
               <button
                 type="button"
-                className="target-remove danger"
+                className="item-output-remove danger"
                 aria-label={removeLabel}
                 title={removeLabel}
                 onClick={() => commitTargets(draftTargets.filter((x) => x.id !== target.id))}
@@ -322,7 +322,7 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
               </button>
               <button
                 type="button"
-                className="target-order-button"
+                className="item-output-order-button"
                 disabled={index === 0}
                 aria-label={moveUpLabel}
                 title={moveUpLabel}
@@ -332,7 +332,7 @@ export function TargetEditor({ lang, targets, targetDefaults, onChange, onFocusG
               </button>
               <button
                 type="button"
-                className="target-order-button"
+                className="item-output-order-button"
                 disabled={index === draftTargets.length - 1}
                 aria-label={moveDownLabel}
                 title={moveDownLabel}

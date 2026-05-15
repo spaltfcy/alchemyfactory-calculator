@@ -39,7 +39,7 @@ const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
 };
 
 const DEFAULT_THERMAL_EXTRACTOR_SETTINGS: AppSettings['thermalExtractor'] = {
-  height: 255,
+  height: 256,
 };
 
 function getThermalExtractorSettings(state: AppState): AppSettings['thermalExtractor'] {
@@ -47,11 +47,11 @@ function getThermalExtractorSettings(state: AppState): AppSettings['thermalExtra
 }
 
 function getFertilizerSettings(state: AppState): AppSettings['fertilizer'] {
-  return { ...DEFAULT_FERTILIZER_SETTINGS, ...(state.settings.fertilizer ?? {}) };
+  return { ...DEFAULT_FERTILIZER_SETTINGS, ...(state.settings.fertilizer ?? {}), enabled: true };
 }
 
 function getFuelSettings(state: AppState): AppSettings['fuel'] {
-  return { ...DEFAULT_FUEL_SETTINGS, ...(state.settings.fuel ?? {}) };
+  return { ...DEFAULT_FUEL_SETTINGS, ...(state.settings.fuel ?? {}), enabled: true };
 }
 
 function getMachinePreferenceSettings(state: AppState): MachinePreferences {
@@ -187,8 +187,9 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
       fuel: {
         ...getFuelSettings(current),
         ...(imported.settings?.fuel ?? {}),
+        enabled: true,
       },
-      fertilizer: { ...getFertilizerSettings(current), ...(imported.settings?.fertilizer ?? {}) },
+      fertilizer: { ...getFertilizerSettings(current), ...(imported.settings?.fertilizer ?? {}), enabled: true },
       targetDefaults: {
         ...current.settings.targetDefaults,
         ...(imported.settings?.targetDefaults ?? {}),
@@ -301,6 +302,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
         fuel: {
           ...fuel,
           ...patch,
+          enabled: true,
         },
       },
     });
@@ -314,6 +316,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
         fertilizer: {
           ...fertilizer,
           ...patch,
+          enabled: true,
         },
       },
     });
@@ -433,103 +436,30 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     location.reload();
   }
 
-  const recipeItems = ITEMS.filter((item) => getRecipesProducing(item.id).length > 1).sort(
-    (a, b) => recipeItemOrder(a.id) - recipeItemOrder(b.id) || text(a.name, lang).localeCompare(text(b.name, lang)),
-  );
+  function resetRecipePreferencesOnly() {
+    const message =
+      lang === 'ja' ? 'レシピ設定だけ初期化します。よろしいですか？' : 'Reset recipe settings only. Are you sure?';
+
+    if (!window.confirm(message)) return;
+
+    setState({
+      ...state,
+      recipePreferences: { ...DEFAULT_STATE.recipePreferences },
+    });
+  }
+
+  const isThermalExtractorSelected = machinePreferences.extractor === 'thermal_extractor';
+  const thermalExtractorHelp = isThermalExtractorSelected
+    ? (lang === 'ja'
+      ? `熱抽出機として計算します。生産ボーナス ${Math.round(thermalExtractorBonusPercent * 10) / 10}% / 倍率 ${Math.round(thermalExtractorHeightMultiplier * 1000) / 1000}x（256以上で上限）`
+      : `Uses the thermal extractor. Production bonus ${Math.round(thermalExtractorBonusPercent * 10) / 10}% / multiplier ${Math.round(thermalExtractorHeightMultiplier * 1000) / 1000}x (capped at 256+)`)
+    : (lang === 'ja'
+      ? '値は保存します。通常の抽出機では高さを計算・グラフに反映しません。'
+      : 'The value is saved. Normal extractors ignore height for calculation and graph rendering.');
 
   return (
     <div className="settings-layout">
-      <section className="panel settings-panel recipe-settings-panel">
-        <h2>{lang === 'ja' ? 'レシピ設定' : 'Recipe settings'}</h2>
-
-        <div className="settings-panel-body">
-          <div className="recipe-settings-list">
-            {recipeItems.map((item) => {
-              const recipes = getSortedRecipesProducing(item.id);
-              const value = state.recipePreferences[item.id] ?? getDefaultRecipeId(item.id);
-
-              return (
-                <label key={item.id} className="recipe-setting-row">
-                  <span className="recipe-setting-item-name">{text(item.name, lang)}</span>
-                  <select
-                    id={`recipe-preference-${item.id}`}
-                    name={`recipe-preference-${item.id}`}
-                    value={value}
-                    autoComplete="off"
-                    onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-                      setState({
-                        ...state,
-                        recipePreferences: {
-                          ...state.recipePreferences,
-                          [item.id]: event.target.value,
-                        },
-                      });
-                    }}
-                  >
-                    {recipes.map((recipe) => (
-                      <option key={recipe.id} value={recipe.id}>
-                        {recipeOptionLabel(item.id, recipe, lang, state)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <div className="settings-side">
-        <section className="panel settings-panel extractor-settings-panel">
-          <h2>{lang === 'ja' ? '抽出機設定' : 'Extractor settings'}</h2>
-          <div className="settings-panel-body">
-            <div className="settings-form-grid">
-              <label className="form-field">
-                <span>{lang === 'ja' ? '抽出系設備' : 'Extraction machine'}</span>
-                <select
-                  id="preferred-extractor-machine"
-                  name="preferred-extractor-machine"
-                  value={machinePreferences.extractor}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchMachinePreferences({ extractor: event.target.value as MachinePreferences['extractor'] })
-                  }
-                >
-                  <option value="extractor">{text(machineById.extractor.name, lang)}</option>
-                  <option value="thermal_extractor">{text(machineById.thermal_extractor.name, lang)}</option>
-                </select>
-                <small>
-                  {machinePreferences.extractor === 'thermal_extractor'
-                    ? (lang === 'ja' ? '熱抽出機として計算します。高さ倍率と熱要求が適用されます。' : 'Uses the thermal extractor. Height scaling and heat demand are applied.')
-                    : (lang === 'ja' ? '通常の抽出機として計算します。高さと熱要求は使いません。' : 'Uses the normal extractor. Height and heat demand are not applied.')}
-                </small>
-              </label>
-              <label className="form-field">
-                <span>{lang === 'ja' ? '熱抽出機 高さ' : 'Thermal extractor height'}</span>
-                <input
-                  id="thermal-extractor-height"
-                  name="thermal-extractor-height"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={thermalExtractor.height}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                    const value = Number(event.target.value);
-                    if (!Number.isFinite(value)) return;
-                    patchThermalExtractorSettings({ height: Math.max(0, Math.floor(value)) });
-                  }}
-                />
-                <small>
-                  {lang === 'ja'
-                    ? `熱抽出機選択時のみ適用。生産ボーナス ${Math.round(thermalExtractorBonusPercent * 10) / 10}% / 倍率 ${Math.round(thermalExtractorHeightMultiplier * 1000) / 1000}x（256以上で上限）`
-                    : `Applied only when the thermal extractor is selected. Production bonus ${Math.round(thermalExtractorBonusPercent * 10) / 10}% / multiplier ${Math.round(thermalExtractorHeightMultiplier * 1000) / 1000}x (capped at 256+)`}
-                </small>
-              </label>
-            </div>
-          </div>
-        </section>
-
+      <div className="settings-column settings-column-left">
         <section className="panel settings-panel calculation-settings-panel">
           <h2>{lang === 'ja' ? '計算・表示' : 'Calculation / Display'}</h2>
 
@@ -552,7 +482,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                 </select>
               </label>
               <label className="form-field">
-                <span>{lang === 'ja' ? 'レシピ追加 出力数' : 'Add recipe output'}</span>
+                <span>{lang === 'ja' ? '初期出力数' : 'Default output'}</span>
                 <input
                   id="target-default-value"
                   name="target-default-value"
@@ -573,7 +503,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                 />
               </label>
               <label className="form-field">
-                <span>{lang === 'ja' ? 'レシピ追加 指定方法' : 'Add recipe mode'}</span>
+                <span>{lang === 'ja' ? '初期指定方法' : 'Default method'}</span>
                 <select
                   id="target-default-mode"
                   name="target-default-mode"
@@ -590,52 +520,6 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                 >
                   <option value="rate">{t('rateShort', lang)}</option>
                   <option value="machines">{t('machinesShort', lang)}</option>
-                </select>
-              </label>
-              <label className="form-field">
-                <span>{lang === 'ja' ? '坩堝系設備' : 'Crucible machine'}</span>
-                <select
-                  id="preferred-crucible-machine"
-                  name="preferred-crucible-machine"
-                  value={machinePreferences.crucible}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchMachinePreferences({ crucible: event.target.value as MachinePreferences['crucible'] })
-                  }
-                >
-                  <option value="crucible">{text(machineById.crucible.name, lang)}</option>
-                  <option value="stackable_crucible">{text(machineById.stackable_crucible.name, lang)}</option>
-                </select>
-              </label>
-              <label className="form-field">
-                <span>{lang === 'ja' ? '研磨系設備' : 'Grinding machine'}</span>
-                <select
-                  id="preferred-grinder-machine"
-                  name="preferred-grinder-machine"
-                  value={machinePreferences.grinder}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchMachinePreferences({ grinder: event.target.value as MachinePreferences['grinder'] })
-                  }
-                >
-                  <option value="grinder">{text(machineById.grinder.name, lang)}</option>
-                  <option value="enhanced_grinder">{text(machineById.enhanced_grinder.name, lang)}</option>
-                </select>
-              </label>
-              <label className="form-field">
-                <span>{lang === 'ja' ? '消滅エッセンス素材' : 'Oblivion essence input'}</span>
-                <select
-                  id="paradox-oblivion-input-item"
-                  name="paradox-oblivion-input-item"
-                  value={paradox.oblivionInputItemId}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) => patchParadoxSettings({ oblivionInputItemId: event.target.value })}
-                >
-                  {paradoxableItemIds.map((itemId) => (
-                    <option key={itemId} value={itemId}>
-                      {recipeItemName(itemId, lang)} ({formatParadoxTime(itemById[itemId]?.paradoxTimeSec ?? 0)}s)
-                    </option>
-                  ))}
                 </select>
               </label>
               <label className="form-field">
@@ -709,38 +593,137 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                   <span>{lang === 'ja' ? '有効' : 'Enabled'}</span>
                 </span>
               </label>
+            </div>
+          </div>
+        </section>
 
+        <section className="panel settings-panel machine-settings-panel">
+          <h2>{lang === 'ja' ? 'マシン設定' : 'Machine settings'}</h2>
+          <div className="settings-panel-body">
+            <div className="settings-form-grid">
+              <label className="form-field">
+                <span>{lang === 'ja' ? '抽出系設備' : 'Extraction machine'}</span>
+                <select
+                  id="preferred-extractor-machine"
+                  name="preferred-extractor-machine"
+                  value={machinePreferences.extractor}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchMachinePreferences({ extractor: event.target.value as MachinePreferences['extractor'] })
+                  }
+                >
+                  <option value="extractor">{text(machineById.extractor.name, lang)}</option>
+                  <option value="thermal_extractor">{text(machineById.thermal_extractor.name, lang)}</option>
+                </select>
+                <small>
+                  {isThermalExtractorSelected
+                    ? (lang === 'ja' ? '熱抽出機として計算します。' : 'Uses the thermal extractor.')
+                    : (lang === 'ja' ? '通常の抽出機として計算します。' : 'Uses the normal extractor.')}
+                </small>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '熱抽出機 高さ' : 'Thermal extractor height'}</span>
+                <input
+                  id="thermal-extractor-height"
+                  name="thermal-extractor-height"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={thermalExtractor.height}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    patchThermalExtractorSettings({ height: Math.max(0, Math.floor(value)) });
+                  }}
+                />
+                <small>{thermalExtractorHelp}</small>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '坩堝系設備' : 'Crucible machine'}</span>
+                <select
+                  id="preferred-crucible-machine"
+                  name="preferred-crucible-machine"
+                  value={machinePreferences.crucible}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchMachinePreferences({ crucible: event.target.value as MachinePreferences['crucible'] })
+                  }
+                >
+                  <option value="crucible">{text(machineById.crucible.name, lang)}</option>
+                  <option value="stackable_crucible">{text(machineById.stackable_crucible.name, lang)}</option>
+                </select>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '研磨系設備' : 'Grinding machine'}</span>
+                <select
+                  id="preferred-grinder-machine"
+                  name="preferred-grinder-machine"
+                  value={machinePreferences.grinder}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchMachinePreferences({ grinder: event.target.value as MachinePreferences['grinder'] })
+                  }
+                >
+                  <option value="grinder">{text(machineById.grinder.name, lang)}</option>
+                  <option value="enhanced_grinder">{text(machineById.enhanced_grinder.name, lang)}</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </section>
 
+        <section className="panel settings-panel item-settings-panel">
+          <h2>{lang === 'ja' ? 'アイテム設定' : 'Item settings'}</h2>
+          <div className="settings-panel-body">
+            <div className="settings-form-grid">
+              <label className="form-field data-io-file-field">
+                <span>{lang === 'ja' ? '消滅エッセンス素材' : 'Oblivion essence input'}</span>
+                <select
+                  id="paradox-oblivion-input-item"
+                  name="paradox-oblivion-input-item"
+                  value={paradox.oblivionInputItemId}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) => patchParadoxSettings({ oblivionInputItemId: event.target.value })}
+                >
+                  {paradoxableItemIds.map((itemId) => (
+                    <option key={itemId} value={itemId}>
+                      {recipeItemName(itemId, lang)} ({formatParadoxTime(itemById[itemId]?.paradoxTimeSec ?? 0)}s)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel settings-panel reset-settings-panel">
+          <h2>{lang === 'ja' ? '初期化' : 'Reset'}</h2>
+          <div className="settings-panel-body">
+            <div className="settings-form-grid">
               <div className="form-field">
-                <span>{lang === 'ja' ? '初期化' : 'Reset'}</span>
+                <span>{lang === 'ja' ? '全設定初期化' : 'Reset all settings'}</span>
                 <button type="button" className="danger" onClick={resetAll}>
+                  {lang === 'ja' ? '実行' : 'Run'}
+                </button>
+              </div>
+              <div className="form-field">
+                <span>{lang === 'ja' ? 'レシピだけ初期化' : 'Reset recipe settings'}</span>
+                <button type="button" className="danger" onClick={resetRecipePreferencesOnly}>
                   {lang === 'ja' ? '実行' : 'Run'}
                 </button>
               </div>
             </div>
           </div>
         </section>
+      </div>
 
+      <div className="settings-column settings-column-right">
         <section className="panel settings-panel fuel-settings-panel">
           <h2>{lang === 'ja' ? '燃料' : 'Fuel'}</h2>
 
           <div className="settings-panel-body">
             <div className="settings-form-grid">
-              <label className="form-field">
-                <span>{lang === 'ja' ? '燃料計算' : 'Fuel calculation'}</span>
-                <span className="checkbox-control">
-                  <input
-                    id="fuel-enabled"
-                    name="fuel-enabled"
-                    type="checkbox"
-                    checked={fuel.enabled}
-                    autoComplete="off"
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchFuelSettings({ enabled: event.target.checked })}
-                  />
-                  <span>{lang === 'ja' ? '有効' : 'Enabled'}</span>
-                </span>
-              </label>
-
               <label className="form-field">
                 <span>{lang === 'ja' ? '使用燃料' : 'Fuel'}</span>
                 <select
@@ -789,10 +772,6 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                   <option value="steam">{lang === 'ja' ? '蒸気加熱' : 'Steam heating'}</option>
                 </select>
               </label>
-
-
-
-
             </div>
           </div>
         </section>
@@ -802,21 +781,6 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
 
           <div className="settings-panel-body">
             <div className="settings-form-grid">
-              <label className="form-field">
-                <span>{lang === 'ja' ? '肥料計算' : 'Fertilizer calculation'}</span>
-                <span className="checkbox-control">
-                  <input
-                    id="fertilizer-enabled"
-                    name="fertilizer-enabled"
-                    type="checkbox"
-                    checked={fertilizer.enabled}
-                    autoComplete="off"
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchFertilizerSettings({ enabled: event.target.checked })}
-                  />
-                  <span>{lang === 'ja' ? '有効' : 'Enabled'}</span>
-                </span>
-              </label>
-
               <label className="form-field">
                 <span>{lang === 'ja' ? '使用肥料' : 'Fertilizer'}</span>
                 <select

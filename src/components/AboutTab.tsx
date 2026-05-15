@@ -17,7 +17,7 @@ export function AboutTab({ lang }: { lang: Lang }) {
           <li>Items/min or machine-count targets</li>
           <li>Machine count and conveyor count estimation</li>
           <li>Byproduct reuse / discard settings</li>
-          <li>Fuel calculation</li>
+          <li>Fuel</li>
           <li>Graph and table views</li>
           <li>JSON save / load</li>
           <li>Auto-save for recipes and settings</li>
@@ -45,7 +45,7 @@ export function AboutTab({ lang }: { lang: Lang }) {
         <li>生産数/min または機械台数指定</li>
         <li>必要設備数とベルコン本数の計算</li>
         <li>副産物の再利用 / 破棄</li>
-        <li>燃料計算</li>
+        <li>燃料</li>
         <li>グラフ表示 / 表表示</li>
         <li>JSON保存 / 読込</li>
         <li>レシピと設定の自動保存</li>

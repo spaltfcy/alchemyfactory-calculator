@@ -764,10 +764,12 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
       fuel: {
         ...(current.settings.fuel ?? {}),
         ...(imported.settings?.fuel ?? {}),
+        enabled: true,
       },
       fertilizer: {
         ...(current.settings.fertilizer ?? {}),
         ...(imported.settings?.fertilizer ?? {}),
+        enabled: true,
       },
     },
     abilities: normalizeAbilitySettings({ ...current.abilities, ...(imported.abilities ?? {}) }),

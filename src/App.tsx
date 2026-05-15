@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
-import type { AbilityId, AppState } from './types';
+import type { AbilityId, AppSettings, AppState } from './types';
 import { filterPositiveTargets, sanitizeNegativeTargets } from './engine/targetValidation';
 import { calculationInvalidPersistentError, createUserMessage, messageText, type UserMessageInput, type UserMessageLog } from './utils/userMessages';
 import { DEFAULT_STATE } from './defaultState';
@@ -7,18 +7,19 @@ import { calculate } from './engine/calculate';
 import { loadState, saveState } from './utils/storage';
 import { t } from './i18n';
 import { ABILITY_IDS, ABILITY_MAX_LEVEL, normalizeAbilityLevel, normalizeAbilitySettings } from './data/abilityTables';
-import { TargetEditor } from './components/TargetEditor';
+import { ItemOutputSettings } from './components/ItemOutputSettings';
 import { GraphTab, type GraphFocusRequest } from './components/GraphTab';
 import { DebugGraphTab } from './components/DebugGraphTab';
 import { TableTab } from './components/TableTab';
 import { SettingsTab } from './components/SettingsTab';
+import { RecipeSettingsTab } from './components/RecipeSettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 
-const APP_VERSION = '0.9.24';
+const APP_VERSION = '0.9.25';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -119,10 +120,12 @@ function mergeInitialState(safeMode: boolean): AppState {
       fuel: {
         ...DEFAULT_STATE.settings.fuel,
         ...(saved.settings?.fuel ?? {}),
+        enabled: true,
       },
       fertilizer: {
         ...DEFAULT_STATE.settings.fertilizer,
         ...(saved.settings?.fertilizer ?? {}),
+        enabled: true,
       },
     },
     abilities: normalizeAbilitySettings(saved.abilities),
@@ -147,6 +150,28 @@ function resetStateForSafeMode(current: AppState): AppState {
   };
 }
 
+
+function settingsForCalculation(settings: AppSettings): AppSettings {
+  const machinePreferences = getMachinePreferences(settings);
+  const fuel = { ...DEFAULT_STATE.settings.fuel, ...(settings.fuel ?? {}), enabled: true };
+  const fertilizer = { ...DEFAULT_STATE.settings.fertilizer, ...(settings.fertilizer ?? {}), enabled: true };
+  const thermalExtractorHeight =
+    machinePreferences.extractor === 'thermal_extractor'
+      ? Math.max(0, Math.floor(Number(settings.thermalExtractor?.height ?? DEFAULT_STATE.settings.thermalExtractor.height)))
+      : DEFAULT_STATE.settings.thermalExtractor.height;
+
+  return {
+    ...settings,
+    machinePreferences,
+    fuel,
+    fertilizer,
+    thermalExtractor: {
+      ...(settings.thermalExtractor ?? DEFAULT_STATE.settings.thermalExtractor),
+      height: Number.isFinite(thermalExtractorHeight) ? thermalExtractorHeight : DEFAULT_STATE.settings.thermalExtractor.height,
+    },
+  };
+}
+
 export function App() {
   const initialRuntimeFlagsRef = useRef<RuntimeFlags | null>(null);
   if (initialRuntimeFlagsRef.current === null) initialRuntimeFlagsRef.current = parseRuntimeFlags();
@@ -158,6 +183,7 @@ export function App() {
   const calculationErrorMessageRef = useRef<{ id: string; key: string } | null>(null);
   const [focusGraphRequest, setFocusGraphRequest] = useState<GraphFocusRequest | undefined>(undefined);
   const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
+  const calculationSettingsCacheRef = useRef<{ key: string; settings: AppSettings } | null>(null);
   const lang = state.language;
   const showSidebar = state.activeTab === 'graph' || state.activeTab === 'graphDebug' || state.activeTab === 'table';
 
@@ -267,16 +293,25 @@ export function App() {
     [targetCalculationKey],
   );
 
+  const calculationSettings = useMemo(() => {
+    const nextSettings = settingsForCalculation(state.settings);
+    const key = JSON.stringify(nextSettings);
+    const cached = calculationSettingsCacheRef.current;
+    if (cached?.key === key) return cached.settings;
+    calculationSettingsCacheRef.current = { key, settings: nextSettings };
+    return nextSettings;
+  }, [state.settings]);
+
   const result = useMemo(
     () =>
       calculate({
         targets: calculationTargets,
-        settings: state.settings,
+        settings: calculationSettings,
         abilities: state.abilities,
         recipePreferences: state.recipePreferences,
         surplusPolicies: state.surplusPolicies,
       }),
-    [calculationTargets, state.settings, state.abilities, state.recipePreferences, state.surplusPolicies],
+    [calculationTargets, calculationSettings, state.abilities, state.recipePreferences, state.surplusPolicies],
   );
 
   const calculationErrorKey = useMemo(
@@ -363,8 +398,8 @@ export function App() {
     : '';
 
   const visibleTabs: AppState['activeTab'][] = runtimeFlags.debug
-    ? ['graph', 'table', 'settings', 'about', 'graphDebug', 'debug']
-    : ['graph', 'table', 'settings', 'about'];
+    ? ['graph', 'table', 'settings', 'recipeSettings', 'about', 'graphDebug', 'debug']
+    : ['graph', 'table', 'settings', 'recipeSettings', 'about'];
 
   function requestGraphSave() {
     window.dispatchEvent(new CustomEvent('alchemyfactory:save-live-graph'));
@@ -499,7 +534,7 @@ export function App() {
       <main className={showSidebar ? 'main-layout' : 'main-layout main-layout-full'}>
         {showSidebar && (
           <aside className="side-pane">
-            <TargetEditor
+            <ItemOutputSettings
               lang={lang}
               targets={state.targets}
               targetDefaults={state.settings.targetDefaults}
@@ -519,7 +554,7 @@ export function App() {
             <GraphTab
               lang={lang}
               result={result}
-              settings={state.settings}
+              settings={calculationSettings}
               completedGraphNodeIds={state.completedGraphNodeIds}
               onToggleCompleted={toggleCompleted}
               focusRequest={focusGraphRequest}
@@ -528,12 +563,13 @@ export function App() {
           </div>
           {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} onBeginJsonImport={clearActiveUserMessages} onUserMessage={addUserMessage} appVersion={APP_VERSION} gameVersion={GAME_VERSION} />}
+          {state.activeTab === 'recipeSettings' && <RecipeSettingsTab state={state} setState={setState} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
           {state.activeTab === 'graphDebug' && runtimeFlags.debug && (
             <DebugGraphTab
               lang={lang}
               result={result}
-              settings={state.settings}
+              settings={calculationSettings}
               completedGraphNodeIds={state.completedGraphNodeIds}
               onToggleCompleted={toggleCompleted}
               focusRequest={focusGraphRequest}

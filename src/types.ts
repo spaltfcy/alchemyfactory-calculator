@@ -138,14 +138,14 @@ export type ThermalExtractorSettings = {
 };
 
 export type FuelSettings = {
-  enabled: boolean; // 燃料計算を有効にするか
+  enabled: boolean; // 内部互換用。UIでは常に有効として扱う
   fuelItemId: string; // 使用する燃料アイテムID
   sourceMode: ExternalSourceMode; // 内部生産か外部生産か
   heatingMode: HeatingMode; // 直接加熱か蒸気加熱か
 };
 
 export type FertilizerSettings = {
-  enabled: boolean; // 肥料計算を有効にするか
+  enabled: boolean; // 内部互換用。UIでは常に有効として扱う
   fertilizerItemId: string; // 使用する肥料アイテムID
   sourceMode: ExternalSourceMode; // 内部生産か外部生産か
 };
@@ -189,7 +189,7 @@ export type AppSettings = {
 export type AppState = {
   version: number;
   language: Lang;
-  activeTab: 'graph' | 'table' | 'settings' | 'about' | 'graphDebug' | 'debug';
+  activeTab: 'graph' | 'table' | 'settings' | 'recipeSettings' | 'about' | 'graphDebug' | 'debug';
   targets: ProductionTarget[];
   settings: AppSettings;
   abilities: AbilitySettings;

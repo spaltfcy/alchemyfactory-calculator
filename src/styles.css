@@ -15,12 +15,12 @@
   --shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   --radius: 16px;
   --page-gap: 1rem;
-  --target-item-width: 12rem;
-  --target-value-width: 5.3rem;
-  --target-mode-width: 6.2rem;
-  --target-gap: 0.55rem;
-  --target-card-padding-x: 0.85rem;
-  --target-card-padding-y: 0.9rem;
+  --item-output-item-width: 12rem;
+  --item-output-value-width: 5.3rem;
+  --item-output-mode-width: 6.2rem;
+  --item-output-gap: 0.55rem;
+  --item-output-card-padding-x: 0.85rem;
+  --item-output-card-padding-y: 0.9rem;
   color-scheme: dark;
   font-family:
     Inter,
@@ -158,6 +158,7 @@ a {
 
 .content-pane-table,
 .content-pane-settings,
+.content-pane-recipeSettings,
 .content-pane-about {
   overflow: auto;
 }
@@ -271,14 +272,14 @@ a {
   margin-top: 0;
 }
 
-/* target editor */
-.target-editor {
+/* item output settings */
+.item-output-settings {
   width: max-content;
   max-width: none;
   padding: 1rem;
 }
 
-.target-editor-header {
+.item-output-settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -286,29 +287,29 @@ a {
   margin-bottom: 0.8rem;
 }
 
-.target-editor-header h2 {
+.item-output-settings-header h2 {
   margin: 0;
 }
 
-.target-list {
+.item-output-list {
   display: grid;
   gap: 0.8rem;
 }
 
-.target-card {
+.item-output-card {
   position: relative;
   display: grid;
-  grid-template-columns: var(--target-item-width) var(--target-value-width) var(--target-mode-width);
-  gap: var(--target-gap);
+  grid-template-columns: var(--item-output-item-width) var(--item-output-value-width) var(--item-output-mode-width);
+  gap: var(--item-output-gap);
   align-items: end;
   width: max-content;
-  padding: var(--target-card-padding-y) var(--target-card-padding-x) 0.85rem;
+  padding: var(--item-output-card-padding-y) var(--item-output-card-padding-x) 0.85rem;
   border: 1px solid var(--border);
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.025);
 }
 
-.target-field {
+.item-output-field {
   display: grid;
   gap: 0.28rem;
   min-width: 0;
@@ -316,18 +317,18 @@ a {
   font-weight: 700;
 }
 
-.target-field select,
-.target-field input {
+.item-output-field select,
+.item-output-field input {
   width: 100%;
   min-width: 0;
   color: var(--text);
   font-weight: 700;
 }
 
-.target-remove {
+.item-output-remove {
   position: absolute;
-  top: var(--target-card-padding-y);
-  right: var(--target-card-padding-x);
+  top: var(--item-output-card-padding-y);
+  right: var(--item-output-card-padding-x);
   display: inline-grid;
   place-items: center;
   width: 1.35rem;
@@ -494,6 +495,7 @@ a {
   align-items: start;
 }
 
+.settings-column,
 .settings-side {
   display: grid;
   grid-auto-rows: max-content;
@@ -518,9 +520,23 @@ a {
   min-width: 0;
 }
 
+.recipe-settings-tab {
+  display: grid;
+  gap: var(--page-gap);
+  align-content: start;
+}
+
+.recipe-settings-panel-full {
+  width: 100%;
+}
+
 .recipe-settings-list {
   display: grid;
   gap: 0.75rem;
+}
+
+.recipe-settings-list-two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .recipe-setting-row {
@@ -797,13 +813,13 @@ a {
     margin-bottom: var(--page-gap);
   }
 
-  .target-editor {
+  .item-output-settings {
     width: 100%;
   }
 
-  .target-card {
+  .item-output-card {
     width: 100%;
-    grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width);
+    grid-template-columns: minmax(0, 1fr) var(--item-output-value-width) var(--item-output-mode-width);
   }
 
   .content-pane-graph {
@@ -816,9 +832,11 @@ a {
   }
 
   .settings-layout,
+  .settings-column,
   .settings-side,
   .settings-form-grid,
   .settings-side .settings-form-grid,
+  .recipe-settings-list-two-column,
   .about-feature-list {
     grid-template-columns: 1fr;
   }
@@ -1143,28 +1161,28 @@ a {
 }
 
 
-/* v0.5.6: target editor scrolling, bulk output, and live graph PNG */
-.target-editor {
+/* v0.9.25: item output settings scrolling, bulk output, and live graph PNG */
+.item-output-settings {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   max-height: 100%;
   min-height: 0;
 }
 
-.target-editor-header {
+.item-output-settings-header {
   align-items: flex-start;
   flex-wrap: wrap;
 }
 
-.target-editor-toolbar {
+.item-output-toolbar {
   display: grid;
-  grid-template-columns: minmax(4.8rem, var(--target-value-width)) minmax(5.8rem, var(--target-mode-width)) max-content;
+  grid-template-columns: minmax(4.8rem, var(--item-output-value-width)) minmax(5.8rem, var(--item-output-mode-width)) max-content;
   gap: 0.45rem;
   align-items: end;
   justify-content: end;
 }
 
-.target-bulk-field {
+.item-output-bulk-field {
   display: grid;
   gap: 0.22rem;
   color: var(--muted);
@@ -1172,36 +1190,36 @@ a {
   font-size: 0.84rem;
 }
 
-.target-bulk-field input,
-.target-bulk-field select {
+.item-output-bulk-field input,
+.item-output-bulk-field select {
   width: 100%;
   min-width: 0;
   color: var(--text);
   font-weight: 800;
 }
 
-.target-list {
+.item-output-list {
   max-height: calc(100dvh - 13rem);
   min-height: 0;
   overflow: auto;
   padding-right: 0.25rem;
 }
 
-.target-card {
+.item-output-card {
   padding-top: 2.45rem;
 }
 
-.target-card-actions {
+.item-output-card-actions {
   position: absolute;
   top: 0.62rem;
-  right: var(--target-card-padding-x);
+  right: var(--item-output-card-padding-x);
   display: flex;
   gap: 0.25rem;
   align-items: center;
 }
 
-.target-order-button,
-.target-remove {
+.item-output-order-button,
+.item-output-remove {
   display: inline-grid;
   place-items: center;
   width: 1.35rem;
@@ -1216,13 +1234,13 @@ a {
   line-height: 1;
 }
 
-.target-card-actions .target-remove {
+.item-output-card-actions .item-output-remove {
   position: static;
   top: auto;
   right: auto;
 }
 
-.target-order-button:disabled {
+.item-output-order-button:disabled {
   cursor: default;
   opacity: 0.32;
   transform: none;
@@ -1242,13 +1260,13 @@ a {
 }
 
 @media (max-width: 56rem) {
-  .target-editor-toolbar {
+  .item-output-toolbar {
     width: 100%;
     grid-template-columns: 1fr 1fr auto;
     justify-content: stretch;
   }
 
-  .target-list {
+  .item-output-list {
     max-height: none;
     overflow: visible;
     padding-right: 0;
@@ -1362,13 +1380,13 @@ a {
   border-radius: 10px;
 }
 
-.target-card {
-  grid-template-columns: var(--target-item-width) var(--target-value-width) var(--target-mode-width) max-content;
+.item-output-card {
+  grid-template-columns: var(--item-output-item-width) var(--item-output-value-width) var(--item-output-mode-width) max-content;
   align-items: end;
-  padding-top: var(--target-card-padding-y);
+  padding-top: var(--item-output-card-padding-y);
 }
 
-.target-card-actions {
+.item-output-card-actions {
   position: static;
   display: flex;
   flex-direction: column;
@@ -1381,8 +1399,8 @@ a {
   min-height: auto;
 }
 
-.target-card-actions .target-order-button,
-.target-card-actions .target-remove {
+.item-output-card-actions .item-output-order-button,
+.item-output-card-actions .item-output-remove {
   display: inline-grid;
   place-items: center;
   width: 1.8rem;
@@ -1397,13 +1415,13 @@ a {
   line-height: 1;
 }
 
-.target-card-actions .target-remove {
+.item-output-card-actions .item-output-remove {
   position: static;
   top: auto;
   right: auto;
 }
 
-.target-card-actions .target-order-button:disabled {
+.item-output-card-actions .item-output-order-button:disabled {
   cursor: default;
   opacity: 0.32;
   transform: none;
@@ -1414,8 +1432,8 @@ a {
     justify-self: stretch;
   }
 
-  .target-card {
-    grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width) max-content;
+  .item-output-card {
+    grid-template-columns: minmax(0, 1fr) var(--item-output-value-width) var(--item-output-mode-width) max-content;
   }
 }
 
@@ -1628,46 +1646,46 @@ a {
 
 
 /* v0.9.0: target workflow and debug graph foundation */
-.target-card {
-  grid-template-columns: 1.1rem var(--target-item-width) var(--target-value-width) var(--target-mode-width);
+.item-output-card {
+  grid-template-columns: 1.1rem var(--item-output-item-width) var(--item-output-value-width) var(--item-output-mode-width);
   cursor: grab;
 }
 
-.target-card:active {
+.item-output-card:active {
   cursor: grabbing;
 }
 
-.target-card.is-dragging {
+.item-output-card.is-dragging {
   opacity: 0.58;
   outline: 1px dashed rgba(125, 196, 255, 0.72);
 }
 
-.target-enabled-checkbox {
+.item-output-enabled-checkbox {
   display: grid;
   align-self: start;
   justify-self: center;
   padding-top: 1.48rem;
 }
 
-.target-enabled-checkbox input {
+.item-output-enabled-checkbox input {
   width: 1.05rem;
   height: 1.05rem;
   accent-color: var(--accent);
 }
 
-.target-card-actions {
+.item-output-card-actions {
   position: absolute;
-  top: var(--target-card-padding-y);
-  right: var(--target-card-padding-x);
+  top: var(--item-output-card-padding-y);
+  right: var(--item-output-card-padding-x);
   display: flex;
   gap: 0.25rem;
 }
 
-.target-card-actions .target-remove {
+.item-output-card-actions .item-output-remove {
   position: static;
 }
 
-.target-order-button {
+.item-output-order-button {
   display: inline-grid;
   place-items: center;
   width: 1.35rem;
@@ -1753,8 +1771,8 @@ a {
 }
 
 @media (max-width: 56rem) {
-  .target-card {
-    grid-template-columns: 1.1rem minmax(0, 1fr) var(--target-value-width) var(--target-mode-width);
+  .item-output-card {
+    grid-template-columns: 1.1rem minmax(0, 1fr) var(--item-output-value-width) var(--item-output-mode-width);
   }
 
   .content-pane-graphDebug {
@@ -1775,14 +1793,14 @@ a {
  * belonged to the input row and caused ×/↑/↓ to overlap. In v0.9.1 the checkbox is
  * part of the item label and action buttons are normal layout content.
  */
-.target-card {
-  grid-template-columns: var(--target-item-width) var(--target-value-width) var(--target-mode-width) max-content;
+.item-output-card {
+  grid-template-columns: var(--item-output-item-width) var(--item-output-value-width) var(--item-output-mode-width) max-content;
   align-items: end;
-  column-gap: var(--target-gap);
-  padding-right: var(--target-card-padding-x);
+  column-gap: var(--item-output-gap);
+  padding-right: var(--item-output-card-padding-x);
 }
 
-.target-item-heading {
+.item-output-item-heading {
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
@@ -1790,7 +1808,7 @@ a {
   line-height: 1.2;
 }
 
-.target-enabled-checkbox {
+.item-output-enabled-checkbox {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1800,14 +1818,14 @@ a {
   line-height: 1;
 }
 
-.target-enabled-checkbox input {
+.item-output-enabled-checkbox input {
   width: 1rem;
   height: 1rem;
   margin: 0;
   accent-color: var(--accent);
 }
 
-.target-card-actions {
+.item-output-card-actions {
   position: static;
   display: flex;
   gap: 0.25rem;
@@ -1817,20 +1835,20 @@ a {
   padding-bottom: 0;
 }
 
-.target-card-actions .target-remove,
-.target-card .target-remove {
+.item-output-card-actions .item-output-remove,
+.item-output-card .item-output-remove {
   position: static;
 }
 
-.target-card-actions button,
-.target-card-actions .target-remove,
-.target-card-actions .target-order-button {
+.item-output-card-actions button,
+.item-output-card-actions .item-output-remove,
+.item-output-card-actions .item-output-order-button {
   flex: 0 0 auto;
 }
 
 @media (max-width: 56rem) {
-  .target-card {
-    grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width) max-content;
+  .item-output-card {
+    grid-template-columns: minmax(0, 1fr) var(--item-output-value-width) var(--item-output-mode-width) max-content;
   }
 }
 
@@ -1841,18 +1859,18 @@ a {
  * in the normal grid flow. These rules intentionally override earlier absolute
  * positioning added while prototyping the v0.9 target workflow.
  */
-.target-card {
-  grid-template-columns: var(--target-item-width) var(--target-value-width) var(--target-mode-width) max-content !important;
+.item-output-card {
+  grid-template-columns: var(--item-output-item-width) var(--item-output-value-width) var(--item-output-mode-width) max-content !important;
   align-items: end !important;
-  column-gap: var(--target-gap) !important;
-  padding-right: var(--target-card-padding-x) !important;
+  column-gap: var(--item-output-gap) !important;
+  padding-right: var(--item-output-card-padding-x) !important;
 }
 
-.target-item-field {
-  min-width: var(--target-item-width);
+.item-output-item-field {
+  min-width: var(--item-output-item-width);
 }
 
-.target-item-heading {
+.item-output-item-heading {
   display: inline-flex !important;
   align-items: center !important;
   gap: 0.42rem !important;
@@ -1861,7 +1879,7 @@ a {
   white-space: nowrap !important;
 }
 
-.target-enabled-checkbox {
+.item-output-enabled-checkbox {
   position: static !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -1873,14 +1891,14 @@ a {
   line-height: 1 !important;
 }
 
-.target-enabled-checkbox input {
+.item-output-enabled-checkbox input {
   width: 1rem !important;
   height: 1rem !important;
   margin: 0 !important;
   accent-color: var(--accent);
 }
 
-.target-card-actions {
+.item-output-card-actions {
   position: static !important;
   top: auto !important;
   right: auto !important;
@@ -1895,9 +1913,9 @@ a {
   margin: 0 !important;
 }
 
-.target-card-actions .target-remove,
-.target-card .target-remove,
-.target-card-actions .target-order-button {
+.item-output-card-actions .item-output-remove,
+.item-output-card .item-output-remove,
+.item-output-card-actions .item-output-order-button {
   position: static !important;
   top: auto !important;
   right: auto !important;
@@ -1913,16 +1931,16 @@ a {
   line-height: 1 !important;
 }
 
-.target-card-actions button:hover {
+.item-output-card-actions button:hover {
   transform: none;
 }
 
 @media (max-width: 56rem) {
-  .target-card {
-    grid-template-columns: minmax(0, 1fr) var(--target-value-width) var(--target-mode-width) max-content !important;
+  .item-output-card {
+    grid-template-columns: minmax(0, 1fr) var(--item-output-value-width) var(--item-output-mode-width) max-content !important;
   }
 
-  .target-item-field {
+  .item-output-item-field {
     min-width: 0;
   }
 }

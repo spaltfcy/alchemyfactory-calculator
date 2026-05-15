@@ -44,7 +44,7 @@ export const DEFAULT_STATE: AppState = {
       sourceMode: 'internal',
     },
     thermalExtractor: {
-      height: 255,
+      height: 256,
     },
   },
   abilities: DEFAULT_ABILITIES,
