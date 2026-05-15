@@ -257,10 +257,10 @@ export type CalculationDebugLog = {
     machineId: string;
     theoreticalMachines: number;
     actualMachines: number;
-    runsPerMachinePerMinute: number;
-    inputsPerMachinePerMinute: Record<string, number>;
-    outputsPerMachinePerMinute: Record<string, number>;
-    differencesPerMachinePerMinute: Record<string, number>;
+    machineExecutionsPerMinute: number;
+    machineInputRatesPerMinute: Record<string, number>;
+    machineOutputRatesPerMinute: Record<string, number>;
+    machineNetRatesPerMinute: Record<string, number>;
     factorySpeedMultiplier?: number;
     thermalHeightMultiplier?: number;
     thermalExtractorHeight?: number;
@@ -274,9 +274,9 @@ export type CalculationDebugLog = {
     theoreticalMachines: number;
     actualMachines: number;
     runsPerMinute: number;
-    runsPerMachinePerMinute: number;
+    machineExecutionsPerMinute: number;
     heatPerSecond: number;
-    heatPerMachinePerMinute: number;
+    machineHeatRequiredPerMinute: number;
     heatConsumptionMultiplier: number;
     baseHeatPerRun: number;
     effectiveHeatPerRun: number;

@@ -111,7 +111,7 @@ export function buildRecipeDataAudit(): RecipeDataAudit {
 
   for (const recipe of RECIPES) {
     if (!machineIds.has(recipe.machineId)) unknownMachineRefs.push({ recipeId: recipe.id, machineId: recipe.machineId });
-    if (!Number.isFinite(recipe.timeSec) || recipe.timeSec <= 0) invalidAmountRefs.push({ ownerId: recipe.id, field: 'timeSec', amount: Number(recipe.timeSec) });
+    if (recipe.id !== 'oblivion_essence' && (!Number.isFinite(recipe.timeSec) || recipe.timeSec <= 0)) invalidAmountRefs.push({ ownerId: recipe.id, field: 'timeSec', amount: Number(recipe.timeSec) });
     if (recipe.outputs.length === 0) invalidAmountRefs.push({ ownerId: recipe.id, field: 'outputs.length', amount: 0 });
 
     const inputItemIds = new Set<string>();

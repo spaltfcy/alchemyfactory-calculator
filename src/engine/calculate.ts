@@ -36,8 +36,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09230';
-const SOLVE_PLAN_VERSION = '0.9.23';
+const SOLVE_PLAN_MODE = 'solvePlan-v09240';
+const SOLVE_PLAN_VERSION = '0.9.24';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -97,7 +97,7 @@ function diagnosticComparisonFor(result: CalculationResult, solverDiagnostics: R
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-solver-diagnostics-v09230',
+    diagnosticsOrigin: 'solvePlan-debug-solver-diagnostics-v09240',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
@@ -188,7 +188,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   };
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v09230' as const,
+    mode: 'structured-material-v09240' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -200,15 +200,15 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const solverIdentity = {
     acceptedSolverCore: 'structured-balance' as const,
     acceptedPlannerCore: 'structured-material-plan' as const,
-    acceptedResultEngine: 'structured-material-v09230' as const,
+    acceptedResultEngine: 'structured-material-v09240' as const,
     solvePlanMode: SOLVE_PLAN_MODE,
     solvePlanVersion: SOLVE_PLAN_VERSION,
     diagnosticModelOnly: true as const,
     linearProgrammingSolved: false as const,
     retiredComparisonPathRemoved: true as const,
     retiredComparisonPathCalled: false as const,
-    noteJa: 'v0.9.23では、実計算はStructuredBalanceSolverとStructuredMaterialPlanの採用結果です。診断モデルは制約形式で状態を説明するためのもので、線形計画ソルバとして解いていません。',
-    noteEn: 'In v0.9.23, the accepted calculation result comes from StructuredBalanceSolver plus StructuredMaterialPlan. The diagnostic model explains constraints but is not solved as a linear-programming solver.',
+    noteJa: 'v0.9.24では、実計算はStructuredBalanceSolverとStructuredMaterialPlanの採用結果です。診断モデルは制約形式で状態を説明するためのもので、線形計画ソルバとして解いていません。',
+    noteEn: 'In v0.9.24, the accepted calculation result comes from StructuredBalanceSolver plus StructuredMaterialPlan. The diagnostic model explains constraints but is not solved as a linear-programming solver.',
   };
   const extendedDebugLog = {
     ...debugLog,
@@ -224,14 +224,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09230',
-    solverEngine: 'structured-material-v09230',
+    resultEngine: 'structured-material-v09240',
+    solverEngine: 'structured-material-v09240',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09230',
-      solverEngine: 'structured-material-v09230',
+      resultEngine: 'structured-material-v09240',
+      solverEngine: 'structured-material-v09240',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -314,10 +314,10 @@ function buildEffectiveRecipeRateAudit(result: CalculationResult): NonNullable<C
         machineId: stat.machineId,
         theoreticalMachines: stat.theoreticalMachines,
         actualMachines: stat.actualMachines,
-        runsPerMachinePerMinute: divisor > EPS ? stat.runsPerMinute / divisor : stat.runsPerMinute,
-        inputsPerMachinePerMinute: divideRates(stat.inputRates, divisor),
-        outputsPerMachinePerMinute: divideRates(stat.outputRates, divisor),
-        differencesPerMachinePerMinute: divideRates(stat.netRates, divisor),
+        machineExecutionsPerMinute: divisor > EPS ? stat.runsPerMinute / divisor : stat.runsPerMinute,
+        machineInputRatesPerMinute: divideRates(stat.inputRates, divisor),
+        machineOutputRatesPerMinute: divideRates(stat.outputRates, divisor),
+        machineNetRatesPerMinute: divideRates(stat.netRates, divisor),
         factorySpeedMultiplier: stat.factorySpeedMultiplier,
         thermalHeightMultiplier: stat.thermalHeightMultiplier,
         thermalExtractorHeight: stat.thermalExtractorHeight,
@@ -343,13 +343,13 @@ function buildHeatRequiredByRecipeAudit(result: CalculationResult): NonNullable<
         ? stat.actualMachines
         : 0;
     if (!Number.isFinite(machineBasis) || Math.abs(machineBasis) <= EPS) continue;
-    const heatPerMachinePerMinute = heatPerSecond * 60 * finiteHeatMultiplier;
-    const heatRequiredPerMin = heatPerMachinePerMinute * machineBasis;
+    const machineHeatRequiredPerMinute = heatPerSecond * 60 * finiteHeatMultiplier;
+    const heatRequiredPerMin = machineHeatRequiredPerMinute * machineBasis;
     if (!Number.isFinite(heatRequiredPerMin) || heatRequiredPerMin <= EPS) continue;
     const recipe = recipeById[stat.recipeId];
     const recipeTimeSec = Number(recipe?.timeSec ?? 0);
     const baseHeatPerRun = Number.isFinite(recipeTimeSec) && recipeTimeSec > EPS ? heatPerSecond * recipeTimeSec : 0;
-    const runsPerMachinePerMinute = stat.runsPerMinute / machineBasis;
+    const machineExecutionsPerMinute = stat.runsPerMinute / machineBasis;
     const effectiveHeatPerRun = Math.abs(stat.runsPerMinute) > EPS ? heatRequiredPerMin / stat.runsPerMinute : 0;
     out[stat.recipeId] = {
       recipeId: stat.recipeId,
@@ -357,9 +357,9 @@ function buildHeatRequiredByRecipeAudit(result: CalculationResult): NonNullable<
       theoreticalMachines: stat.theoreticalMachines,
       actualMachines: stat.actualMachines,
       runsPerMinute: stat.runsPerMinute,
-      runsPerMachinePerMinute,
+      machineExecutionsPerMinute,
       heatPerSecond,
-      heatPerMachinePerMinute,
+      machineHeatRequiredPerMinute,
       heatConsumptionMultiplier: finiteHeatMultiplier,
       baseHeatPerRun,
       effectiveHeatPerRun,

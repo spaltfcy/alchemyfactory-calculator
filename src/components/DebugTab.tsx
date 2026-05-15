@@ -133,9 +133,9 @@ type VerificationExpectation = {
   expectedItemStatValues?: Record<string, Partial<Record<'requested' | 'consumed' | 'produced' | 'purchased' | 'initialPurchased' | 'reused' | 'surplus' | 'discarded' | 'targetRequested' | 'targetActual' | 'purchaseCostCopperPerMin' | 'initialCostCopper' | 'revenueCopperPerMin', number>>>;
   expectedTotalValues?: Partial<Record<'heatRequiredPerMin' | 'fuelRequiredPerMin' | 'fertilizerNutrientsRequiredPerMin' | 'fertilizerRequiredPerMin' | 'purchaseCostCopperPerMin' | 'profitCopperPerMin', number>>;
   expectedRecipeRateValues?: Record<string, { runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
-  expectedEffectiveRecipeRateValues?: Record<string, { machineId?: string; runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
+  expectedEffectiveRecipeRateValues?: Record<string, { machineId?: string; machineExecutionsPerMinute?: number; machineInputRatesPerMinute?: Record<string, number>; machineOutputRatesPerMinute?: Record<string, number>; machineNetRatesPerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
   expectedAbsentHeatRequiredByRecipeIds?: string[];
-  expectedHeatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; runsPerMachinePerMinute?: number; heatPerSecond?: number; heatPerMachinePerMinute?: number; heatConsumptionMultiplier?: number; baseHeatPerRun?: number; effectiveHeatPerRun?: number; heatRequiredPerMin?: number }>;
+  expectedHeatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; machineExecutionsPerMinute?: number; heatPerSecond?: number; machineHeatRequiredPerMinute?: number; heatConsumptionMultiplier?: number; baseHeatPerRun?: number; effectiveHeatPerRun?: number; heatRequiredPerMin?: number }>;
   expectedRecipeNetPositive?: Record<string, string[]>;
   expectedRecipeNetNonPositive?: Record<string, string[]>;
   expectedItemNamesJa?: Record<string, string>;
@@ -167,8 +167,8 @@ function expectationMatchesArtifact(
     initialInvestment?: { requiredByRecipe?: Record<string, string[]>; purchasedItemIds?: string[] };
     itemStats?: Array<{ itemId?: string; requested?: number; consumed?: number; produced?: number; purchased?: number; initialPurchased?: number; reused?: number; surplus?: number; discarded?: number; targetRequested?: number; targetActual?: number; purchaseCostCopperPerMin?: number; initialCostCopper?: number; revenueCopperPerMin?: number }>;
     recipeStats?: Array<{ recipeId?: string; runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
-    effectiveRecipeRateAudit?: Array<{ recipeId?: string; machineId?: string; runsPerMachinePerMinute?: number; inputsPerMachinePerMinute?: Record<string, number>; outputsPerMachinePerMinute?: Record<string, number>; differencesPerMachinePerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
-    heatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; runsPerMachinePerMinute?: number; heatPerSecond?: number; heatPerMachinePerMinute?: number; heatConsumptionMultiplier?: number; baseHeatPerRun?: number; effectiveHeatPerRun?: number; heatRequiredPerMin?: number }>;
+    effectiveRecipeRateAudit?: Array<{ recipeId?: string; machineId?: string; machineExecutionsPerMinute?: number; machineInputRatesPerMinute?: Record<string, number>; machineOutputRatesPerMinute?: Record<string, number>; machineNetRatesPerMinute?: Record<string, number>; factorySpeedMultiplier?: number; thermalHeightMultiplier?: number; thermalExtractorHeight?: number; thermalExtractorBonusPercent?: number; alchemyOutputMultiplier?: number; effectiveOutputPerMinuteMultiplier?: number }>;
+    heatRequiredByRecipe?: Record<string, { machineId?: string; theoreticalMachines?: number; actualMachines?: number; runsPerMinute?: number; machineExecutionsPerMinute?: number; heatPerSecond?: number; machineHeatRequiredPerMinute?: number; heatConsumptionMultiplier?: number; baseHeatPerRun?: number; effectiveHeatPerRun?: number; heatRequiredPerMin?: number }>;
     errorSummaries?: Array<{ code?: string }>;
     solver?: { resultEngine?: string; solverEngine?: string };
     resultEngine?: string;
@@ -397,9 +397,9 @@ function expectationMatchesArtifact(
       const audit = audits.get(recipeId);
       if (!audit) return false;
       if (typeof expectedRecipe.machineId === 'string' && audit.machineId !== expectedRecipe.machineId) return false;
-      if (typeof expectedRecipe.runsPerMachinePerMinute === 'number') {
-        const actual = Number(audit.runsPerMachinePerMinute ?? 0);
-        if (!Number.isFinite(actual) || !closeTo(actual, expectedRecipe.runsPerMachinePerMinute)) return false;
+      if (typeof expectedRecipe.machineExecutionsPerMinute === 'number') {
+        const actual = Number(audit.machineExecutionsPerMinute ?? 0);
+        if (!Number.isFinite(actual) || !closeTo(actual, expectedRecipe.machineExecutionsPerMinute)) return false;
       }
       for (const field of ['factorySpeedMultiplier', 'thermalHeightMultiplier', 'thermalExtractorHeight', 'thermalExtractorBonusPercent', 'alchemyOutputMultiplier', 'effectiveOutputPerMinuteMultiplier'] as const) {
         const expected = expectedRecipe[field];
@@ -407,7 +407,7 @@ function expectationMatchesArtifact(
         const actual = Number((audit as Record<string, unknown>)[field] ?? 0);
         if (!Number.isFinite(actual) || !closeTo(actual, expected)) return false;
       }
-      for (const section of ['inputsPerMachinePerMinute', 'outputsPerMachinePerMinute', 'differencesPerMachinePerMinute'] as const) {
+      for (const section of ['machineInputRatesPerMinute', 'machineOutputRatesPerMinute', 'machineNetRatesPerMinute'] as const) {
         const expectedRates = expectedRecipe[section];
         if (!expectedRates) continue;
         const actualRates = audit[section] ?? {};
@@ -430,7 +430,7 @@ function expectationMatchesArtifact(
       const actualHeat = heatByRecipe[recipeId];
       if (!actualHeat) return false;
       if (typeof expectedHeat.machineId === 'string' && actualHeat.machineId !== expectedHeat.machineId) return false;
-      for (const field of ['theoreticalMachines', 'actualMachines', 'runsPerMinute', 'runsPerMachinePerMinute', 'heatPerSecond', 'heatPerMachinePerMinute', 'heatConsumptionMultiplier', 'baseHeatPerRun', 'effectiveHeatPerRun', 'heatRequiredPerMin'] as const) {
+      for (const field of ['theoreticalMachines', 'actualMachines', 'runsPerMinute', 'machineExecutionsPerMinute', 'heatPerSecond', 'machineHeatRequiredPerMinute', 'heatConsumptionMultiplier', 'baseHeatPerRun', 'effectiveHeatPerRun', 'heatRequiredPerMin'] as const) {
         const expected = expectedHeat[field];
         if (typeof expected !== 'number') continue;
         const actual = Number((actualHeat as Record<string, unknown>)[field] ?? 0);
@@ -941,7 +941,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 46,
+      debugSchemaVersion: 47,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -976,8 +976,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。旧比較solverはv0.9.23で削除済みです。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. The retired comparison solver was removed in v0.9.23.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。旧比較solverはv0.9.24で削除済みです。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. The retired comparison solver was removed in v0.9.24.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -1110,7 +1110,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 46,
+      debugSchemaVersion: 47,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1670,7 +1670,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 46,
+      debugSchemaVersion: 47,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
