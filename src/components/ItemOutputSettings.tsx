@@ -212,7 +212,6 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
   const moveDownLabel = lang === 'ja' ? '下へ移動' : 'Move down';
   const removeLabel = lang === 'ja' ? '削除' : 'Remove';
   const enabledLabel = lang === 'ja' ? 'このレシピを使う' : 'Use this recipe';
-  const focusLabel = lang === 'ja' ? 'ダブルクリックでグラフ上のノードへ移動' : 'Double-click to focus this node on the graph';
 
   return (
     <section className="item-output-settings panel">
@@ -251,7 +250,6 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
             className={draggingTargetId === target.id ? 'item-output-card is-dragging' : 'item-output-card'}
             key={target.id}
             draggable
-            title={focusLabel}
             onDragStart={(event) => onDragStart(event, target.id)}
             onDragEnd={() => setDraggingTargetId(null)}
             onDragOver={onDragOver}
@@ -260,7 +258,7 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
           >
             <label className="item-output-field item-output-item-field" onDoubleClick={(event) => event.stopPropagation()}>
               <span className="item-output-item-heading">
-                <span className="item-output-enabled-checkbox" title={enabledLabel} aria-label={enabledLabel} onDoubleClick={(event) => event.stopPropagation()}>
+                <span className="item-output-enabled-checkbox" aria-label={enabledLabel} onDoubleClick={(event) => event.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={target.enabled ?? true}
@@ -315,7 +313,6 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
                 type="button"
                 className="item-output-remove danger"
                 aria-label={removeLabel}
-                title={removeLabel}
                 onClick={() => commitTargets(draftTargets.filter((x) => x.id !== target.id))}
               >
                 ×
@@ -325,7 +322,6 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
                 className="item-output-order-button"
                 disabled={index === 0}
                 aria-label={moveUpLabel}
-                title={moveUpLabel}
                 onClick={() => reorderTarget(index, -1)}
               >
                 ↑
@@ -335,7 +331,6 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
                 className="item-output-order-button"
                 disabled={index === draftTargets.length - 1}
                 aria-label={moveDownLabel}
-                title={moveDownLabel}
                 onClick={() => reorderTarget(index, 1)}
               >
                 ↓

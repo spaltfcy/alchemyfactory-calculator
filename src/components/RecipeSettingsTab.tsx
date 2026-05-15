@@ -13,63 +13,31 @@ export type RecipeSettingsTabProps = {
 };
 
 const RECIPE_SETTINGS_ITEM_ORDER = [
-  'large_wooden_gear',
-  'mortar',
-  'linen_rope',
-  'small_wooden_gear',
-  'iron_nails',
-  'linen',
-  'bandage',
-  'wooden_pulley',
-  'brick',
-  'glass',
-  'soap',
-  'steel_gear',
-  'salt',
-  'copper_bearing',
-  'bronze_rivet',
-  'black_powder',
-  'perfumed_soap',
-  'moonlit_soap',
-  'healing_potion',
-  'vitality_potion',
-  'transformation_potion',
-  'growth_potion',
-  'blast_potion',
-  'panacea_potion',
-  'ruby',
-  'sapphire',
-  'turquoise',
-  'pocket_watch',
-  'malachite',
-  'clockwork_bird',
-  'diamond',
-  'topaz',
-  'obsidian',
-  'silver_amulet',
-  'lapis_lazuli',
-  'crown',
-  'jupiter',
-  'saturn',
-  'mars',
-  'venus',
-  'luna',
-  'sol',
+  'plank',
+  'stone',
+  'charcoal',
+  'coal',
   'coke',
-  'emerald',
-  'adamant',
-  'iron_sand',
-  'shattered_crystal',
   'sand',
+  'salt',
+  'iron_sand',
+  'copper_ingot',
   'copper_powder',
+  'iron_ingot',
+  'silver_ingot',
+  'silver_powder',
+  'gold_ingot',
   'gold_dust',
   'impure_gold_dust',
-  'plank',
-  'iron_ingot',
-  'volcanic_ash',
   'pure_gold_dust',
+  'volcanic_ash',
   'crude_shard',
-  'silver_powder',
+  'shattered_crystal',
+  'ruby',
+  'sapphire',
+  'emerald',
+  'adamant',
+  'obsidian',
   'steam',
 ];
 
@@ -83,11 +51,6 @@ function recipeOrder(recipe: Recipe): number {
 
 function getSortedRecipesProducing(itemId: string): Recipe[] {
   return [...getRecipesProducing(itemId)].sort((a, b) => recipeOrder(a) - recipeOrder(b) || a.id.localeCompare(b.id));
-}
-
-function recipeItemOrder(itemId: string): number {
-  const recipes = getSortedRecipesProducing(itemId);
-  return recipes.length ? recipeOrder(recipes[0]) : 999999;
 }
 
 function recipeItemName(itemId: string, lang: Lang): string {
@@ -153,20 +116,33 @@ function recipeOptionLabel(recipe: Recipe, lang: Lang, state: AppState): string 
   return `${inputNames} → ${machineName} → ${outputNames}${detail}`;
 }
 
-function recipeSettingsItemOrder(itemId: string, lang: Lang): number {
-  if (itemId === 'steam') return 99999999;
-  const explicitIndex = RECIPE_SETTINGS_ITEM_ORDER.indexOf(itemId);
-  if (explicitIndex >= 0) return explicitIndex;
-  return 1000000 + recipeItemOrder(itemId);
-}
-
 function buildRecipeSettingsItems(lang: Lang): typeof ITEMS {
   const multiRecipeItems = ITEMS.filter((item) => getRecipesProducing(item.id).length > 1);
-  return [...multiRecipeItems].sort((a, b) => {
-    const order = recipeSettingsItemOrder(a.id, lang) - recipeSettingsItemOrder(b.id, lang);
-    if (order !== 0) return order;
-    return text(a.name, lang).localeCompare(text(b.name, lang));
-  });
+  const multiRecipeItemsById = new Map(multiRecipeItems.map((item) => [item.id, item]));
+  const seen = new Set<string>();
+  const orderedIds: string[] = [];
+
+  function append(itemId: string): void {
+    if (seen.has(itemId)) return;
+    const item = multiRecipeItemsById.get(itemId);
+    if (!item) return;
+    seen.add(itemId);
+    orderedIds.push(itemId);
+  }
+
+  for (const itemId of RECIPE_SETTINGS_ITEM_ORDER) {
+    if (itemId !== 'steam') append(itemId);
+  }
+
+  for (const item of multiRecipeItems) {
+    if (item.id !== 'steam') append(item.id);
+  }
+
+  append('steam');
+
+  return orderedIds
+    .map((itemId) => multiRecipeItemsById.get(itemId))
+    .filter((item): item is (typeof ITEMS)[number] => Boolean(item));
 }
 
 export function RecipeSettingsTab({ state, setState }: RecipeSettingsTabProps) {
