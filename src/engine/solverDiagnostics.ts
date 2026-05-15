@@ -12,14 +12,9 @@ import {
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
 import { getEffectiveRecipeForCalculation, getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/effectiveRecipes';
-import { calculateAlphaBalance, type AlphaBalanceSolveResult } from './alphaBalanceSolver';
 import type {
   CalculateInput,
-  CalculationDebugResult,
-  CalculationResult,
 } from './calculationTypes';
-
-export type SolverEngineId = 'balance-v0811';
 
 export type SelectedRecipeCycleDiagnostic = {
   id: string;
@@ -39,7 +34,7 @@ export type DependencyGraphDiagnostic = {
   cyclicComponentCount: number;
 };
 
-export type LinearModelVariableKind =
+export type DiagnosticModelVariableKind =
   | 'recipeRun'
   | 'itemSource'
   | 'cycleInput'
@@ -49,9 +44,9 @@ export type LinearModelVariableKind =
   | 'fuelDemand'
   | 'fertilizerDemand';
 
-export type LinearModelVariable = {
+export type DiagnosticModelVariable = {
   id: string;
-  kind: LinearModelVariableKind;
+  kind: DiagnosticModelVariableKind;
   itemId?: string;
   recipeId?: string;
   sourceMode?: 'buy' | 'external' | 'cycleInput' | 'internalProduction';
@@ -60,32 +55,32 @@ export type LinearModelVariable = {
   noteEn: string;
 };
 
-export type LinearModelConstraintKind =
+export type DiagnosticModelConstraintKind =
   | 'targetOutput'
   | 'itemBalance'
   | 'liquidSurplusZeroPreferred'
   | 'fuelHeatDemand'
   | 'fertilizerNutrientDemand';
 
-export type LinearModelConstraintTerm = {
+export type DiagnosticModelConstraintTerm = {
   variableId: string;
   coefficient: number;
 };
 
-export type LinearModelConstraint = {
+export type DiagnosticModelConstraint = {
   id: string;
-  kind: LinearModelConstraintKind;
+  kind: DiagnosticModelConstraintKind;
   relation: '=' | '>=';
   priority: 'hard' | 'preferred';
   itemId?: string;
   recipeId?: string;
   rhs: number;
-  terms: LinearModelConstraintTerm[];
+  terms: DiagnosticModelConstraintTerm[];
   noteJa: string;
   noteEn: string;
 };
 
-export type LinearModelCandidate = {
+export type DiagnosticModelCandidate = {
   itemId?: string;
   recipeId?: string;
   selectedRecipeId?: string;
@@ -95,8 +90,8 @@ export type LinearModelCandidate = {
   reasonEn: string;
 };
 
-export type LinearBalanceModelDiagnostics = {
-  status: 'model-built-diagnostic-only';
+export type DiagnosticBalanceModel = {
+  status: 'constraint-model-diagnostic-only';
   activeRecipeIds: string[];
   activeItemIds: string[];
   targetItemIds: string[];
@@ -110,13 +105,13 @@ export type LinearBalanceModelDiagnostics = {
     liquidActiveItemCount: number;
     targetCount: number;
   };
-  variables: LinearModelVariable[];
-  constraints: LinearModelConstraint[];
+  variables: DiagnosticModelVariable[];
+  constraints: DiagnosticModelConstraint[];
   candidates: {
-    cycleInput: LinearModelCandidate[];
-    liquidSurplus: LinearModelCandidate[];
-    alternateRecipe: LinearModelCandidate[];
-    byproductFuel: LinearModelCandidate[];
+    cycleInput: DiagnosticModelCandidate[];
+    liquidSurplus: DiagnosticModelCandidate[];
+    alternateRecipe: DiagnosticModelCandidate[];
+    byproductFuel: DiagnosticModelCandidate[];
   };
   objectivePlan: Array<{
     priority: number;
@@ -126,8 +121,8 @@ export type LinearBalanceModelDiagnostics = {
   }>;
 };
 
-export type LinearModelDiagnostics = {
-  mode: 'diagnostic-only';
+export type SolverDiagnostics = {
+  mode: 'solver-diagnostics-only';
   noteJa: string;
   noteEn: string;
   plannedPolicies: {
@@ -146,18 +141,10 @@ export type LinearModelDiagnostics = {
   activePlanCyclicComponents: SelectedRecipeCycleDiagnostic[];
   allRecipeCyclicComponents: SelectedRecipeCycleDiagnostic[];
   liquidOutputRecipeIds: string[];
-  linearBalanceModel: LinearBalanceModelDiagnostics;
+  diagnosticBalanceModel: DiagnosticBalanceModel;
 };
 
 
-export type NewSolverResult = {
-  result: CalculationResult;
-  engineId: SolverEngineId;
-  linearModelDiagnostics?: LinearModelDiagnostics;
-  alphaBalanceTrace?: AlphaBalanceSolveResult['trace'];
-};
-
-const ACTIVE_ENGINE: SolverEngineId = 'balance-v0811';
 const EPS = 1e-9;
 
 function uniqueSorted(values: Iterable<string>): string[] {
@@ -336,7 +323,7 @@ function buildCycleDiagnostics(graph: DependencyGraphData): { graph: DependencyG
 }
 
 
-function variableId(kind: LinearModelVariableKind, key: string): string {
+function variableId(kind: DiagnosticModelVariableKind, key: string): string {
   return kind + ':' + key;
 }
 
@@ -461,11 +448,11 @@ function nutrientsPerRunForRecipe(recipe: Recipe): number {
   return Math.max(0, recipe.nutrientInputPerRun ?? 0);
 }
 
-function buildLinearBalanceModelDiagnostics(
+function buildDiagnosticBalanceModel(
   input: CalculateInput,
   activeGraph: DependencyGraphData,
   activeCycles: SelectedRecipeCycleDiagnostic[],
-): LinearBalanceModelDiagnostics {
+): DiagnosticBalanceModel {
   const recipeIds = modelRecipeIds(input, activeGraph);
   const itemIds = activeItemIdsForModel(recipeIds, input);
   const targetDemand = targetDemandByItem(input);
@@ -473,7 +460,7 @@ function buildLinearBalanceModelDiagnostics(
   const hasActivePlan = recipeIds.length > 0 || targetItemIds.length > 0;
   if (targetItemIds.length === 0 && input.targets.length === 0) {
     return {
-      status: 'model-built-diagnostic-only',
+      status: 'constraint-model-diagnostic-only',
       activeRecipeIds: [],
       activeItemIds: [],
       targetItemIds: [],
@@ -500,11 +487,11 @@ function buildLinearBalanceModelDiagnostics(
       ],
     };
   }
-  const variables: LinearModelVariable[] = [];
-  const constraints: LinearModelConstraint[] = [];
+  const variables: DiagnosticModelVariable[] = [];
+  const constraints: DiagnosticModelConstraint[] = [];
   const seenVariables = new Set<string>();
 
-  function addVariable(variable: LinearModelVariable): string {
+  function addVariable(variable: DiagnosticModelVariable): string {
     if (!seenVariables.has(variable.id)) {
       seenVariables.add(variable.id);
       variables.push(variable);
@@ -616,7 +603,7 @@ function buildLinearBalanceModelDiagnostics(
       ? recipeById[target.recipeId]
       : chooseRecipeForItem(target.outputItemId, input.recipePreferences);
     if (!recipe) continue;
-    const terms: LinearModelConstraintTerm[] = [];
+    const terms: DiagnosticModelConstraintTerm[] = [];
     const recipeVariableId = variableId('recipeRun', recipe.id);
     if (target.mode === 'machines') {
       terms.push({ variableId: recipeVariableId, coefficient: 1 });
@@ -652,7 +639,7 @@ function buildLinearBalanceModelDiagnostics(
   for (const itemId of itemIds) {
     const item = itemById[itemId];
     const isLiquid = item?.physicalState === 'liquid';
-    const terms: LinearModelConstraintTerm[] = [];
+    const terms: DiagnosticModelConstraintTerm[] = [];
     for (const recipeId of recipeIds) {
       const baseRecipe = recipeById[recipeId];
       if (!baseRecipe) continue;
@@ -698,7 +685,7 @@ function buildLinearBalanceModelDiagnostics(
   }
 
   if (hasActivePlan && input.settings.fuel?.enabled) {
-    const terms: LinearModelConstraintTerm[] = [];
+    const terms: DiagnosticModelConstraintTerm[] = [];
     for (const recipeId of recipeIds) {
       const recipe = recipeById[recipeId];
       if (!recipe) continue;
@@ -722,7 +709,7 @@ function buildLinearBalanceModelDiagnostics(
   }
 
   if (hasActivePlan && input.settings.fertilizer?.enabled) {
-    const terms: LinearModelConstraintTerm[] = [];
+    const terms: DiagnosticModelConstraintTerm[] = [];
     for (const recipeId of recipeIds) {
       const recipe = recipeById[recipeId];
       if (!recipe) continue;
@@ -750,14 +737,14 @@ function buildLinearBalanceModelDiagnostics(
   const constraintCountsByKind: Record<string, number> = {};
   for (const constraint of constraints) addCount(constraintCountsByKind, constraint.kind);
 
-  const cycleInputCandidates: LinearModelCandidate[] = activeCycles.flatMap((cycle) => cycle.buyableInputItemIds.map((itemId) => ({
+  const cycleInputCandidates: DiagnosticModelCandidate[] = activeCycles.flatMap((cycle) => cycle.buyableInputItemIds.map((itemId) => ({
     itemId,
     candidateRecipeIds: cycle.recipeIds,
     reasonJa: itemNameJa(itemId) + ' は循環 ' + cycle.recipeIds.map(recipeNameJa).join(' / ') + ' を購入/投入で切れる候補です。',
     reasonEn: itemId + ' can break the cycle ' + cycle.recipeIds.join(' / ') + ' as a purchased/input source.',
   })));
 
-  const liquidSurplusCandidates: LinearModelCandidate[] = itemIds
+  const liquidSurplusCandidates: DiagnosticModelCandidate[] = itemIds
     .filter((itemId) => itemById[itemId]?.physicalState === 'liquid')
     .map((itemId) => ({
       itemId,
@@ -765,7 +752,7 @@ function buildLinearBalanceModelDiagnostics(
       reasonEn: itemId + ' is liquid/steam-like and should prefer zero surplus.',
     }));
 
-  const alternateRecipeCandidates: LinearModelCandidate[] = itemIds.flatMap((itemId) => {
+  const alternateRecipeCandidates: DiagnosticModelCandidate[] = itemIds.flatMap((itemId) => {
     const selectedRecipe = chooseRecipeForItem(itemId, input.recipePreferences);
     const alternates = getRecipesProducing(itemId).filter((recipe) => recipe.id !== selectedRecipe?.id);
     if (alternates.length <= 0) return [];
@@ -779,7 +766,7 @@ function buildLinearBalanceModelDiagnostics(
   });
 
   const targetItemSet = new Set(targetItemIds);
-  const byproductFuelCandidates: LinearModelCandidate[] = uniqueSorted(recipeIds.flatMap((recipeId) => {
+  const byproductFuelCandidates: DiagnosticModelCandidate[] = uniqueSorted(recipeIds.flatMap((recipeId) => {
     const recipe = recipeById[recipeId];
     if (!recipe) return [];
     return recipe.outputs
@@ -792,7 +779,7 @@ function buildLinearBalanceModelDiagnostics(
   }));
 
   return {
-    status: 'model-built-diagnostic-only',
+    status: 'constraint-model-diagnostic-only',
     activeRecipeIds: recipeIds,
     activeItemIds: itemIds,
     targetItemIds,
@@ -825,19 +812,19 @@ function buildLinearBalanceModelDiagnostics(
   };
 }
 
-export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelDiagnostics {
+export function buildSolverDiagnostics(input: CalculateInput): SolverDiagnostics {
   const activeGraph = buildDependencyGraph(input, 'active-plan');
   const allRecipeGraph = buildDependencyGraph(input, 'all-recipes');
   const activeDiagnostics = buildCycleDiagnostics(activeGraph);
   const allDiagnostics = buildCycleDiagnostics(allRecipeGraph);
-  const linearBalanceModel = buildLinearBalanceModelDiagnostics(input, activeGraph, activeDiagnostics.cycles);
+  const diagnosticBalanceModel = buildDiagnosticBalanceModel(input, activeGraph, activeDiagnostics.cycles);
 
   const liquidOutputRecipeIds = RECIPES.filter((recipe) =>
     recipe.outputs.some((output) => itemById[output.itemId]?.physicalState === 'liquid'),
   ).map((recipe) => recipe.id);
 
   return {
-    mode: 'diagnostic-only',
+    mode: 'solver-diagnostics-only',
     noteJa:
       'v0.8.11 では、収支ベースsolver結果経路を通常計算に使い、燃料・肥料の特殊リソース解決、設備グレード設定、厳格な状態形式を診断します。',
     noteEn:
@@ -859,54 +846,6 @@ export function buildLinearModelDiagnostics(input: CalculateInput): LinearModelD
     activePlanCyclicComponents: activeDiagnostics.cycles,
     allRecipeCyclicComponents: allDiagnostics.cycles,
     liquidOutputRecipeIds: uniqueSorted(liquidOutputRecipeIds),
-    linearBalanceModel,
+    diagnosticBalanceModel,
   };
 }
-
-export function calculateWithNewSolver(input: CalculateInput, prebuiltDiagnostics?: LinearModelDiagnostics): NewSolverResult {
-  const diagnostics = prebuiltDiagnostics ?? buildLinearModelDiagnostics(input);
-  const alpha = calculateAlphaBalance(input, diagnostics);
-  return {
-    result: alpha.result,
-    engineId: ACTIVE_ENGINE,
-    linearModelDiagnostics: diagnostics,
-    alphaBalanceTrace: alpha.trace,
-  };
-}
-
-export function calculateWithNewSolverDebug(input: CalculateInput): CalculationDebugResult {
-  const linearModelDiagnostics = buildLinearModelDiagnostics(input);
-  const alpha = calculateAlphaBalance(input, linearModelDiagnostics);
-  return {
-    result: alpha.result,
-    debugLog: {
-      generatedAt: new Date().toISOString(),
-      input: JSON.parse(JSON.stringify(input)) as CalculateInput,
-      totals: alpha.result.totals,
-      warnings: alpha.result.warnings,
-      issues: [],
-      summary: {
-        itemCount: Object.keys(alpha.result.itemStats).length,
-        recipeCount: Object.keys(alpha.result.recipeStats).length,
-        flowCount: alpha.result.flows.length,
-        flowsByRole: {},
-        flowsByTransport: {},
-        purchasedAutoCraftableCount: 0,
-      },
-      initialInvestment: alpha.result.initialInvestment,
-      residualUnresolvedFlows: alpha.result.residualUnresolvedFlows ?? [],
-      purchasedAutoCraftableFlows: [],
-      flows: alpha.result.flows,
-      itemStats: Object.values(alpha.result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId)),
-      recipeStats: Object.values(alpha.result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId)),
-      solverEngine: ACTIVE_ENGINE,
-      linearModelDiagnostics,
-      alphaBalanceTrace: alpha.trace,
-    } as CalculationDebugResult['debugLog'] & {
-      solverEngine: SolverEngineId;
-      linearModelDiagnostics: LinearModelDiagnostics;
-      alphaBalanceTrace: AlphaBalanceSolveResult['trace'];
-    },
-  };
-}
-

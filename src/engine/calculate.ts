@@ -1,9 +1,9 @@
 export * from './calculationTypes';
 
 import {
-  buildLinearModelDiagnostics,
-  type LinearModelDiagnostics,
-} from './newSolver';
+  buildSolverDiagnostics,
+  type SolverDiagnostics,
+} from './solverDiagnostics';
 import { calculateStructuredBalance } from './structuredBalanceSolver';
 import {
   type CalculateInput,
@@ -34,8 +34,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09190';
-const SOLVE_PLAN_VERSION = '0.9.19';
+const SOLVE_PLAN_MODE = 'solvePlan-v09200';
+const SOLVE_PLAN_VERSION = '0.9.20';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -45,35 +45,35 @@ function disabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) === false).length;
 }
 
-function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnostics: ReturnType<typeof buildLinearModelDiagnostics> | undefined) {
-  const linearSummary = linearModelDiagnostics?.linearBalanceModel?.summary;
+function diagnosticComparisonFor(result: CalculationResult, solverDiagnostics: ReturnType<typeof buildSolverDiagnostics> | undefined) {
+  const diagnosticSummary = solverDiagnostics?.diagnosticBalanceModel?.summary;
   const resultRecipeIds = Object.keys(result.recipeStats).sort((a, b) => a.localeCompare(b));
   const resultItemIds = Object.keys(result.itemStats).sort((a, b) => a.localeCompare(b));
-  const linearRecipeIds = [...(linearModelDiagnostics?.linearBalanceModel?.activeRecipeIds ?? [])].sort((a, b) => a.localeCompare(b));
-  const linearItemIds = [...(linearModelDiagnostics?.linearBalanceModel?.activeItemIds ?? [])].sort((a, b) => a.localeCompare(b));
+  const diagnosticRecipeIds = [...(solverDiagnostics?.diagnosticBalanceModel?.activeRecipeIds ?? [])].sort((a, b) => a.localeCompare(b));
+  const diagnosticItemIds = [...(solverDiagnostics?.diagnosticBalanceModel?.activeItemIds ?? [])].sort((a, b) => a.localeCompare(b));
   const resultRecipeSet = new Set(resultRecipeIds);
   const resultItemSet = new Set(resultItemIds);
-  const linearRecipeSet = new Set(linearRecipeIds);
-  const linearItemSet = new Set(linearItemIds);
-  const missingResultRecipeIds = resultRecipeIds.filter((recipeId) => !linearRecipeSet.has(recipeId));
-  const missingResultItemIds = resultItemIds.filter((itemId) => !linearItemSet.has(itemId));
-  const unusedCandidateRecipeIds = linearRecipeIds.filter((recipeId) => !resultRecipeSet.has(recipeId));
-  const unusedCandidateItemIds = linearItemIds.filter((itemId) => !resultItemSet.has(itemId));
+  const diagnosticRecipeSet = new Set(diagnosticRecipeIds);
+  const diagnosticItemSet = new Set(diagnosticItemIds);
+  const missingResultRecipeIds = resultRecipeIds.filter((recipeId) => !diagnosticRecipeSet.has(recipeId));
+  const missingResultItemIds = resultItemIds.filter((itemId) => !diagnosticItemSet.has(itemId));
+  const unusedCandidateRecipeIds = diagnosticRecipeIds.filter((recipeId) => !resultRecipeSet.has(recipeId));
+  const unusedCandidateItemIds = diagnosticItemIds.filter((itemId) => !resultItemSet.has(itemId));
   const resultRecipeCount = resultRecipeIds.length;
   const resultItemCount = resultItemIds.length;
-  const linearActiveRecipeCount = linearSummary?.activeRecipeCount;
-  const linearActiveItemCount = linearSummary?.activeItemCount;
-  const activeRecipeDelta = typeof linearActiveRecipeCount === 'number' ? linearActiveRecipeCount - resultRecipeCount : undefined;
-  const activeItemDelta = typeof linearActiveItemCount === 'number' ? linearActiveItemCount - resultItemCount : undefined;
+  const diagnosticActiveRecipeCount = diagnosticSummary?.activeRecipeCount;
+  const diagnosticActiveItemCount = diagnosticSummary?.activeItemCount;
+  const activeRecipeDelta = typeof diagnosticActiveRecipeCount === 'number' ? diagnosticActiveRecipeCount - resultRecipeCount : undefined;
+  const activeItemDelta = typeof diagnosticActiveItemCount === 'number' ? diagnosticActiveItemCount - resultItemCount : undefined;
   const severeMismatch = missingResultRecipeIds.length > 0 || missingResultItemIds.length > 0;
   const candidateOnlyMismatch = !severeMismatch && (unusedCandidateRecipeIds.length > 0 || unusedCandidateItemIds.length > 0);
   return {
     resultFlowCount: result.flows.length,
     resultRecipeCount,
     resultItemCount,
-    linearActiveRecipeCount,
-    linearActiveItemCount,
-    linearTargetCount: linearSummary?.targetCount,
+    diagnosticActiveRecipeCount,
+    diagnosticActiveItemCount,
+    diagnosticTargetCount: diagnosticSummary?.targetCount,
     activeRecipeDelta,
     activeItemDelta,
     severeMismatch,
@@ -86,23 +86,23 @@ function diagnosticComparisonFor(result: CalculationResult, linearModelDiagnosti
     unusedCandidateItemCount: unusedCandidateItemIds.length,
     recipeSets: {
       activePlanRecipes: resultRecipeIds,
-      candidateRecipes: linearRecipeIds,
+      candidateRecipes: diagnosticRecipeIds,
       unusedCandidateRecipes: unusedCandidateRecipeIds,
     },
     itemSets: {
       activePlanItems: resultItemIds,
-      candidateItems: linearItemIds,
+      candidateItems: diagnosticItemIds,
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-linear-model-v09190',
+    diagnosticsOrigin: 'solvePlan-debug-solver-diagnostics-v09200',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
 }
 
 
-function structuredDiagnosticsFromPlanModel(planModel: ReturnType<typeof buildPlanModel>): LinearModelDiagnostics {
+function structuredDiagnosticsFromPlanModel(planModel: ReturnType<typeof buildPlanModel>): SolverDiagnostics {
   const activeRecipeIds = [...planModel.dependencyGraph.activeRecipeIds].sort((a, b) => a.localeCompare(b));
   const activeItemIds = [...new Set(planModel.dependencyGraph.edges.map((edge) => edge.itemId))].sort((a, b) => a.localeCompare(b));
   const cycleDiagnostics = planModel.dependencyGraph.cycleComponents.map((cycle) => ({
@@ -122,9 +122,9 @@ function structuredDiagnosticsFromPlanModel(planModel: ReturnType<typeof buildPl
     cyclicComponentCount: cycleDiagnostics.length,
   };
   return {
-    mode: 'diagnostic-only',
-    noteJa: 'Structured plannerの通常経路用にPlanModelから作る最小診断情報です。legacy alpha用のlinear modelではありません。',
-    noteEn: 'Minimal diagnostics derived from PlanModel for the structured normal path. This is not the legacy alpha linear model.',
+    mode: 'solver-diagnostics-only',
+    noteJa: 'Structured plannerの通常経路用にPlanModelから作る最小診断情報です。これは採用solverそのものではなく、診断用モデルです。',
+    noteEn: 'Minimal diagnostics derived from PlanModel for the structured normal path. This is a diagnostic model, not the accepted solver itself.',
     plannedPolicies: {
       selectedRecipesAreFixedByDefault: true,
       alternateRecipeCompletionDefault: 'off',
@@ -141,8 +141,8 @@ function structuredDiagnosticsFromPlanModel(planModel: ReturnType<typeof buildPl
     activePlanCyclicComponents: cycleDiagnostics,
     allRecipeCyclicComponents: cycleDiagnostics,
     liquidOutputRecipeIds: [],
-    linearBalanceModel: {
-      status: 'model-built-diagnostic-only',
+    diagnosticBalanceModel: {
+      status: 'constraint-model-diagnostic-only',
       activeRecipeIds,
       activeItemIds,
       targetItemIds: planModel.targets.calculation.map((target) => target.outputItemId),
@@ -174,7 +174,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
 
   if (!debug) return { result };
 
-  const diagnostics = buildLinearModelDiagnostics(input);
+  const diagnostics = buildSolverDiagnostics(input);
   const debugLog = buildDebugLogFromResult(input, result);
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
   const structuredAdoptionComparison = buildStructuredAdoptionComparison(structuredSolve.structuredPlan);
@@ -186,7 +186,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   };
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v09190' as const,
+    mode: 'structured-material-v09200' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -195,15 +195,18 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
     cycleDecisions: structuredSolve.structuredPlan.cycleDecisions,
     acceptedResultSummary,
   };
-  const legacyAlphaComparison = {
-    enabled: false as const,
-    legacyCalled: false as const,
-    purpose: 'removed-from-debug-path' as const,
-    mode: 'legacy-alpha-disabled-v09190' as const,
-    acceptedResultEngine: 'structured-material-v09190',
-    structuredSummary: acceptedResultSummary,
-    noteJa: 'v0.9.19以降、legacy alpha solverはDEBUG経路でも実行しません。旧solver差分は熱抽出機高さ倍率・錬金倍率の旧仕様が混ざるため、通常検証の判断材料から外しています。',
-    noteEn: 'Since v0.9.19, the legacy alpha solver is not executed even in DEBUG mode. Legacy diffs were based on outdated thermal-extractor height and alchemy multiplier semantics, so they are no longer used for normal verification.',
+  const solverIdentity = {
+    acceptedSolverCore: 'structured-balance' as const,
+    acceptedPlannerCore: 'structured-material-plan' as const,
+    acceptedResultEngine: 'structured-material-v09200' as const,
+    solvePlanMode: SOLVE_PLAN_MODE,
+    solvePlanVersion: SOLVE_PLAN_VERSION,
+    diagnosticModelOnly: true as const,
+    linearProgrammingSolved: false as const,
+    retiredComparisonPathRemoved: true as const,
+    retiredComparisonPathCalled: false as const,
+    noteJa: 'v0.9.20では、実計算はStructuredBalanceSolverとStructuredMaterialPlanの採用結果です。診断モデルは制約形式で状態を説明するためのもので、線形計画ソルバとして解いていません。',
+    noteEn: 'In v0.9.20, the accepted calculation result comes from StructuredBalanceSolver plus StructuredMaterialPlan. The diagnostic model explains constraints but is not solved as a linear-programming solver.',
   };
   const extendedDebugLog = {
     ...debugLog,
@@ -212,21 +215,21 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           ...debugLog.issues,
           {
             severity: 'warning' as const,
-            code: 'LINEAR_DIAGNOSTIC_RESULT_DELTA',
-            messageJa: '実計算結果に存在するrecipe/itemがlinearModelDiagnosticsに欠けています。診断モデルの乖離候補として確認してください。',
-            messageEn: 'Some recipes/items from the actual result are missing from linearModelDiagnostics. Please inspect this as a diagnostic model mismatch candidate.',
+            code: 'SOLVER_DIAGNOSTIC_RESULT_DELTA',
+            messageJa: '実計算結果に存在するrecipe/itemがsolverDiagnosticsに欠けています。診断モデルの乖離候補として確認してください。',
+            messageEn: 'Some recipes/items from the actual result are missing from solverDiagnostics. Please inspect this as a diagnostic model mismatch candidate.',
             data: diagnosticComparison,
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09190',
-    solverEngine: 'structured-material-v09190',
+    resultEngine: 'structured-material-v09200',
+    solverEngine: 'structured-material-v09200',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09190',
-      solverEngine: 'structured-material-v09190',
+      resultEngine: 'structured-material-v09200',
+      solverEngine: 'structured-material-v09200',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -235,30 +238,32 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
       planModelSummary: planModel.summary,
       materialPlannerShadowMode: materialPlannerShadow.mode,
       materialPlannerShadowStatus: structuredSolve.structuredPlan.status,
-      normalPathLegacyAlphaCalled: false,
-      debugLegacyAlphaCalled: false,
+      acceptedSolverCore: solverIdentity.acceptedSolverCore,
+      acceptedPlannerCore: solverIdentity.acceptedPlannerCore,
+      diagnosticModelOnly: solverIdentity.diagnosticModelOnly,
+      linearProgrammingSolved: solverIdentity.linearProgrammingSolved,
+      normalPathRetiredComparisonCalled: false,
+      debugRetiredComparisonCalled: false,
     },
     diagnosticComparison,
+    solverIdentity,
     materialPlannerShadow,
     structuredBalanceTrace: structuredBalance.trace,
     structuredMaterialPlan: structuredSolve.structuredPlan,
     cycleDecisions: structuredSolve.structuredPlan.cycleDecisions,
-    legacyAlphaComparison,
     planModel,
-    linearModelDiagnostics: diagnostics ? {
+    solverDiagnostics: diagnostics ? {
       ...diagnostics,
-      linearBalanceModel: {
-        ...diagnostics.linearBalanceModel,
+      diagnosticBalanceModel: {
+        ...diagnostics.diagnosticBalanceModel,
         recipeSets: diagnosticComparison.recipeSets,
         itemSets: diagnosticComparison.itemSets,
       },
     } : diagnostics,
-    alphaBalanceTrace: undefined,
   } as CalculationDebugResult['debugLog'] & {
     resultEngine: string;
     solverEngine: string;
-    linearModelDiagnostics: typeof diagnostics;
-    alphaBalanceTrace?: unknown;
+    solverDiagnostics: typeof diagnostics;
   };
 
   return { result, debugLog: extendedDebugLog };

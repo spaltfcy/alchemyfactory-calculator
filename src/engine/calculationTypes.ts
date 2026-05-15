@@ -296,9 +296,9 @@ export type CalculationDebugLog = {
     resultFlowCount: number;
     resultRecipeCount: number;
     resultItemCount: number;
-    linearActiveRecipeCount?: number;
-    linearActiveItemCount?: number;
-    linearTargetCount?: number;
+    diagnosticActiveRecipeCount?: number;
+    diagnosticActiveItemCount?: number;
+    diagnosticTargetCount?: number;
     activeRecipeDelta?: number;
     activeItemDelta?: number;
     severeMismatch?: boolean;
@@ -313,7 +313,9 @@ export type CalculationDebugLog = {
   };
   materialPlannerShadow?: unknown;
   structuredMaterialPlan?: unknown;
-  legacyAlphaComparison?: unknown;
+  solverIdentity?: unknown;
+  solverDiagnostics?: unknown;
+  structuredBalanceTrace?: unknown;
   planModel?: unknown;
 };
 

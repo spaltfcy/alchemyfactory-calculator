@@ -106,10 +106,13 @@ type VerificationExpectation = {
   expectedCycleClassification?: string;
   expectedInitialInvestmentItems?: string[];
   expectedNoPurchasedPerMinItems?: string[];
-  expectedLegacyFallbackUsed?: boolean;
+  expectedFallbackUsed?: boolean;
   expectedAcceptedResultEngine?: string;
   expectedGraphStartupLabel?: boolean;
-  expectedLegacyAlphaCalled?: boolean;
+  expectedRetiredComparisonPathCalled?: boolean;
+  expectedLinearProgrammingSolved?: boolean;
+  expectedDiagnosticModelOnly?: boolean;
+  expectedAcceptedSolverCore?: string;
   expectedDebugSchemaVersion?: number;
   expectedPlannerComparisonStatus?: 'match' | 'diff' | 'not-compared';
   expectedPlannerComparisonMode?: string;
@@ -155,8 +158,8 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     errorSummaries?: Array<{ code?: string }>;
     solver?: { resultEngine?: string; solverEngine?: string };
     resultEngine?: string;
-    structuredMaterialPlan?: { legacyFallbackUsed?: boolean; acceptedResultEngine?: string };
-    legacyAlphaComparison?: { acceptedResultEngine?: string; statusComparison?: unknown; numericComparison?: unknown; legacyCalled?: boolean };
+    structuredMaterialPlan?: { fallbackUsed?: boolean; acceptedResultEngine?: string };
+    solverIdentity?: { acceptedResultEngine?: string; acceptedSolverCore?: string; retiredComparisonPathCalled?: boolean; linearProgrammingSolved?: boolean; diagnosticModelOnly?: boolean };
     materialPlannerShadow?: { comparison?: { status?: string; mode?: string } };
     structuredBalanceTrace?: { sourceBuckets?: Record<string, Record<string, number>>; unresolvedItemIds?: string[] };
     totals?: { purchaseCostCopperPerMin?: number };
@@ -197,17 +200,29 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
       if (Number.isFinite(purchased) && Math.abs(purchased) > 0.000001) return false;
     }
   }
-  if (typeof expectation.expectedLegacyFallbackUsed === 'boolean') {
-    const actual = debugLog?.structuredMaterialPlan?.legacyFallbackUsed;
-    if (actual !== expectation.expectedLegacyFallbackUsed) return false;
+  if (typeof expectation.expectedFallbackUsed === 'boolean') {
+    const actual = debugLog?.structuredMaterialPlan?.fallbackUsed;
+    if (actual !== expectation.expectedFallbackUsed) return false;
   }
   if (expectation.expectedAcceptedResultEngine) {
-    const actual = debugLog?.structuredMaterialPlan?.acceptedResultEngine ?? debugLog?.legacyAlphaComparison?.acceptedResultEngine ?? debugLog?.resultEngine ?? debugLog?.solver?.resultEngine;
+    const actual = debugLog?.structuredMaterialPlan?.acceptedResultEngine ?? debugLog?.solverIdentity?.acceptedResultEngine ?? debugLog?.resultEngine ?? debugLog?.solver?.resultEngine;
     if (actual !== expectation.expectedAcceptedResultEngine) return false;
   }
-  if (typeof expectation.expectedLegacyAlphaCalled === 'boolean') {
-    const actual = Boolean(debugLog?.legacyAlphaComparison && (debugLog.legacyAlphaComparison as { legacyCalled?: boolean }).legacyCalled === true);
-    if (actual !== expectation.expectedLegacyAlphaCalled) return false;
+  if (typeof expectation.expectedRetiredComparisonPathCalled === 'boolean') {
+    const actual = Boolean(debugLog?.solverIdentity?.retiredComparisonPathCalled === true || (debugLog?.solver as { debugRetiredComparisonCalled?: boolean } | undefined)?.debugRetiredComparisonCalled === true);
+    if (actual !== expectation.expectedRetiredComparisonPathCalled) return false;
+  }
+  if (typeof expectation.expectedLinearProgrammingSolved === 'boolean') {
+    const actual = Boolean(debugLog?.solverIdentity?.linearProgrammingSolved === true || (debugLog?.solver as { linearProgrammingSolved?: boolean } | undefined)?.linearProgrammingSolved === true);
+    if (actual !== expectation.expectedLinearProgrammingSolved) return false;
+  }
+  if (typeof expectation.expectedDiagnosticModelOnly === 'boolean') {
+    const actual = Boolean(debugLog?.solverIdentity?.diagnosticModelOnly === true || (debugLog?.solver as { diagnosticModelOnly?: boolean } | undefined)?.diagnosticModelOnly === true);
+    if (actual !== expectation.expectedDiagnosticModelOnly) return false;
+  }
+  if (expectation.expectedAcceptedSolverCore) {
+    const actual = debugLog?.solverIdentity?.acceptedSolverCore ?? (debugLog?.solver as { acceptedSolverCore?: string } | undefined)?.acceptedSolverCore;
+    if (actual !== expectation.expectedAcceptedSolverCore) return false;
   }
   if (typeof expectation.expectedDebugSchemaVersion === 'number') {
     const actual = Number((debugLog as { debugSchemaVersion?: unknown } | undefined)?.debugSchemaVersion ?? 0);
@@ -837,7 +852,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 42,
+      debugSchemaVersion: 43,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -872,8 +887,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。legacy alphaはv0.9.19以降DEBUG経路でも実行しません。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. Legacy alpha is not executed in DEBUG mode since v0.9.19.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。旧比較solverはv0.9.20で削除済みです。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. The retired comparison solver was removed in v0.9.20.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -1006,7 +1021,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 42,
+      debugSchemaVersion: 43,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1434,12 +1449,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       structuredMaterialPlanSummary: (artifact.enrichedDebugLog as { structuredMaterialPlan?: { status?: string; mode?: string; cycleDecisions?: unknown[] } }).structuredMaterialPlan,
       cycleDecisionCount: ((artifact.enrichedDebugLog as { cycleDecisions?: unknown[] }).cycleDecisions ?? []).length,
       solver: (artifact.enrichedDebugLog as { solver?: unknown }).solver,
-      legacyAlphaComparison: (() => {
-        const comparison = (artifact.enrichedDebugLog as { legacyAlphaComparison?: { enabled?: boolean; legacyCalled?: boolean; noteJa?: string; noteEn?: string } }).legacyAlphaComparison;
-        if (!comparison) return undefined;
-        if (comparison.enabled === true || comparison.legacyCalled === true) return comparison;
-        return { enabled: false, legacyCalled: false, noteJa: comparison.noteJa, noteEn: comparison.noteEn };
-      })(),
+      solverIdentity: (artifact.enrichedDebugLog as { solverIdentity?: unknown }).solverIdentity,
       structuredBalanceTrace: (artifact.enrichedDebugLog as { structuredBalanceTrace?: unknown }).structuredBalanceTrace,
     }, null, 2));
     const materialPlannerShadow = (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: unknown; comparison?: unknown; cycleComponents?: unknown[]; planModel?: unknown } }).materialPlannerShadow;
@@ -1454,11 +1464,6 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     if (structuredMaterialPlan) zip.file(baseName + '__structured-material-plan.json', JSON.stringify(structuredMaterialPlan, null, 2));
     const cycleDecisions = (artifact.enrichedDebugLog as { cycleDecisions?: unknown }).cycleDecisions;
     if (cycleDecisions) zip.file(baseName + '__cycle-decisions.json', JSON.stringify(cycleDecisions, null, 2));
-    const legacyAlphaComparison = (artifact.enrichedDebugLog as { legacyAlphaComparison?: { enabled?: boolean; legacyCalled?: boolean } }).legacyAlphaComparison;
-    if (legacyAlphaComparison?.enabled === true || legacyAlphaComparison?.legacyCalled === true) {
-      zip.file(baseName + '__legacy-alpha-comparison.json', JSON.stringify(legacyAlphaComparison, null, 2));
-    }
-
     if (calculationInvalid) {
       zip.file(
         baseName + '__error-summary.json',
@@ -1572,7 +1577,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 42,
+      debugSchemaVersion: 43,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

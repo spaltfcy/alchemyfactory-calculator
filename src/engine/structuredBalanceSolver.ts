@@ -33,18 +33,18 @@ import type {
   PlanWarning,
   RecipeStat,
 } from './calculationTypes';
-import type { LinearModelDiagnostics, SelectedRecipeCycleDiagnostic } from './newSolver';
+import type { SolverDiagnostics, SelectedRecipeCycleDiagnostic } from './solverDiagnostics';
 
 const EPS = 1e-9;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.19' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09190';
+const BALANCE_SOLVER_VERSION = '0.9.20' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09200';
 
 
-function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearModelDiagnostics): number {
+function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: SolverDiagnostics): number {
   const activeRecipeCount = Math.max(
     1,
-    diagnostics.linearBalanceModel?.summary?.activeRecipeCount ?? 0,
+    diagnostics.diagnosticBalanceModel?.summary?.activeRecipeCount ?? 0,
     diagnostics.graph?.recipeNodeCount ?? 0,
     input.targets.length,
   );
@@ -52,7 +52,7 @@ function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: LinearMo
     1,
     diagnostics.graph?.dependencyEdgeCount ?? 0,
     diagnostics.activePlanGraph?.dependencyEdgeCount ?? 0,
-    diagnostics.linearBalanceModel?.summary?.activeItemCount ?? 0,
+    diagnostics.diagnosticBalanceModel?.summary?.activeItemCount ?? 0,
   );
   const cyclePenalty = Math.max(0, diagnostics.activePlanCyclicComponents?.length ?? 0) * activeRecipeCount;
   return Math.max(32, activeRecipeCount * dependencyEdgeCount * 4 + activeRecipeCount * 8 + cyclePenalty + input.targets.length * 16);
@@ -86,7 +86,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09190';
+  mode: 'structured-balance-v09200';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   queueSafetyLimit?: number;
@@ -311,7 +311,7 @@ function mapAlmostEqual(a: RunMap, b: RunMap): boolean {
   return true;
 }
 
-function cycleInputItemIds(diagnostics: LinearModelDiagnostics): Set<string> {
+function cycleInputItemIds(diagnostics: SolverDiagnostics): Set<string> {
   return new Set(diagnostics.activePlanCyclicComponents.flatMap((cycle: SelectedRecipeCycleDiagnostic) => cycle.buyableInputItemIds));
 }
 
@@ -679,11 +679,11 @@ function consumeByproductFuelLots(
   return { remainingPreferredFuelRate: remainingHeat / preferredHeat, uses };
 }
 
-function recipeIdsInActiveCycles(diagnostics: LinearModelDiagnostics): Set<string> {
+function recipeIdsInActiveCycles(diagnostics: SolverDiagnostics): Set<string> {
   return new Set(diagnostics.activePlanCyclicComponents.flatMap((cycle) => cycle.recipeIds));
 }
 
-function activeCycleForRecipe(recipeId: string, diagnostics: LinearModelDiagnostics): SelectedRecipeCycleDiagnostic | undefined {
+function activeCycleForRecipe(recipeId: string, diagnostics: SolverDiagnostics): SelectedRecipeCycleDiagnostic | undefined {
   return diagnostics.activePlanCyclicComponents.find((cycle) => cycle.recipeIds.includes(recipeId));
 }
 
@@ -705,7 +705,7 @@ function addSelectedRecipeCycleBlock(blocks: SelectedRecipeCycleBlock[], block: 
   blocks.push(block);
 }
 
-function chooseAlternateRecipeForItem(itemId: string, selectedRecipe: Recipe | undefined, diagnostics: LinearModelDiagnostics): Recipe | undefined {
+function chooseAlternateRecipeForItem(itemId: string, selectedRecipe: Recipe | undefined, diagnostics: SolverDiagnostics): Recipe | undefined {
   const cycleRecipeIds = recipeIdsInActiveCycles(diagnostics);
   const alternatives = getRecipesProducing(itemId)
     .filter((recipe) => recipe.id !== selectedRecipe?.id)
@@ -745,7 +745,7 @@ type SpecialItemCost = {
 };
 
 type SpecialResourceSolutionTrace = {
-  mode: 'none' | 'fuel-only' | 'fertilizer-only' | 'linear-2x2';
+  mode: 'none' | 'fuel-only' | 'fertilizer-only' | 'direct-2x2';
   finite: boolean;
   baseHeatRequiredPerMin: number;
   baseFertilizerNutrientsRequiredPerMin: number;
@@ -778,7 +778,7 @@ type CoProductReduction = {
 };
 
 type CoProductReconciliationTrace = {
-  mode: 'co-product-reconcile-v09190';
+  mode: 'co-product-reconcile-v09200';
   applied: boolean;
   iterations: number;
   reductions: CoProductReduction[];
@@ -826,7 +826,7 @@ function reconcileCoProductsAfterSpecialResources(
   if (!solution.finite) {
     return {
       solved: base,
-      trace: { mode: 'co-product-reconcile-v09190', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
+      trace: { mode: 'co-product-reconcile-v09200', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
     };
   }
 
@@ -896,7 +896,7 @@ function reconcileCoProductsAfterSpecialResources(
       fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
     },
     trace: {
-      mode: 'co-product-reconcile-v09190',
+      mode: 'co-product-reconcile-v09200',
       applied,
       iterations,
       reductions,
@@ -904,7 +904,7 @@ function reconcileCoProductsAfterSpecialResources(
   };
 }
 
-function solveRunMap(input: CalculateInput, diagnostics: LinearModelDiagnostics): SolveRunMapResult {
+function solveRunMap(input: CalculateInput, diagnostics: SolverDiagnostics): SolveRunMapResult {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
   const { runs, targetRuns, targetRates, invalidTargets, invalidNetOutputTargets } = initialRunsFromTargets(input, productionSpeedMultiplier, conveyorItemsPerMinute);
@@ -1124,7 +1124,7 @@ function scaleCycleInputBucketInto(target: CycleInputBucket, source: CycleInputB
   for (const lot of source.values()) addCycleInput(target, lot.itemId, lot.rate * multiplier);
 }
 
-function specialCostForItem(itemId: string, role: Extract<SourceRole, 'fuel' | 'fertilizer'>, input: CalculateInput, diagnostics: LinearModelDiagnostics): SpecialItemCost {
+function specialCostForItem(itemId: string, role: Extract<SourceRole, 'fuel' | 'fertilizer'>, input: CalculateInput, diagnostics: SolverDiagnostics): SpecialItemCost {
   const recipe = chooseRecipeForItem(itemId, input.recipePreferences);
   if (!recipe) {
     const sources: SourceBucket = new Map();
@@ -1163,7 +1163,7 @@ function specialCostForItem(itemId: string, role: Extract<SourceRole, 'fuel' | '
   };
 }
 
-function solveSpecialResources(base: SolveRunMapResult, input: CalculateInput, diagnostics: LinearModelDiagnostics): SpecialResourceApplication {
+function solveSpecialResources(base: SolveRunMapResult, input: CalculateInput, diagnostics: SolverDiagnostics): SpecialResourceApplication {
   const fuelItemId = input.settings.fuel?.fuelItemId ?? '';
   const fertilizerItemId = input.settings.fertilizer?.fertilizerItemId ?? '';
   const fuelEnabled = Boolean(input.settings.fuel?.enabled && fuelItemId);
@@ -1207,7 +1207,7 @@ function solveSpecialResources(base: SolveRunMapResult, input: CalculateInput, d
   }
 
   if (finite && fuelEnabled && fertilizerEnabled && (baseHeat > EPS || baseNutrients > EPS)) {
-    mode = 'linear-2x2';
+    mode = 'direct-2x2';
     const a11 = 1 - hf / Math.max(EPS, fuelHeatValueTotal);
     const a12 = -hg / Math.max(EPS, fuelHeatValueTotal);
     const a21 = -nf / Math.max(EPS, fertilizerNutritionValueTotal);
@@ -1399,7 +1399,7 @@ function buildConveyorAndOutputEdges(flows: CalculatedFlow[]): { conveyorEdges: 
   return { conveyorEdges, outputEdges };
 }
 
-export function calculateStructuredBalance(input: CalculateInput, diagnostics: LinearModelDiagnostics): StructuredBalanceSolveResult {
+export function calculateStructuredBalance(input: CalculateInput, diagnostics: SolverDiagnostics): StructuredBalanceSolveResult {
   const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
   const conveyorItemsPerMinute = getConveyorItemsPerMinute(input.abilities);
   const sellPriceMultiplier = getSellPriceMultiplier(input.abilities, 'shop');
@@ -1764,8 +1764,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: L
         uses: byproductFuelUses,
       },
       specialResourceSolution: specialApplication.solution,
-      notesJa: ['v0.9.19 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
-      notesEn: ['Structured balance solver result for v0.9.19. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
+      notesJa: ['v0.9.20 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Structured balance solver result for v0.9.20. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
     },
   };
 }

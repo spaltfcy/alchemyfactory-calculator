@@ -1,83 +1,18 @@
-import type { CalculationResult } from '../calculationTypes';
-import type { MaterialPlannerShadowResult, PlannerComparisonResult, PlannerNumericDiff } from './materialPlannerTypes';
+import type { MaterialPlannerShadowResult, PlannerComparisonResult } from './materialPlannerTypes';
 
 const ABS_EPS = 1e-7;
 const REL_EPS = 1e-6;
 
-function closeEnough(a: number, b: number): boolean {
-  const delta = Math.abs(a - b);
-  if (delta <= ABS_EPS) return true;
-  return delta <= Math.max(Math.abs(a), Math.abs(b), 1) * REL_EPS;
-}
-
-function diffRecord(alpha: Record<string, number>, shadow: Record<string, number>, field: string): PlannerNumericDiff[] {
-  const ids = [...new Set([...Object.keys(alpha), ...Object.keys(shadow)])].sort((a, b) => a.localeCompare(b));
-  const diffs: PlannerNumericDiff[] = [];
-  for (const id of ids) {
-    const a = alpha[id] ?? 0;
-    const s = shadow[id] ?? 0;
-    if (!closeEnough(a, s)) diffs.push({ id, field, alpha: a, shadow: s, delta: Number((s - a).toPrecision(12)) });
-  }
-  return diffs;
-}
-
-function alphaRecipeRuns(result: CalculationResult): Record<string, number> {
-  return Object.fromEntries(Object.entries(result.recipeStats).map(([recipeId, stat]) => [recipeId, stat.runsPerMinute]));
-}
-
-function alphaItemField(result: CalculationResult, field: 'consumed' | 'produced' | 'purchased' | 'surplus' | 'discarded'): Record<string, number> {
-  return Object.fromEntries(Object.entries(result.itemStats).map(([itemId, stat]) => [itemId, stat[field]]));
-}
-
-export function comparePlannerResults(alphaResult: CalculationResult, shadow: MaterialPlannerShadowResult): PlannerComparisonResult {
-  const recipeDiffs = diffRecord(alphaRecipeRuns(alphaResult), shadow.recipeRuns, 'runsPerMinute');
-  const itemDiffs = [
-    ...diffRecord(alphaItemField(alphaResult, 'consumed'), shadow.itemDemand, 'consumed'),
-    ...diffRecord(alphaItemField(alphaResult, 'produced'), shadow.itemProduced, 'produced'),
-    ...diffRecord(alphaItemField(alphaResult, 'surplus'), shadow.surplus, 'surplus'),
-    ...diffRecord(alphaItemField(alphaResult, 'discarded'), shadow.discarded, 'discarded'),
-  ];
-  const sourceDiffs = diffRecord(alphaItemField(alphaResult, 'purchased'), shadow.purchased, 'purchased');
-  const diffCount = recipeDiffs.length + itemDiffs.length + sourceDiffs.length;
-  return {
-    status: diffCount > 0 ? 'diff' : 'match',
-    mode: shadow.mode === 'structured-material-v09190' ? 'legacy-alpha-vs-structured-v09190' : shadow.mode === 'structured-material-v0990' ? 'legacy-alpha-vs-structured-v0990' : shadow.mode === 'structured-material-v0980' ? 'legacy-alpha-vs-structured-v0980' : shadow.mode === 'structured-material-v0970' ? 'legacy-alpha-vs-structured-v0970' : 'alpha-vs-shadow-v0960',
-    epsilon: { absolute: ABS_EPS, relative: REL_EPS },
-    summary: {
-      alphaRecipeCount: Object.keys(alphaResult.recipeStats).length,
-      shadowRecipeCount: Object.keys(shadow.recipeRuns).length,
-      alphaItemCount: Object.keys(alphaResult.itemStats).length,
-      shadowItemCount: new Set([
-        ...Object.keys(shadow.itemDemand),
-        ...Object.keys(shadow.itemProduced),
-        ...Object.keys(shadow.purchased),
-        ...Object.keys(shadow.surplus),
-        ...Object.keys(shadow.discarded),
-      ]).size,
-      recipeDiffCount: recipeDiffs.length,
-      itemDiffCount: itemDiffs.length,
-      sourceDiffCount: sourceDiffs.length,
-      unsupportedCycleCount: shadow.cycleComponents.length,
-    },
-    recipeDiffs,
-    itemDiffs,
-    sourceDiffs,
-    reasonCandidates: shadow.unsupportedReasons,
-    noteJa: 'structured plannerの採用結果とlegacy alpha比較用の数値差分です。status差分はlegacyAlphaComparison.statusComparisonを確認してください。',
-    noteEn: 'Numeric differences between the accepted structured planner result and the legacy alpha comparison. See legacyAlphaComparison.statusComparison for status differences.',
-  };
-}
-
 export function buildStructuredAdoptionComparison(shadow: MaterialPlannerShadowResult): PlannerComparisonResult {
   return {
     status: 'not-compared',
-    mode: 'structured-adoption-v09190',
+    mode: 'structured-adoption-v09200',
     epsilon: { absolute: ABS_EPS, relative: REL_EPS },
     summary: {
-      alphaRecipeCount: 0,
-      shadowRecipeCount: Object.keys(shadow.recipeRuns).length,
-      alphaItemCount: 0,
-      shadowItemCount: new Set([
+      referenceRecipeCount: 0,
+      structuredRecipeCount: Object.keys(shadow.recipeRuns).length,
+      referenceItemCount: 0,
+      structuredItemCount: new Set([
         ...Object.keys(shadow.itemDemand),
         ...Object.keys(shadow.itemProduced),
         ...Object.keys(shadow.purchased),
@@ -93,7 +28,7 @@ export function buildStructuredAdoptionComparison(shadow: MaterialPlannerShadowR
     itemDiffs: [],
     sourceDiffs: [],
     reasonCandidates: shadow.unsupportedReasons,
-    noteJa: 'v0.9.19以降はlegacy alpha solverをDEBUG経路でも実行しません。このファイルは旧solverとの差分ではなく、structured result採用状態の記録です。',
-    noteEn: 'Since v0.9.19, the legacy alpha solver is not executed even in DEBUG mode. This artifact records structured result adoption, not a numeric diff against the legacy solver.',
+    noteJa: 'v0.9.20では旧比較solverを削除し、ここにはstructured resultの採用状態だけを記録します。',
+    noteEn: 'In v0.9.20, the retired comparison solver was removed. This artifact records only structured result adoption.',
   };
 }

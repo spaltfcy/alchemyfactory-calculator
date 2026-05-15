@@ -58,12 +58,12 @@ export function runMaterialPlannerShadow(planModel: PlanModel, structuredBaseRes
       },
       {
         phase: 'shadowResult',
-        messageJa: 'structured plannerのmaterial summaryを生成します。legacy alphaはv0.9.19以降、DEBUG経路でも実行しません。',
-        messageEn: 'Builds a material summary for the structured planner. Legacy alpha is DEBUG comparison only.',
+        messageJa: 'structured plannerのmaterial summaryを生成します。旧比較solverはv0.9.20で削除済みです。',
+        messageEn: 'Builds a material summary for the structured planner. Retired comparison solver is DEBUG comparison only.',
       },
     ],
-    noteJa: 'MaterialPlannerはstructured planner結果の材料サマリです。DAG/cycle/source分類をログ化し、legacy alphaとはDEBUG比較します。',
-    noteEn: 'The MaterialPlanner summary belongs to the accepted structured planner result. It logs DAG/cycle/source classification and compares against legacy alpha for DEBUG only.',
+    noteJa: 'MaterialPlannerはstructured planner結果の材料サマリです。DAG/cycle/source分類をログ化し、旧比較solverとは比較しません。',
+    noteEn: 'The MaterialPlanner summary belongs to the accepted structured planner result. It logs DAG/cycle/source classification and no longer compares against the retired comparison path.',
   };
 }
 
@@ -227,14 +227,14 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
 
   const structuredPlan = {
     ...base,
-    mode: 'structured-material-v09190' as const,
+    mode: 'structured-material-v09200' as const,
     status: acceptedResult.calculationStatus === 'invalid' ? 'partial' as const : 'ok' as const,
     cycleComponents: planModel.dependencyGraph.cycleComponents,
     cycleDecisions,
     acceptedResultStatus: acceptedResult.calculationStatus,
-    legacyFallbackUsed: false,
+    fallbackUsed: false,
     structuredResultAdopted: true,
-    acceptedResultEngine: 'structured-material-v09190',
+    acceptedResultEngine: 'structured-material-v09200',
     trace: [
       ...base.trace,
       {
@@ -245,9 +245,9 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
       },
       {
         phase: 'structuredResultAdoption',
-        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。legacy alphaはv0.9.19以降、DEBUG経路でも実行しません。',
-        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. Legacy alpha is not executed in DEBUG mode since v0.9.19.',
-        data: { acceptedResultStatus: acceptedResult.calculationStatus, legacyFallbackUsed: false },
+        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。旧比較solverはv0.9.20で削除済みです。',
+        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. The retired comparison solver was removed in v0.9.20.',
+        data: { acceptedResultStatus: acceptedResult.calculationStatus, fallbackUsed: false },
       },
     ],
     noteJa: 'StructuredMaterialPlanのcycleDecisionsをResultへ反映し、安全なcycleInputは初期投資ラインとしてOK resultに昇格します。',
