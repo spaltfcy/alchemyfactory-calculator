@@ -2,6 +2,7 @@ export * from './calculationTypes';
 
 import {
   buildSolverDiagnostics,
+  buildSolverDiagnosticsForAcceptedResult,
   type SolverDiagnostics,
 } from './solverDiagnostics';
 import { calculateStructuredBalance } from './structuredBalanceSolver';
@@ -34,8 +35,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09200';
-const SOLVE_PLAN_VERSION = '0.9.20';
+const SOLVE_PLAN_MODE = 'solvePlan-v09210';
+const SOLVE_PLAN_VERSION = '0.9.21';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -95,7 +96,7 @@ function diagnosticComparisonFor(result: CalculationResult, solverDiagnostics: R
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-solver-diagnostics-v09200',
+    diagnosticsOrigin: 'solvePlan-debug-solver-diagnostics-v09210',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
@@ -174,7 +175,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
 
   if (!debug) return { result };
 
-  const diagnostics = buildSolverDiagnostics(input);
+  const diagnostics = buildSolverDiagnosticsForAcceptedResult(input, result, planModel);
   const debugLog = buildDebugLogFromResult(input, result);
   const diagnosticComparison = diagnosticComparisonFor(result, diagnostics);
   const structuredAdoptionComparison = buildStructuredAdoptionComparison(structuredSolve.structuredPlan);
@@ -186,7 +187,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   };
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v09200' as const,
+    mode: 'structured-material-v09210' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -198,15 +199,15 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const solverIdentity = {
     acceptedSolverCore: 'structured-balance' as const,
     acceptedPlannerCore: 'structured-material-plan' as const,
-    acceptedResultEngine: 'structured-material-v09200' as const,
+    acceptedResultEngine: 'structured-material-v09210' as const,
     solvePlanMode: SOLVE_PLAN_MODE,
     solvePlanVersion: SOLVE_PLAN_VERSION,
     diagnosticModelOnly: true as const,
     linearProgrammingSolved: false as const,
     retiredComparisonPathRemoved: true as const,
     retiredComparisonPathCalled: false as const,
-    noteJa: 'v0.9.20では、実計算はStructuredBalanceSolverとStructuredMaterialPlanの採用結果です。診断モデルは制約形式で状態を説明するためのもので、線形計画ソルバとして解いていません。',
-    noteEn: 'In v0.9.20, the accepted calculation result comes from StructuredBalanceSolver plus StructuredMaterialPlan. The diagnostic model explains constraints but is not solved as a linear-programming solver.',
+    noteJa: 'v0.9.21では、実計算はStructuredBalanceSolverとStructuredMaterialPlanの採用結果です。診断モデルは制約形式で状態を説明するためのもので、線形計画ソルバとして解いていません。',
+    noteEn: 'In v0.9.21, the accepted calculation result comes from StructuredBalanceSolver plus StructuredMaterialPlan. The diagnostic model explains constraints but is not solved as a linear-programming solver.',
   };
   const extendedDebugLog = {
     ...debugLog,
@@ -222,14 +223,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09200',
-    solverEngine: 'structured-material-v09200',
+    resultEngine: 'structured-material-v09210',
+    solverEngine: 'structured-material-v09210',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09200',
-      solverEngine: 'structured-material-v09200',
+      resultEngine: 'structured-material-v09210',
+      solverEngine: 'structured-material-v09210',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -556,7 +557,13 @@ function buildDebugLogFromResult(input: CalculateInput, result: CalculationResul
   }
 
   const discardWhileConsumed = Object.values(result.itemStats)
-    .filter((stat) => stat.consumed > 0.000001 && stat.discarded > 0.000001)
+    .filter((stat) => {
+      const explicitPolicy = input.surplusPolicies[stat.itemId];
+      const policy = explicitPolicy === 'reuse' || explicitPolicy === 'discard'
+        ? explicitPolicy
+        : input.settings.defaultSurplusPolicy;
+      return policy !== 'discard' && stat.consumed > 0.000001 && stat.discarded > 0.000001;
+    })
     .map((stat) => ({
       itemId: stat.itemId,
       itemNameJa: debugItemNameJa(stat.itemId),

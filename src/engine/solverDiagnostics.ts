@@ -14,7 +14,9 @@ import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_I
 import { getEffectiveRecipeForCalculation, getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/effectiveRecipes';
 import type {
   CalculateInput,
+  CalculationResult,
 } from './calculationTypes';
+import type { PlanModel } from './planner/planModel';
 
 export type SelectedRecipeCycleDiagnostic = {
   id: string;
@@ -91,7 +93,7 @@ export type DiagnosticModelCandidate = {
 };
 
 export type DiagnosticBalanceModel = {
-  status: 'constraint-model-diagnostic-only';
+  status: 'constraint-model-diagnostic-only' | 'accepted-result-diagnostic-only';
   activeRecipeIds: string[];
   activeItemIds: string[];
   targetItemIds: string[];
@@ -809,6 +811,57 @@ function buildDiagnosticBalanceModel(
       { priority: 5, objective: 'recipeRuns minimum', noteJa: '余計なレシピ実行量を最小化します。', noteEn: 'Minimize unnecessary recipe runs.' },
       { priority: 6, objective: 'machineCount after rounding minimum', noteJa: '設備整数丸め後の台数を最小化します。', noteEn: 'Minimize machine count after integer rounding.' },
     ],
+  };
+}
+
+
+export function buildSolverDiagnosticsForAcceptedResult(input: CalculateInput, result: CalculationResult, planModel: PlanModel): SolverDiagnostics {
+  const base = buildSolverDiagnostics(input);
+  const acceptedRecipeIds = Object.keys(result.recipeStats).sort((a, b) => a.localeCompare(b));
+  const acceptedItemIds = Object.keys(result.itemStats).sort((a, b) => a.localeCompare(b));
+  const targetItemIds = planModel.targets.calculation.map((target) => target.outputItemId).sort((a, b) => a.localeCompare(b));
+  const acceptedGraph: DependencyGraphDiagnostic = {
+    recipeNodeCount: acceptedRecipeIds.length,
+    dependencyEdgeCount: result.flows.filter((flow) => flow.from.type === 'recipe' && flow.to.type === 'recipe').length,
+    selectedProducerEdgeCount: result.flows.filter((flow) => flow.from.type === 'recipe' && flow.to.type === 'recipe').length,
+    stronglyConnectedComponentCount: acceptedRecipeIds.length,
+    cyclicComponentCount: planModel.dependencyGraph.cycleComponents.length,
+  };
+  return {
+    ...base,
+    graph: acceptedGraph,
+    activePlanGraph: acceptedGraph,
+    cyclicComponents: planModel.dependencyGraph.cycleComponents.map((cycle) => ({
+      id: cycle.id,
+      recipeIds: cycle.recipeIds,
+      itemIds: cycle.itemIds,
+      buyableInputItemIds: cycle.buyableItemIds,
+      liquidItemIds: cycle.itemIds.filter((itemId) => itemById[itemId]?.physicalState === 'liquid'),
+      descriptionJa: cycle.cycleTextJa,
+      descriptionEn: cycle.cycleTextEn,
+    })),
+    activePlanCyclicComponents: planModel.dependencyGraph.cycleComponents.map((cycle) => ({
+      id: cycle.id,
+      recipeIds: cycle.recipeIds,
+      itemIds: cycle.itemIds,
+      buyableInputItemIds: cycle.buyableItemIds,
+      liquidItemIds: cycle.itemIds.filter((itemId) => itemById[itemId]?.physicalState === 'liquid'),
+      descriptionJa: cycle.cycleTextJa,
+      descriptionEn: cycle.cycleTextEn,
+    })),
+    diagnosticBalanceModel: {
+      ...base.diagnosticBalanceModel,
+      status: 'accepted-result-diagnostic-only',
+      activeRecipeIds: acceptedRecipeIds,
+      activeItemIds: acceptedItemIds,
+      targetItemIds,
+      summary: {
+        ...base.diagnosticBalanceModel.summary,
+        activeRecipeCount: acceptedRecipeIds.length,
+        activeItemCount: acceptedItemIds.length,
+        targetCount: targetItemIds.length,
+      },
+    },
   };
 }
 

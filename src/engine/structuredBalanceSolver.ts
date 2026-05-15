@@ -37,8 +37,8 @@ import type { SolverDiagnostics, SelectedRecipeCycleDiagnostic } from './solverD
 
 const EPS = 1e-9;
 const MAX_REASONABLE_RATE = 1e18;
-const BALANCE_SOLVER_VERSION = '0.9.20' as const;
-const BALANCE_SOLVER_MODE = 'structured-balance-v09200';
+const BALANCE_SOLVER_VERSION = '0.9.21' as const;
+const BALANCE_SOLVER_MODE = 'structured-balance-v09210';
 
 
 function structuredQueueSafetyLimit(input: CalculateInput, diagnostics: SolverDiagnostics): number {
@@ -86,7 +86,7 @@ type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; cons
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
 type StructuredBalanceTrace = {
-  mode: 'structured-balance-v09200';
+  mode: 'structured-balance-v09210';
   version: typeof BALANCE_SOLVER_VERSION;
   iterations?: number;
   queueSafetyLimit?: number;
@@ -778,7 +778,7 @@ type CoProductReduction = {
 };
 
 type CoProductReconciliationTrace = {
-  mode: 'co-product-reconcile-v09200';
+  mode: 'co-product-reconcile-v09210';
   applied: boolean;
   iterations: number;
   reductions: CoProductReduction[];
@@ -826,7 +826,7 @@ function reconcileCoProductsAfterSpecialResources(
   if (!solution.finite) {
     return {
       solved: base,
-      trace: { mode: 'co-product-reconcile-v09200', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
+      trace: { mode: 'co-product-reconcile-v09210', applied: false, iterations: 0, reductions: [], skippedReason: 'special resource solution is not finite' },
     };
   }
 
@@ -896,7 +896,7 @@ function reconcileCoProductsAfterSpecialResources(
       fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
     },
     trace: {
-      mode: 'co-product-reconcile-v09200',
+      mode: 'co-product-reconcile-v09210',
       applied,
       iterations,
       reductions,
@@ -1588,15 +1588,21 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
   for (const [itemId, lots] of supplyLotsByItem.entries()) {
     for (const lot of lots) {
       if (lot.rate <= EPS) continue;
+      const explicitPolicy = input.surplusPolicies[itemId];
+      const policy = explicitPolicy === 'reuse' || explicitPolicy === 'discard'
+        ? explicitPolicy
+        : input.settings.defaultSurplusPolicy;
       const s = stat(itemId);
       s.surplus += lot.rate;
-      s.discarded += lot.rate;
       const recipeStat = recipeStats[lot.recipeId];
-      if (recipeStat) {
-        addToRecord(recipeStat.surplusOutputRates, itemId, lot.rate);
-        addToRecord(recipeStat.discardedOutputRates, itemId, lot.rate);
+      if (recipeStat) addToRecord(recipeStat.surplusOutputRates, itemId, lot.rate);
+      if (policy === 'discard') {
+        s.discarded += lot.rate;
+        if (recipeStat) addToRecord(recipeStat.discardedOutputRates, itemId, lot.rate);
+        pushFlow(makeFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'discard' }, itemId, lot.rate, 'discard', conveyorItemsPerMinute));
+      } else {
+        pushFlow(makeFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'surplus' }, itemId, lot.rate, 'surplus', conveyorItemsPerMinute));
       }
-      pushFlow(makeFlow({ type: 'recipe', recipeId: lot.recipeId }, { type: 'itemSink', itemId, sinkMode: 'discard' }, itemId, lot.rate, 'discard', conveyorItemsPerMinute));
     }
   }
 
@@ -1764,8 +1770,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
         uses: byproductFuelUses,
       },
       specialResourceSolution: specialApplication.solution,
-      notesJa: ['v0.9.20 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
-      notesEn: ['Structured balance solver result for v0.9.20. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
+      notesJa: ['v0.9.21 の構造化収支solver結果です。燃料・肥料の内部生産は熱量/栄養値の特殊リソースとして直接解きます。特殊リソース不要時は内部燃料・肥料のコスト測定を省略し、設備グレード設定とパラドックス素材設定を反映します。'],
+      notesEn: ['Structured balance solver result for v0.9.21. Internal fuel/fertilizer production is solved directly as heat/nutrient special resources. Internal fuel/fertilizer cost probes are skipped when no special resources are needed. Machine preferences and paradox input settings are applied.'],
     },
   };
 }

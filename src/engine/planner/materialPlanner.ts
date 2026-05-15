@@ -58,7 +58,7 @@ export function runMaterialPlannerShadow(planModel: PlanModel, structuredBaseRes
       },
       {
         phase: 'shadowResult',
-        messageJa: 'structured plannerのmaterial summaryを生成します。旧比較solverはv0.9.20で削除済みです。',
+        messageJa: 'structured plannerのmaterial summaryを生成します。旧比較solverはv0.9.21で削除済みです。',
         messageEn: 'Builds a material summary for the structured planner. Retired comparison solver is DEBUG comparison only.',
       },
     ],
@@ -151,6 +151,7 @@ function buildStructuredAcceptedResult(planModel: PlanModel, structuredBaseResul
   const cycleDecisions = planModel.dependencyGraph.cycleDecisions;
   const safeCycleInputs = cycleDecisions.filter((decision) => decision.classification === 'cycleInput' && decision.safeForMainResult);
   const allDecisionsSafe = cycleDecisions.length > 0 && cycleDecisions.every((decision) => decision.safeForMainResult);
+  const baseSolvedWithoutCycleError = structuredBaseResult.calculationStatus !== 'invalid' && (structuredBaseResult.errorSummaries?.length ?? 0) === 0;
   const canPromoteCycleInput = safeCycleInputs.length > 0 && allDecisionsSafe && structuredBaseResult.calculationStatus === 'invalid' && cycleErrorsOnly(structuredBaseResult);
   const result: CalculationResult = {
     ...structuredBaseResult,
@@ -202,7 +203,7 @@ function buildStructuredAcceptedResult(planModel: PlanModel, structuredBaseResul
     result.calculationStatus = 'ok';
     result.errorSummaries = (result.errorSummaries ?? []).filter((summary) => summary.code !== 'RECIPE_CYCLE_INVALID' && summary.code !== 'ALTERNATE_RECIPE_REQUIRED_BUT_DISABLED');
     if (result.errorSummaries.length === 0) delete result.errorSummaries;
-  } else if (cycleDecisions.some((decision) => !decision.safeForMainResult)) {
+  } else if (!baseSolvedWithoutCycleError && cycleDecisions.some((decision) => !decision.safeForMainResult)) {
     result.calculationStatus = 'invalid';
     const unsafe = cycleDecisions.filter((decision) => !decision.safeForMainResult);
     result.errorSummaries = [
@@ -227,14 +228,14 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
 
   const structuredPlan = {
     ...base,
-    mode: 'structured-material-v09200' as const,
+    mode: 'structured-material-v09210' as const,
     status: acceptedResult.calculationStatus === 'invalid' ? 'partial' as const : 'ok' as const,
     cycleComponents: planModel.dependencyGraph.cycleComponents,
     cycleDecisions,
     acceptedResultStatus: acceptedResult.calculationStatus,
     fallbackUsed: false,
     structuredResultAdopted: true,
-    acceptedResultEngine: 'structured-material-v09200',
+    acceptedResultEngine: 'structured-material-v09210',
     trace: [
       ...base.trace,
       {
@@ -245,8 +246,8 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
       },
       {
         phase: 'structuredResultAdoption',
-        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。旧比較solverはv0.9.20で削除済みです。',
-        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. The retired comparison solver was removed in v0.9.20.',
+        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。旧比較solverはv0.9.21で削除済みです。',
+        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. The retired comparison solver was removed in v0.9.21.',
         data: { acceptedResultStatus: acceptedResult.calculationStatus, fallbackUsed: false },
       },
     ],

@@ -126,7 +126,10 @@ type VerificationExpectation = {
   expectedNoJointSurplusGroups?: string[][];
   expectedNoDiscardWhileConsumedItems?: string[];
   expectedIssueCodes?: string[];
+  expectedNoIssueCodes?: string[];
+  expectedNoCycleClassifications?: string[];
   expectedNoUnresolvedItems?: string[];
+  expectedPositiveItemStatFields?: Record<string, Array<'requested' | 'consumed' | 'produced' | 'purchased' | 'initialPurchased' | 'reused' | 'surplus' | 'discarded' | 'targetRequested' | 'targetActual' | 'purchaseCostCopperPerMin' | 'initialCostCopper' | 'revenueCopperPerMin'>>;
   expectedItemStatValues?: Record<string, Partial<Record<'requested' | 'consumed' | 'produced' | 'purchased' | 'initialPurchased' | 'reused' | 'surplus' | 'discarded' | 'targetRequested' | 'targetActual' | 'purchaseCostCopperPerMin' | 'initialCostCopper' | 'revenueCopperPerMin', number>>>;
   expectedTotalValues?: Partial<Record<'heatRequiredPerMin' | 'fuelRequiredPerMin' | 'fertilizerNutrientsRequiredPerMin' | 'fertilizerRequiredPerMin' | 'purchaseCostCopperPerMin' | 'profitCopperPerMin', number>>;
   expectedRecipeRateValues?: Record<string, { runsPerMinute?: number; inputRates?: Record<string, number>; outputRates?: Record<string, number>; netRates?: Record<string, number> }>;
@@ -145,7 +148,12 @@ function expectationForSource(expectations: VerificationExpectations, sourceFile
 
 
 
-function expectationMatchesArtifact(expectation: VerificationExpectation | undefined, status: 'ok' | 'invalid' | 'error', artifact?: { enrichedDebugLog?: unknown; graphArtifacts?: unknown }): boolean | undefined {
+function expectationMatchesArtifact(
+  expectation: VerificationExpectation | undefined,
+  status: 'ok' | 'invalid' | 'error',
+  artifact?: { enrichedDebugLog?: unknown; graphArtifacts?: unknown },
+  actual?: { phase?: string; code?: string },
+): boolean | undefined {
   if (!expectation?.expectedStatus) return undefined;
   if (expectation.expectedStatus !== status) return false;
   const debugLog = artifact?.enrichedDebugLog as {
@@ -177,11 +185,17 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
   }
   if (expectation.expectedErrorCodes && expectation.expectedErrorCodes.length > 0) {
     const codes = new Set((debugLog?.errorSummaries ?? []).map((summary) => summary.code).filter(Boolean));
+    if (actual?.code) codes.add(actual.code);
     for (const code of expectation.expectedErrorCodes) if (!codes.has(code)) return false;
   }
   if (expectation.expectedCycleClassification) {
     const classifications = (debugLog?.cycleDecisions ?? []).map((decision) => decision.classification).filter(Boolean);
     if (!classifications.includes(expectation.expectedCycleClassification)) return false;
+  }
+  if (expectation.expectedNoCycleClassifications && expectation.expectedNoCycleClassifications.length > 0) {
+    const forbidden = new Set(expectation.expectedNoCycleClassifications);
+    const classifications = (debugLog?.cycleDecisions ?? []).map((decision) => decision.classification).filter(Boolean);
+    if (classifications.some((classification) => forbidden.has(String(classification)))) return false;
   }
   if (expectation.expectedInitialInvestmentItems && expectation.expectedInitialInvestmentItems.length > 0) {
     const fromDecisions = new Set<string>();
@@ -302,6 +316,11 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     const issueCodes = new Set((debugLog?.issues ?? []).map((issue) => issue.code).filter(Boolean));
     for (const code of expectation.expectedIssueCodes) if (!issueCodes.has(code)) return false;
   }
+  if (expectation.expectedNoIssueCodes && expectation.expectedNoIssueCodes.length > 0) {
+    const forbidden = new Set(expectation.expectedNoIssueCodes);
+    const issueCodes = (debugLog?.issues ?? []).map((issue) => issue.code).filter(Boolean);
+    if (issueCodes.some((code) => forbidden.has(String(code)))) return false;
+  }
   if (expectation.expectedNoUnresolvedItems && expectation.expectedNoUnresolvedItems.length > 0) {
     const unresolved = new Set(debugLog?.structuredBalanceTrace?.unresolvedItemIds ?? []);
     for (const itemId of expectation.expectedNoUnresolvedItems) if (unresolved.has(itemId)) return false;
@@ -311,6 +330,17 @@ function expectationMatchesArtifact(expectation: VerificationExpectation | undef
     for (const [field, expected] of Object.entries(expectation.expectedTotalValues)) {
       const actual = Number(totals?.[field] ?? 0);
       if (!Number.isFinite(actual) || !closeTo(actual, Number(expected))) return false;
+    }
+  }
+  if (expectation.expectedPositiveItemStatFields) {
+    const stats = new Map((debugLog?.itemStats ?? []).map((stat) => [String(stat.itemId), stat]));
+    for (const [itemId, fields] of Object.entries(expectation.expectedPositiveItemStatFields)) {
+      const stat = stats.get(itemId);
+      if (!stat) return false;
+      for (const field of fields) {
+        const actual = Number((stat as Record<string, unknown>)[field] ?? 0);
+        if (!Number.isFinite(actual) || actual <= 0.000001) return false;
+      }
     }
   }
   if (expectation.expectedItemStatValues) {
@@ -852,7 +882,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 43,
+      debugSchemaVersion: 44,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -887,8 +917,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。旧比較solverはv0.9.20で削除済みです。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. The retired comparison solver was removed in v0.9.20.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。旧比較solverはv0.9.21で削除済みです。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. The retired comparison solver was removed in v0.9.21.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -1021,7 +1051,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 43,
+      debugSchemaVersion: 44,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1200,7 +1230,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       previousMessageCount: Math.max(0, (args.allMessageLogs?.length ?? userMessages.length) - (args.currentRunMessageLogs?.length ?? 0)),
       negativeTargetCount: args.negativeTargets?.length ?? 0,
       expectedStatus: args.expectation?.expectedStatus,
-      expectedMatched: expectationMatchesArtifact(args.expectation, args.status, args.artifact),
+      expectedMatched: expectationMatchesArtifact(args.expectation, args.status, args.artifact, { phase: args.phase, code: args.code }),
     };
   }
 
@@ -1250,6 +1280,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
           messageEn: 'Failed to read the verification JSON file.',
           currentRunMessageLogs: messageLogs.currentRunMessageLogs,
           allMessageLogs: messageLogs.allMessageLogs,
+          expectation: options.expectation,
         });
       }
     }
@@ -1291,6 +1322,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         messageEn: 'The JSON format is invalid.',
         currentRunMessageLogs: messageLogs.currentRunMessageLogs,
         allMessageLogs: messageLogs.allMessageLogs,
+        expectation: options.expectation,
       });
     }
 
@@ -1331,6 +1363,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         messageEn: unsupportedImportMessage('en'),
         currentRunMessageLogs: messageLogs.currentRunMessageLogs,
         allMessageLogs: messageLogs.allMessageLogs,
+        expectation: options.expectation,
       });
     }
 
@@ -1387,6 +1420,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         currentRunMessageLogs: messageLogs.currentRunMessageLogs,
         allMessageLogs: messageLogs.allMessageLogs,
         negativeTargets: targetSanitization.negativeTargets,
+        expectation: options.expectation,
       });
     }
 
@@ -1577,7 +1611,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 43,
+      debugSchemaVersion: 44,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
@@ -1585,12 +1619,19 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       ok: results.filter((result) => result.status === 'ok').length,
       invalid: results.filter((result) => result.status === 'invalid').length,
       error: results.filter((result) => result.status === 'error').length,
-      expectedInvalid: results.filter((result) => result.status === 'invalid' && result.expectedMatched).length,
-      unexpectedInvalid: results.filter((result) => result.status === 'invalid' && !result.expectedMatched).length,
-      expectedOk: results.filter((result) => result.status === 'ok' && result.expectedMatched).length,
+      expectedOk: results.filter((result) => result.expectedStatus === 'ok').length,
+      expectedInvalid: results.filter((result) => result.expectedStatus === 'invalid').length,
+      expectedError: results.filter((result) => result.expectedStatus === 'error').length,
+      expectedOkMatched: results.filter((result) => result.expectedStatus === 'ok' && result.expectedMatched === true).length,
+      expectedInvalidMatched: results.filter((result) => result.expectedStatus === 'invalid' && result.expectedMatched === true).length,
+      expectedErrorMatched: results.filter((result) => result.expectedStatus === 'error' && result.expectedMatched === true).length,
+      unexpectedOk: results.filter((result) => result.status === 'ok' && result.expectedStatus && result.expectedStatus !== 'ok').length,
+      unexpectedInvalid: results.filter((result) => result.status === 'invalid' && result.expectedStatus && result.expectedStatus !== 'invalid').length,
+      unexpectedError: results.filter((result) => result.status === 'error' && result.expectedStatus && result.expectedStatus !== 'error').length,
       unexpectedOkMismatch: results.filter((result) => result.status === 'ok' && result.expectedMatched === false).length,
       expectationMatched: results.filter((result) => result.expectedMatched === true).length,
       expectationMismatched: results.filter((result) => result.expectedMatched === false).length,
+      unexpectedStatus: results.filter((result) => result.expectedStatus && result.expectedStatus !== result.status).length,
       skipped: Object.values(sourceZip.files)
         .filter((entry) => !entry.dir && !shouldIncludeVerificationJsonEntry(entry.name))
         .map((entry) => entry.name),

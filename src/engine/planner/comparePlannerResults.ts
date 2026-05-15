@@ -6,7 +6,7 @@ const REL_EPS = 1e-6;
 export function buildStructuredAdoptionComparison(shadow: MaterialPlannerShadowResult): PlannerComparisonResult {
   return {
     status: 'not-compared',
-    mode: 'structured-adoption-v09200',
+    mode: 'structured-adoption-v09210',
     epsilon: { absolute: ABS_EPS, relative: REL_EPS },
     summary: {
       referenceRecipeCount: 0,
@@ -28,7 +28,7 @@ export function buildStructuredAdoptionComparison(shadow: MaterialPlannerShadowR
     itemDiffs: [],
     sourceDiffs: [],
     reasonCandidates: shadow.unsupportedReasons,
-    noteJa: 'v0.9.20では旧比較solverを削除し、ここにはstructured resultの採用状態だけを記録します。',
-    noteEn: 'In v0.9.20, the retired comparison solver was removed. This artifact records only structured result adoption.',
+    noteJa: 'v0.9.21では旧比較solverを削除し、ここにはstructured resultの採用状態だけを記録します。',
+    noteEn: 'In v0.9.21, the retired comparison solver was removed. This artifact records only structured result adoption.',
   };
 }

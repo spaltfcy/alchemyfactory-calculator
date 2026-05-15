@@ -62,6 +62,7 @@ export type PlanCycleComponent = {
   recipeIds: string[];
   itemIds: string[];
   buyableItemIds: string[];
+  externalBreakerItemIds: string[];
   classification: PlanCycleClassification;
   reasonJa: string;
   reasonEn: string;
@@ -242,16 +243,26 @@ function cycleText(recipeIds: string[], edges: PlanRecipeDependencyEdge[], lang:
   return names.join(sep);
 }
 
-function classifyCycle(itemIds: string[], settings: AppSettings): { classification: PlanCycleClassification; reasonJa: string; reasonEn: string } {
+function classifyCycle(itemIds: string[], settings: AppSettings): { classification: PlanCycleClassification; externalBreakerItemIds: string[]; reasonJa: string; reasonEn: string } {
   const buyable = itemIds.filter(isBuyableItem);
   if (buyable.length > 0) {
-    return { classification: 'purchaseBreakable', reasonJa: '購入可能アイテムで循環を分断できる候補です。', reasonEn: 'The cycle can potentially be broken by purchasing a buyable item.' };
+    return { classification: 'purchaseBreakable', externalBreakerItemIds: [], reasonJa: '購入可能アイテムで循環を分断できる候補です。', reasonEn: 'The cycle can potentially be broken by purchasing a buyable item.' };
   }
-  const specialItemIds = [settings.fuel.fuelItemId, settings.fertilizer.fertilizerItemId, settings.fuel.heatingMode === 'steam' ? 'steam' : ''].filter(Boolean);
-  if (itemIds.some((itemId) => specialItemIds.includes(itemId)) && (settings.fuel.sourceMode === 'external' || settings.fertilizer.sourceMode === 'external')) {
-    return { classification: 'externalBreakable', reasonJa: '外部生産扱いの特殊リソースで分断できる候補です。', reasonEn: 'The cycle can potentially be broken by an externally supplied special resource.' };
+
+  const externalBreakerItemIds = new Set<string>();
+  if (settings.fuel.enabled && settings.fuel.sourceMode === 'external') {
+    externalBreakerItemIds.add(settings.fuel.fuelItemId);
+    if (settings.fuel.heatingMode === 'steam') externalBreakerItemIds.add('steam');
   }
-  return { classification: 'cycleInputCandidate', reasonJa: '初期投入または専用の循環処理が必要な候補です。', reasonEn: 'This cycle likely requires startup input or dedicated cycle handling.' };
+  if (settings.fertilizer.enabled && settings.fertilizer.sourceMode === 'external') {
+    externalBreakerItemIds.add(settings.fertilizer.fertilizerItemId);
+  }
+  const externalCycleItems = itemIds.filter((itemId) => externalBreakerItemIds.has(itemId));
+  if (externalCycleItems.length > 0) {
+    return { classification: 'externalBreakable', externalBreakerItemIds: uniqueSorted(externalCycleItems), reasonJa: '外部生産扱いの有効な特殊リソースで分断できる候補です。', reasonEn: 'The cycle can potentially be broken by an enabled externally supplied special resource.' };
+  }
+
+  return { classification: 'cycleInputCandidate', externalBreakerItemIds: [], reasonJa: '初期投入または専用の循環処理が必要な候補です。', reasonEn: 'This cycle likely requires startup input or dedicated cycle handling.' };
 }
 
 function buildCycleComponents(recipeIds: string[], edges: PlanRecipeDependencyEdge[], settings: AppSettings): PlanCycleComponent[] {
@@ -267,6 +278,7 @@ function buildCycleComponents(recipeIds: string[], edges: PlanRecipeDependencyEd
       recipeIds: component,
       itemIds,
       buyableItemIds,
+      externalBreakerItemIds: classification.externalBreakerItemIds,
       classification: classification.classification,
       reasonJa: classification.reasonJa,
       reasonEn: classification.reasonEn,
@@ -365,12 +377,7 @@ function assessStartupCycleSafety(
 function decideCycleComponent(cycle: PlanCycleComponent, settings: AppSettings, targetOutputItemIds: Set<string>): PlanCycleDecision {
   if (cycle.classification === 'externalBreakable') {
     const runningExternalInputs: Record<string, number> = {};
-    const externalItems = [
-      settings.fuel.sourceMode === 'external' ? settings.fuel.fuelItemId : '',
-      settings.fertilizer.sourceMode === 'external' ? settings.fertilizer.fertilizerItemId : '',
-      settings.fuel.sourceMode === 'external' && settings.fuel.heatingMode === 'steam' ? 'steam' : '',
-    ].filter(Boolean);
-    for (const itemId of cycle.itemIds) if (externalItems.includes(itemId)) runningExternalInputs[itemId] = 0;
+    for (const itemId of cycle.itemIds) if (cycle.externalBreakerItemIds.includes(itemId)) runningExternalInputs[itemId] = 0;
     return {
       componentId: cycle.id,
       candidateClassification: cycle.classification,
@@ -485,8 +492,8 @@ export function buildPlanModel(input: CalculateInput): PlanModel {
     },
     sources: {
       buyableItemIds,
-      externalFuel: input.settings.fuel.sourceMode === 'external',
-      externalFertilizer: input.settings.fertilizer.sourceMode === 'external',
+      externalFuel: input.settings.fuel.enabled && input.settings.fuel.sourceMode === 'external',
+      externalFertilizer: input.settings.fertilizer.enabled && input.settings.fertilizer.sourceMode === 'external',
     },
     abilities: {
       productionSpeedMultiplier: getProductionSpeedMultiplier(input.abilities),
