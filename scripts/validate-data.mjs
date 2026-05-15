@@ -133,6 +133,23 @@ if (unknownRecipeMachines.length > 0) fail('unknown recipe machine ids', unknown
 
 const itemBlocks = parseObjectBlocksFromArray(itemsSource, 'export const ITEMS');
 const recipeBlocks = parseObjectBlocksFromArray(recipesSource, 'export const RECIPES');
+
+const duplicatedItemIds = Object.entries(
+  itemBlocks.reduce((map, item) => {
+    map[item.id] = (map[item.id] ?? 0) + 1;
+    return map;
+  }, {}),
+).filter(([, count]) => count > 1);
+if (duplicatedItemIds.length > 0) fail('duplicate item ids', duplicatedItemIds);
+
+const duplicatedRecipeIds = Object.entries(
+  recipeBlocks.reduce((map, recipe) => {
+    map[recipe.id] = (map[recipe.id] ?? 0) + 1;
+    return map;
+  }, {}),
+).filter(([, count]) => count > 1);
+if (duplicatedRecipeIds.length > 0) fail('duplicate recipe ids', duplicatedRecipeIds);
+
 const paradoxableItemIds = [];
 for (const item of itemBlocks) {
   const paradoxMatch = /paradoxTimeSec:\s*([0-9.eE+-]+)/.exec(item.block);
@@ -153,6 +170,32 @@ for (const recipe of recipeBlocks) {
   }
   if (recipe.id === 'vitality_essence' && hasParadoxable) fail('vitality_essence must not have a paradoxableItem input');
 }
+
+
+const unknownRecipeItems = [];
+const invalidRecipeAmounts = [];
+const invalidRecipeProbabilities = [];
+for (const recipe of recipeBlocks) {
+  const timeMatch = /timeSec:\s*([0-9.eE+-]+)/.exec(recipe.block);
+  const timeSec = timeMatch ? Number(timeMatch[1]) : NaN;
+  if (recipe.id !== 'oblivion_essence' && (!Number.isFinite(timeSec) || timeSec <= 0)) invalidRecipeAmounts.push({ recipeId: recipe.id, field: 'timeSec', value: timeMatch?.[1] ?? null });
+  const outputSection = /outputs:\s*\[([\s\S]*?)\n\s*\]/.exec(recipe.block);
+  if (!outputSection || !/itemId:\s*'([^']+)'/.test(outputSection[1])) invalidRecipeAmounts.push({ recipeId: recipe.id, field: 'outputs', value: 'empty' });
+  for (const match of recipe.block.matchAll(/itemId:\s*'([^']+)'/g)) {
+    if (!itemIds.has(match[1])) unknownRecipeItems.push({ recipeId: recipe.id, itemId: match[1] });
+  }
+  for (const match of recipe.block.matchAll(/amount:\s*([0-9.eE+-]+)/g)) {
+    const amount = Number(match[1]);
+    if (!Number.isFinite(amount) || amount <= 0) invalidRecipeAmounts.push({ recipeId: recipe.id, field: 'amount', value: match[1] });
+  }
+  for (const match of recipe.block.matchAll(/probability:\s*([0-9.eE+-]+)/g)) {
+    const probability = Number(match[1]);
+    if (!Number.isFinite(probability) || probability <= 0 || probability > 1) invalidRecipeProbabilities.push({ recipeId: recipe.id, probability: match[1] });
+  }
+}
+if (unknownRecipeItems.length > 0) fail('unknown recipe item ids', unknownRecipeItems);
+if (invalidRecipeAmounts.length > 0) fail('invalid recipe amounts or timeSec', invalidRecipeAmounts);
+if (invalidRecipeProbabilities.length > 0) fail('invalid recipe probabilities', invalidRecipeProbabilities);
 
 const defaultParadoxMatch = /oblivionInputItemId:\s*'([^']+)'/.exec(paradoxSource);
 if (!defaultParadoxMatch) fail('missing default paradox oblivionInputItemId');

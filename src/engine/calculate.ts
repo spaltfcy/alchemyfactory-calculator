@@ -19,6 +19,7 @@ import {
 import { itemById } from '../data/items';
 import { recipeById } from '../data/recipes';
 import { HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
+import { buildRecipeDataAudit } from '../data/recipeDataAudit';
 import { chooseRecipeForItem } from './itemSourceResolver';
 import { buildPlanModel } from './planner/planModel';
 import { solveStructuredMaterialPlan } from './planner/materialPlanner';
@@ -35,8 +36,8 @@ export type SolvePlanResult = {
   debugLog?: CalculationDebugResult['debugLog'];
 };
 
-const SOLVE_PLAN_MODE = 'solvePlan-v09220';
-const SOLVE_PLAN_VERSION = '0.9.22';
+const SOLVE_PLAN_MODE = 'solvePlan-v09230';
+const SOLVE_PLAN_VERSION = '0.9.23';
 
 function enabledTargetCount(input: CalculateInput): number {
   return input.targets.filter((target) => (target.enabled ?? true) !== false).length;
@@ -96,7 +97,7 @@ function diagnosticComparisonFor(result: CalculationResult, solverDiagnostics: R
       unusedCandidateItems: unusedCandidateItemIds,
     },
     comparisonSeverity: severeMismatch ? 'warning' : candidateOnlyMismatch ? 'info' : 'none',
-    diagnosticsOrigin: 'solvePlan-debug-solver-diagnostics-v09220',
+    diagnosticsOrigin: 'solvePlan-debug-solver-diagnostics-v09230',
     noteJa: 'active/candidate/unusedを明示し、実result側のrecipe/itemが診断モデルに欠けている場合のみ強い警告にします。',
     noteEn: 'Separates active/candidate/unused diagnostics. A strong warning is emitted only when recipes/items from the actual result are missing from the diagnostic model.',
   };
@@ -187,7 +188,7 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   };
   const materialPlannerShadow = {
     enabled: true as const,
-    mode: 'structured-material-v09220' as const,
+    mode: 'structured-material-v09230' as const,
     planModel,
     shadowResult: structuredSolve.structuredPlan,
     structuredPlan: structuredSolve.structuredPlan,
@@ -199,15 +200,15 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
   const solverIdentity = {
     acceptedSolverCore: 'structured-balance' as const,
     acceptedPlannerCore: 'structured-material-plan' as const,
-    acceptedResultEngine: 'structured-material-v09220' as const,
+    acceptedResultEngine: 'structured-material-v09230' as const,
     solvePlanMode: SOLVE_PLAN_MODE,
     solvePlanVersion: SOLVE_PLAN_VERSION,
     diagnosticModelOnly: true as const,
     linearProgrammingSolved: false as const,
     retiredComparisonPathRemoved: true as const,
     retiredComparisonPathCalled: false as const,
-    noteJa: 'v0.9.22では、実計算はStructuredBalanceSolverとStructuredMaterialPlanの採用結果です。診断モデルは制約形式で状態を説明するためのもので、線形計画ソルバとして解いていません。',
-    noteEn: 'In v0.9.22, the accepted calculation result comes from StructuredBalanceSolver plus StructuredMaterialPlan. The diagnostic model explains constraints but is not solved as a linear-programming solver.',
+    noteJa: 'v0.9.23では、実計算はStructuredBalanceSolverとStructuredMaterialPlanの採用結果です。診断モデルは制約形式で状態を説明するためのもので、線形計画ソルバとして解いていません。',
+    noteEn: 'In v0.9.23, the accepted calculation result comes from StructuredBalanceSolver plus StructuredMaterialPlan. The diagnostic model explains constraints but is not solved as a linear-programming solver.',
   };
   const extendedDebugLog = {
     ...debugLog,
@@ -223,14 +224,14 @@ export function solvePlan(input: CalculateInput, options: SolvePlanOptions = {})
           },
         ]
       : debugLog.issues,
-    resultEngine: 'structured-material-v09220',
-    solverEngine: 'structured-material-v09220',
+    resultEngine: 'structured-material-v09230',
+    solverEngine: 'structured-material-v09230',
     solver: {
       mode: SOLVE_PLAN_MODE,
       version: SOLVE_PLAN_VERSION,
       debug,
-      resultEngine: 'structured-material-v09220',
-      solverEngine: 'structured-material-v09220',
+      resultEngine: 'structured-material-v09230',
+      solverEngine: 'structured-material-v09230',
       diagnosticsMode: diagnostics?.mode,
       normalizedTargetCount: input.targets.length,
       calculationTargetCount: input.targets.length,
@@ -546,12 +547,16 @@ function buildDebugLogFromResult(input: CalculateInput, result: CalculationResul
       const recipe = recipeById[entry.recipeId];
       return (recipe?.outputs.length ?? 0) >= 2 && entry.surplusOutputs.length >= 2;
     });
-  if (multiOutputBothSurplus.length > 0) {
+  const hasBlockingMultiOutputProblem =
+    result.calculationStatus === 'invalid'
+    || (result.errorSummaries?.length ?? 0) > 0
+    || Object.values(result.recipeStats).some((stat) => Object.values(stat.discardedOutputRates).some((rate) => Number(rate) > 0.000001));
+  if (hasBlockingMultiOutputProblem && multiOutputBothSurplus.length > 0) {
     issues.push({
       severity: 'warning',
       code: 'MULTI_OUTPUT_MULTIPLE_OUTPUTS_SURPLUS',
-      messageJa: '多出力レシピで複数の出力が同時に余剰になっています。co-product再調整不足の可能性があります。',
-      messageEn: 'A multi-output recipe has multiple outputs marked as surplus. Co-product reconciliation may be incomplete.',
+      messageJa: '多出力レシピで複数の出力が同時に余剰になっており、同時に未解決・破棄などの問題候補があります。',
+      messageEn: 'A multi-output recipe has multiple surplus outputs while the result also has unresolved or discard-related problem candidates.',
       data: multiOutputBothSurplus,
     });
   }
@@ -645,6 +650,7 @@ function buildDebugLogFromResult(input: CalculateInput, result: CalculationResul
     recipeStats: Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId)),
     effectiveRecipeRateAudit: buildEffectiveRecipeRateAudit(result),
     heatRequiredByRecipe: buildHeatRequiredByRecipeAudit(result),
+    dataAudit: buildRecipeDataAudit(),
   };
 }
 

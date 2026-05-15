@@ -1,4 +1,5 @@
 import type { AbilitySettings, AppSettings } from '../types';
+import type { RecipeDataAudit } from '../data/recipeDataAudit';
 
 export type ItemStat = {
   itemId: string;
@@ -118,6 +119,10 @@ export type CalculationCycleDecision = {
   safeForMainResult: boolean;
   reasonJa: string;
   reasonEn: string;
+  resolvedByAlternate?: boolean;
+  resolvedAlternateRecipeIds?: string[];
+  resolutionReasonJa?: string;
+  resolutionReasonEn?: string;
 };
 
 export type ResidualUnresolvedFlow = {
@@ -317,6 +322,7 @@ export type CalculationDebugLog = {
   solverDiagnostics?: unknown;
   structuredBalanceTrace?: unknown;
   planModel?: unknown;
+  dataAudit?: RecipeDataAudit;
 };
 
 export type CalculationDebugResult = {

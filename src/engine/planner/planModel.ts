@@ -55,6 +55,10 @@ export type PlanCycleDecision = {
   safeForMainResult: boolean;
   reasonJa: string;
   reasonEn: string;
+  resolvedByAlternate?: boolean;
+  resolvedAlternateRecipeIds?: string[];
+  resolutionReasonJa?: string;
+  resolutionReasonEn?: string;
 };
 
 export type PlanCycleComponent = {

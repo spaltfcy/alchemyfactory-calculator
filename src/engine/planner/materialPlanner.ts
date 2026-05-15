@@ -58,7 +58,7 @@ export function runMaterialPlannerShadow(planModel: PlanModel, structuredBaseRes
       },
       {
         phase: 'shadowResult',
-        messageJa: 'structured plannerのmaterial summaryを生成します。旧比較solverはv0.9.22で削除済みです。',
+        messageJa: 'structured plannerのmaterial summaryを生成します。旧比較solverはv0.9.23で削除済みです。',
         messageEn: 'Builds a material summary for the structured planner. Retired comparison solver is DEBUG comparison only.',
       },
     ],
@@ -147,8 +147,33 @@ function appendCycleInitialInvestment(base: InitialInvestmentData | undefined, d
   return next;
 }
 
+
+function acceptedResultRecipeIdsNotInPlan(planModel: PlanModel, result: CalculationResult): string[] {
+  const planned = new Set(planModel.dependencyGraph.activeRecipeIds);
+  return Object.keys(result.recipeStats)
+    .filter((recipeId) => !planned.has(recipeId))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeCycleDecisionsForAcceptedResult(planModel: PlanModel, result: CalculationResult): PlanCycleDecision[] {
+  const baseSolvedWithoutCycleError = result.calculationStatus !== 'invalid' && (result.errorSummaries?.length ?? 0) === 0;
+  const resolvedAlternateRecipeIds = acceptedResultRecipeIdsNotInPlan(planModel, result);
+  return planModel.dependencyGraph.cycleDecisions.map((decision) => {
+    if (!baseSolvedWithoutCycleError || decision.safeForMainResult || resolvedAlternateRecipeIds.length === 0) return { ...decision };
+    return {
+      ...decision,
+      classification: 'alternateRecipeBreakable',
+      safeForMainResult: true,
+      resolvedByAlternate: true,
+      resolvedAlternateRecipeIds,
+      resolutionReasonJa: '選択レシピ循環は代替レシピ補完によって実計算では解決済みです。',
+      resolutionReasonEn: 'The selected-recipe cycle was resolved in the accepted calculation by alternate recipe completion.',
+    };
+  });
+}
+
 function buildStructuredAcceptedResult(planModel: PlanModel, structuredBaseResult: CalculationResult): CalculationResult {
-  const cycleDecisions = planModel.dependencyGraph.cycleDecisions;
+  const cycleDecisions = normalizeCycleDecisionsForAcceptedResult(planModel, structuredBaseResult);
   const safeCycleInputs = cycleDecisions.filter((decision) => decision.classification === 'cycleInput' && decision.safeForMainResult);
   const allDecisionsSafe = cycleDecisions.length > 0 && cycleDecisions.every((decision) => decision.safeForMainResult);
   const baseSolvedWithoutCycleError = structuredBaseResult.calculationStatus !== 'invalid' && (structuredBaseResult.errorSummaries?.length ?? 0) === 0;
@@ -175,6 +200,10 @@ function buildStructuredAcceptedResult(planModel: PlanModel, structuredBaseResul
       safeForMainResult: decision.safeForMainResult,
       reasonJa: decision.reasonJa,
       reasonEn: decision.reasonEn,
+      resolvedByAlternate: decision.resolvedByAlternate,
+      resolvedAlternateRecipeIds: decision.resolvedAlternateRecipeIds,
+      resolutionReasonJa: decision.resolutionReasonJa,
+      resolutionReasonEn: decision.resolutionReasonEn,
     })),
   };
 
@@ -223,19 +252,19 @@ function buildStructuredAcceptedResult(planModel: PlanModel, structuredBaseResul
 
 export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBaseResult: CalculationResult) {
   const base = runMaterialPlannerShadow(planModel, structuredBaseResult);
-  const cycleDecisions = planModel.dependencyGraph.cycleDecisions;
   const acceptedResult = buildStructuredAcceptedResult(planModel, structuredBaseResult);
+  const cycleDecisions = acceptedResult.cycleDecisions ?? planModel.dependencyGraph.cycleDecisions;
 
   const structuredPlan = {
     ...base,
-    mode: 'structured-material-v09220' as const,
+    mode: 'structured-material-v09230' as const,
     status: acceptedResult.calculationStatus === 'invalid' ? 'partial' as const : 'ok' as const,
     cycleComponents: planModel.dependencyGraph.cycleComponents,
     cycleDecisions,
     acceptedResultStatus: acceptedResult.calculationStatus,
     fallbackUsed: false,
     structuredResultAdopted: true,
-    acceptedResultEngine: 'structured-material-v09220',
+    acceptedResultEngine: 'structured-material-v09230',
     trace: [
       ...base.trace,
       {
@@ -246,8 +275,8 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
       },
       {
         phase: 'structuredResultAdoption',
-        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。旧比較solverはv0.9.22で削除済みです。',
-        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. The retired comparison solver was removed in v0.9.22.',
+        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。旧比較solverはv0.9.23で削除済みです。',
+        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. The retired comparison solver was removed in v0.9.23.',
         data: { acceptedResultStatus: acceptedResult.calculationStatus, fallbackUsed: false },
       },
     ],

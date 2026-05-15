@@ -139,6 +139,11 @@ type VerificationExpectation = {
   expectedRecipeNetPositive?: Record<string, string[]>;
   expectedRecipeNetNonPositive?: Record<string, string[]>;
   expectedItemNamesJa?: Record<string, string>;
+  expectedDataAuditCounts?: Partial<Record<'items' | 'machines' | 'recipes' | 'sellableItems' | 'buyableItems' | 'probabilityRecipes' | 'sameItemInputOutputRecipes' | 'extractorRecipes' | 'distillerRecipes' | 'alchemyAffectedRecipes' | 'unknownItemRefs' | 'unknownMachineRefs' | 'invalidProbabilityRefs' | 'invalidAmountRefs' | 'duplicateItemIds' | 'duplicateMachineIds' | 'duplicateRecipeIds' | 'machinePortViolations', number>>;
+  expectedDataAuditRecipeIds?: Partial<Record<'probabilityRecipeIds' | 'sameItemInputOutputRecipeIds' | 'extractorRecipeIds' | 'distillerRecipeIds' | 'alchemyAffectedRecipeIds', string[]>>;
+  expectedDataAuditNetNonPositive?: Record<string, string[]>;
+  expectedDataAuditProducerIncludes?: Record<string, string[]>;
+  expectedDataAuditProducerExcludes?: Record<string, string[]>;
 };
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
@@ -173,6 +178,16 @@ function expectationMatchesArtifact(
     structuredBalanceTrace?: { sourceBuckets?: Record<string, Record<string, number>>; unresolvedItemIds?: string[] };
     totals?: { purchaseCostCopperPerMin?: number };
     issues?: Array<{ code?: string }>;
+    dataAudit?: {
+      counts?: Record<string, number>;
+      probabilityRecipeIds?: string[];
+      sameItemInputOutputRecipeIds?: string[];
+      extractorRecipeIds?: string[];
+      distillerRecipeIds?: string[];
+      alchemyAffectedRecipeIds?: string[];
+      netNonPositiveOutputRecipes?: Array<{ recipeId?: string; itemId?: string; netPerRun?: number }>;
+      producerIndexChecks?: Array<{ itemId?: string; producerRecipeIds?: string[] }>;
+    };
   } | undefined;
   const closeTo = (actual: number, expected: number): boolean => {
     const abs = Math.abs(actual - expected);
@@ -446,6 +461,42 @@ function expectationMatchesArtifact(
       }
     }
   }
+  if (expectation.expectedDataAuditCounts) {
+    const counts = debugLog?.dataAudit?.counts ?? {};
+    for (const [field, expected] of Object.entries(expectation.expectedDataAuditCounts)) {
+      const actual = Number(counts[field] ?? 0);
+      if (!Number.isFinite(actual) || actual !== Number(expected)) return false;
+    }
+  }
+  if (expectation.expectedDataAuditRecipeIds) {
+    for (const [field, expectedList] of Object.entries(expectation.expectedDataAuditRecipeIds)) {
+      const actual = [...((debugLog?.dataAudit as Record<string, unknown> | undefined)?.[field] as string[] | undefined ?? [])].sort((a, b) => a.localeCompare(b));
+      const expected = [...(expectedList ?? [])].sort((a, b) => a.localeCompare(b));
+      if (actual.length !== expected.length) return false;
+      for (let i = 0; i < expected.length; i += 1) if (actual[i] !== expected[i]) return false;
+    }
+  }
+  if (expectation.expectedDataAuditNetNonPositive) {
+    const entries = debugLog?.dataAudit?.netNonPositiveOutputRecipes ?? [];
+    for (const [recipeId, itemIds] of Object.entries(expectation.expectedDataAuditNetNonPositive)) {
+      for (const itemId of itemIds) {
+        const found = entries.some((entry) => entry.recipeId === recipeId && entry.itemId === itemId && Number(entry.netPerRun ?? 0) <= 0.000001);
+        if (!found) return false;
+      }
+    }
+  }
+  if (expectation.expectedDataAuditProducerIncludes || expectation.expectedDataAuditProducerExcludes) {
+    const producerMap = new Map((debugLog?.dataAudit?.producerIndexChecks ?? []).map((entry) => [String(entry.itemId), new Set(entry.producerRecipeIds ?? [])]));
+    for (const [itemId, recipeIds] of Object.entries(expectation.expectedDataAuditProducerIncludes ?? {})) {
+      const producers = producerMap.get(itemId) ?? new Set<string>();
+      for (const recipeId of recipeIds) if (!producers.has(recipeId)) return false;
+    }
+    for (const [itemId, recipeIds] of Object.entries(expectation.expectedDataAuditProducerExcludes ?? {})) {
+      const producers = producerMap.get(itemId) ?? new Set<string>();
+      for (const recipeId of recipeIds) if (producers.has(recipeId)) return false;
+    }
+  }
+
   if (expectation.expectedGraphStartupLabel) {
     const graphArtifacts = artifact?.graphArtifacts as { normal?: { model?: { edges?: Array<{ rateLabel?: string; role?: string; itemName?: string }> } } } | undefined;
     const edges = graphArtifacts?.normal?.model?.edges ?? [];
@@ -890,7 +941,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 45,
+      debugSchemaVersion: 46,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -925,8 +976,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         debug: debugGraphArtifact.metrics,
         diff: compareFlowGraphLayoutMetrics(normalGraphArtifact.metrics, debugGraphArtifact.metrics),
       },
-      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。旧比較solverはv0.9.22で削除済みです。',
-      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. The retired comparison solver was removed in v0.9.22.',
+      noteJa: 'Graph[DEBUG]用のSVG/model/metricsです。Graph[DEBUG]のfallbackを維持しつつ、StructuredMaterialPlan/cycleDecisionsを保存します。旧比較solverはv0.9.23で削除済みです。',
+      noteEn: 'SVG/model/metrics for Graph[DEBUG]. Keeps Graph[DEBUG] fallback behavior and saves StructuredMaterialPlan/cycleDecisions artifacts. The retired comparison solver was removed in v0.9.23.',
     };
     (enrichedDebugLog as typeof enrichedDebugLog & { graphArtifacts?: unknown }).graphArtifacts = {
       normal: { metrics: normalGraphArtifact.metrics },
@@ -1059,7 +1110,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 45,
+      debugSchemaVersion: 46,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1619,7 +1670,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 45,
+      debugSchemaVersion: 46,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),

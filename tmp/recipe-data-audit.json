@@ -1,0 +1,137 @@
+{
+  "counts": {
+    "items": 151,
+    "machines": 31,
+    "recipes": 146,
+    "sellableItems": 47,
+    "buyableItems": 18,
+    "probabilityRecipes": 9,
+    "sameItemInputOutputRecipes": 2,
+    "extractorRecipes": 5,
+    "distillerRecipes": 6,
+    "alchemyAffectedRecipes": 11,
+    "unknownItemRefs": 0,
+    "unknownMachineRefs": 0,
+    "invalidProbabilityRefs": 0,
+    "invalidAmountRefs": 0
+  },
+  "probabilityRecipeIds": [
+    "coke_and_charcoal",
+    "copper_powder_and_impure_copper_powder",
+    "gold_dust_and_impure_gold_dust",
+    "lapis_lazuli_and_shattered_crystal",
+    "malachite_and_crude_shard",
+    "obsidian_and_volcanic_ash",
+    "salt_and_sand_2",
+    "silver_powder_and_crude_silver_powder",
+    "steel_ingot_and_iron_ingot"
+  ],
+  "sameItemInputOutputRecipeIds": [
+    "lapis_lazuli_and_shattered_crystal",
+    "steel_ingot_and_iron_ingot"
+  ],
+  "extractorRecipeIds": [
+    "brine",
+    "fairy_tear",
+    "fruit_wine",
+    "limewater",
+    "linseed_oil"
+  ],
+  "distillerRecipeIds": [
+    "aqua_vitae",
+    "brandy",
+    "lavender_essential_oil",
+    "moon_tear",
+    "quicksilver",
+    "sulfuric_acid"
+  ],
+  "alchemyAffectedRecipeIds": [
+    "aqua_vitae",
+    "brandy",
+    "brine",
+    "fairy_tear",
+    "fruit_wine",
+    "lavender_essential_oil",
+    "limewater",
+    "linseed_oil",
+    "moon_tear",
+    "quicksilver",
+    "sulfuric_acid"
+  ],
+  "sameItemInputOutput": [
+    {
+      "recipeId": "lapis_lazuli_and_shattered_crystal",
+      "itemId": "crude_shard",
+      "inputPerRun": 4,
+      "expectedOutputPerRun": 0.3333333333333333,
+      "netPerRun": -3.6666666666666665,
+      "producer": false
+    },
+    {
+      "recipeId": "steel_ingot_and_iron_ingot",
+      "itemId": "iron_ingot",
+      "inputPerRun": 1,
+      "expectedOutputPerRun": 0.75,
+      "netPerRun": -0.25,
+      "producer": false
+    }
+  ],
+  "netNonPositiveOutputRecipes": [
+    {
+      "recipeId": "lapis_lazuli_and_shattered_crystal",
+      "itemId": "crude_shard",
+      "netPerRun": -3.6666666666666665
+    },
+    {
+      "recipeId": "steel_ingot_and_iron_ingot",
+      "itemId": "iron_ingot",
+      "netPerRun": -0.25
+    }
+  ],
+  "producerIndexChecks": [
+    {
+      "itemId": "iron_ingot",
+      "producerRecipeIds": [
+        "iron_ingot",
+        "iron_ingot_2",
+        "sulfur_and_iron_ingot"
+      ]
+    },
+    {
+      "itemId": "crude_shard",
+      "producerRecipeIds": [
+        "crude_shard",
+        "crude_shard_2",
+        "malachite_and_crude_shard"
+      ]
+    },
+    {
+      "itemId": "steel_ingot",
+      "producerRecipeIds": [
+        "steel_ingot_and_iron_ingot"
+      ]
+    },
+    {
+      "itemId": "lapis_lazuli",
+      "producerRecipeIds": [
+        "lapis_lazuli_and_shattered_crystal"
+      ]
+    },
+    {
+      "itemId": "brine",
+      "producerRecipeIds": [
+        "brine"
+      ]
+    },
+    {
+      "itemId": "sol",
+      "producerRecipeIds": [
+        "sol"
+      ]
+    }
+  ],
+  "unknownItemRefs": [],
+  "unknownMachineRefs": [],
+  "invalidProbabilityRefs": [],
+  "invalidAmountRefs": []
+}
