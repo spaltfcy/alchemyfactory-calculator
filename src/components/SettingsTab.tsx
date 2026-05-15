@@ -13,7 +13,7 @@ import { DEFAULT_MACHINE_PREFERENCES, getMachinePreferences } from '../data/mach
 import { DEFAULT_PARADOX_SETTINGS, getParadoxSettings, isParadoxableItem, paradoxableItemIds } from '../data/paradox';
 import { getEffectiveRecipeForCalculation, isItemRecipeInput } from '../data/effectiveRecipes';
 import { normalizeAbilitySettings } from '../data/abilityTables';
-import { getThermalExtractorBonusPercent } from '../engine/structuredBalanceSolver';
+import { getThermalExtractorBonusPercent, getThermalExtractorHeightMultiplier } from '../engine/structuredBalanceSolver';
 
 export type SettingsTabProps = {
   state: AppState;
@@ -258,6 +258,9 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
   const machinePreferences = getMachinePreferenceSettings(state);
   const thermalExtractor = getThermalExtractorSettings(state);
   const paradox = getParadoxSettingValues(state);
+  const thermalExtractorPreviewSettings = { ...state.settings, thermalExtractor };
+  const thermalExtractorBonusPercent = getThermalExtractorBonusPercent(thermalExtractorPreviewSettings);
+  const thermalExtractorHeightMultiplier = getThermalExtractorHeightMultiplier(thermalExtractorPreviewSettings);
   const [importError, setImportError] = useState('');
 
   function patchSettings(patch: Partial<AppSettings>) {
@@ -335,7 +338,7 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     downloadJson('alchemy-factory-calculator-debug-' + saveFileTimestamp() + '.json', {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 44,
+      debugSchemaVersion: 45,
       calculationStatus: result.calculationStatus ?? 'ok',
       errorSummaries: result.errorSummaries ?? [],
       ...debugLog,
@@ -477,6 +480,56 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
       </section>
 
       <div className="settings-side">
+        <section className="panel settings-panel extractor-settings-panel">
+          <h2>{lang === 'ja' ? '抽出機設定' : 'Extractor settings'}</h2>
+          <div className="settings-panel-body">
+            <div className="settings-form-grid">
+              <label className="form-field">
+                <span>{lang === 'ja' ? '抽出系設備' : 'Extraction machine'}</span>
+                <select
+                  id="preferred-extractor-machine"
+                  name="preferred-extractor-machine"
+                  value={machinePreferences.extractor}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    patchMachinePreferences({ extractor: event.target.value as MachinePreferences['extractor'] })
+                  }
+                >
+                  <option value="extractor">{text(machineById.extractor.name, lang)}</option>
+                  <option value="thermal_extractor">{text(machineById.thermal_extractor.name, lang)}</option>
+                </select>
+                <small>
+                  {machinePreferences.extractor === 'thermal_extractor'
+                    ? (lang === 'ja' ? '熱抽出機として計算します。高さ倍率と熱要求が適用されます。' : 'Uses the thermal extractor. Height scaling and heat demand are applied.')
+                    : (lang === 'ja' ? '通常の抽出機として計算します。高さと熱要求は使いません。' : 'Uses the normal extractor. Height and heat demand are not applied.')}
+                </small>
+              </label>
+              <label className="form-field">
+                <span>{lang === 'ja' ? '熱抽出機 高さ' : 'Thermal extractor height'}</span>
+                <input
+                  id="thermal-extractor-height"
+                  name="thermal-extractor-height"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={thermalExtractor.height}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    patchThermalExtractorSettings({ height: Math.max(0, Math.floor(value)) });
+                  }}
+                />
+                <small>
+                  {lang === 'ja'
+                    ? `熱抽出機選択時のみ適用。生産ボーナス ${Math.round(thermalExtractorBonusPercent * 10) / 10}% / 倍率 ${Math.round(thermalExtractorHeightMultiplier * 1000) / 1000}x（256以上で上限）`
+                    : `Applied only when the thermal extractor is selected. Production bonus ${Math.round(thermalExtractorBonusPercent * 10) / 10}% / multiplier ${Math.round(thermalExtractorHeightMultiplier * 1000) / 1000}x (capped at 256+)`}
+                </small>
+              </label>
+            </div>
+          </div>
+        </section>
+
         <section className="panel settings-panel calculation-settings-panel">
           <h2>{lang === 'ja' ? '計算・表示' : 'Calculation / Display'}</h2>
 
@@ -568,42 +621,6 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                   <option value="grinder">{text(machineById.grinder.name, lang)}</option>
                   <option value="enhanced_grinder">{text(machineById.enhanced_grinder.name, lang)}</option>
                 </select>
-              </label>
-              <label className="form-field">
-                <span>{lang === 'ja' ? '抽出系設備' : 'Extraction machine'}</span>
-                <select
-                  id="preferred-extractor-machine"
-                  name="preferred-extractor-machine"
-                  value={machinePreferences.extractor}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                    patchMachinePreferences({ extractor: event.target.value as MachinePreferences['extractor'] })
-                  }
-                >
-                  <option value="extractor">{text(machineById.extractor.name, lang)}</option>
-                  <option value="thermal_extractor">{text(machineById.thermal_extractor.name, lang)}</option>
-                </select>
-              </label>
-              <label className="form-field">
-                <span>{lang === 'ja' ? '熱抽出機 高さ' : 'Thermal extractor height'}</span>
-                <input
-                  id="thermal-extractor-height"
-                  name="thermal-extractor-height"
-                  type="number"
-                  step={1}
-                  value={thermalExtractor.height}
-                  autoComplete="off"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                    const value = Number(event.target.value);
-                    if (!Number.isFinite(value)) return;
-                    patchThermalExtractorSettings({ height: Math.floor(value) });
-                  }}
-                />
-                <small>
-                  {lang === 'ja'
-                    ? `生産ボーナス ${Math.round(getThermalExtractorBonusPercent({ ...state.settings, thermalExtractor }) * 10) / 10}%（256以上で200%）`
-                    : `Production bonus ${Math.round(getThermalExtractorBonusPercent({ ...state.settings, thermalExtractor }) * 10) / 10}% (200% at 256+)`}
-                </small>
               </label>
               <label className="form-field">
                 <span>{lang === 'ja' ? '消滅エッセンス素材' : 'Oblivion essence input'}</span>

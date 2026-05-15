@@ -17,7 +17,7 @@ export type MaterialPlannerTraceStep = {
 
 export type MaterialPlannerShadowResult = {
   status: 'ok' | 'partial' | 'unsupported';
-  mode: 'shadow-dag-v0960' | 'structured-material-v09210';
+  mode: 'shadow-dag-v0960' | 'structured-material-v09220';
   planSummary: PlanModel['summary'];
   recipeRuns: Record<string, number>;
   itemDemand: Record<string, number>;
@@ -43,7 +43,7 @@ export type PlannerNumericDiff = {
 
 export type PlannerComparisonResult = {
   status: 'match' | 'diff' | 'not-compared';
-  mode: 'structured-adoption-v09210';
+  mode: 'structured-adoption-v09220';
   epsilon: { absolute: number; relative: number };
   summary: {
     referenceRecipeCount: number;
@@ -65,7 +65,7 @@ export type PlannerComparisonResult = {
 
 export type MaterialPlannerShadowArtifact = {
   enabled: true;
-  mode: 'shadow-dag-v0960' | 'structured-material-v09210';
+  mode: 'shadow-dag-v0960' | 'structured-material-v09220';
   planModel: PlanModel;
   shadowResult: MaterialPlannerShadowResult;
   comparison: PlannerComparisonResult;
@@ -80,7 +80,7 @@ export type MaterialPlannerShadowArtifact = {
 
 
 export type StructuredMaterialPlan = MaterialPlannerShadowResult & {
-  mode: 'structured-material-v09210';
+  mode: 'structured-material-v09220';
   acceptedResultStatus: CalculationResult['calculationStatus'];
   cycleDecisions: PlanModel['dependencyGraph']['cycleDecisions'];
   fallbackUsed: boolean;

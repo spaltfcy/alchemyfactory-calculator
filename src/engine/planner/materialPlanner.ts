@@ -58,7 +58,7 @@ export function runMaterialPlannerShadow(planModel: PlanModel, structuredBaseRes
       },
       {
         phase: 'shadowResult',
-        messageJa: 'structured plannerのmaterial summaryを生成します。旧比較solverはv0.9.21で削除済みです。',
+        messageJa: 'structured plannerのmaterial summaryを生成します。旧比較solverはv0.9.22で削除済みです。',
         messageEn: 'Builds a material summary for the structured planner. Retired comparison solver is DEBUG comparison only.',
       },
     ],
@@ -228,14 +228,14 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
 
   const structuredPlan = {
     ...base,
-    mode: 'structured-material-v09210' as const,
+    mode: 'structured-material-v09220' as const,
     status: acceptedResult.calculationStatus === 'invalid' ? 'partial' as const : 'ok' as const,
     cycleComponents: planModel.dependencyGraph.cycleComponents,
     cycleDecisions,
     acceptedResultStatus: acceptedResult.calculationStatus,
     fallbackUsed: false,
     structuredResultAdopted: true,
-    acceptedResultEngine: 'structured-material-v09210',
+    acceptedResultEngine: 'structured-material-v09220',
     trace: [
       ...base.trace,
       {
@@ -246,8 +246,8 @@ export function solveStructuredMaterialPlan(planModel: PlanModel, structuredBase
       },
       {
         phase: 'structuredResultAdoption',
-        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。旧比較solverはv0.9.21で削除済みです。',
-        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. The retired comparison solver was removed in v0.9.21.',
+        messageJa: 'StructuredBalanceSolverで生成したCalculationResultへcycleDecisionを反映して採用しています。旧比較solverはv0.9.22で削除済みです。',
+        messageEn: 'The CalculationResult produced by StructuredBalanceSolver is accepted after applying cycle decisions. The retired comparison solver was removed in v0.9.22.',
         data: { acceptedResultStatus: acceptedResult.calculationStatus, fallbackUsed: false },
       },
     ],
