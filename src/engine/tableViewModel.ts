@@ -3,12 +3,11 @@ import type { CalculatedFlow, CalculationResult, RecipeStat } from './calculatio
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
-import { text } from '../i18n';
 
 const EPS = 1e-9;
 const MAX_DEPTH = 64;
 const MAX_STEPS_PER_SOURCE = 10000;
-const TABLE_VIEW_SCHEMA_VERSION = 'table-view-v0932' as const;
+const TABLE_VIEW_SCHEMA_VERSION = 'table-view-v0933' as const;
 
 type LocalizedName = {
   ja: string;
@@ -34,9 +33,12 @@ export type MachineMainRow = {
   theoreticalMachines: number;
   actualMachines: number;
   surplusOutputs: TableProductionOutput[];
+  expandable: boolean;
+  expansionIgnored: boolean;
+  expansionIgnoredReason?: 'steam_recipe' | 'steam_output' | 'missing_recipe';
 };
 
-export type MachineDetailRowKind = 'final' | 'surplus' | 'discard' | 'cycle' | 'unallocated' | 'overallocated';
+export type MachineDetailRowKind = 'final' | 'fuel' | 'fertilizer' | 'cycle' | 'unallocated' | 'overallocated';
 
 export type MachineDetailRow = {
   id: string;
@@ -70,22 +72,41 @@ export type TableAllocationSummary = {
   sourceRecipeId: string;
   sourceItemId: string;
   sourceOutputRate: number;
+  displayedUsageRate: number;
   allocatedUsageRate: number;
   terminalUsageRate: number;
+  ignoredSurplusRate: number;
+  ignoredDiscardRate: number;
+  ignoredSteamRate: number;
+  ignoredRecipeRate: number;
   unallocatedUsageRate: number;
   overallocatedUsageRate: number;
+  balanceBaseRate: number;
   difference: number;
   allocationBalanced: boolean;
 };
 
 export type TableExpansionTraceEntry = {
-  action: 'start' | 'advance' | 'terminal' | 'cycle' | 'unallocated' | 'overallocated' | 'limit';
+  action:
+    | 'start'
+    | 'advance'
+    | 'terminal'
+    | 'cycle'
+    | 'unallocated'
+    | 'overallocated'
+    | 'limit'
+    | 'ignoredSurplus'
+    | 'ignoredDiscard'
+    | 'ignoredSteam'
+    | 'ignoredRecipe';
   sourceRecipeId: string;
   sourceItemId: string;
   fromRecipeId?: string;
   toRecipeId?: string;
   itemId?: string;
   sinkMode?: string;
+  terminalRole?: MachineDetailRowKind;
+  ignoredReason?: string;
   flowRate?: number;
   usageRate: number;
   pathRecipeIds: string[];
@@ -103,7 +124,7 @@ export type TableViewIssue = {
 
 export type TableViewModel = {
   schemaVersion: typeof TABLE_VIEW_SCHEMA_VERSION;
-  usageMethod: 'direct-flow-and-proportional-downstream-attribution';
+  usageMethod: 'direct-flow-and-proportional-downstream-attribution-ignore-surplus-and-steam';
   mainSort: TablePreferences['machineSort'];
   detailSort: TablePreferences['machineDetailSort'];
   columns: {
@@ -114,6 +135,7 @@ export type TableViewModel = {
   detailGroupsByRecipeId: Record<string, MachineDetailGroup[]>;
   allocationSummariesByRecipeId: Record<string, TableAllocationSummary[]>;
   expansionTraceByRecipeId: Record<string, TableExpansionTraceEntry[]>;
+  ignoredExpansionRecipeIds: string[];
   issues: TableViewIssue[];
 };
 
@@ -130,6 +152,10 @@ type BuildContext = {
   issues: TableViewIssue[];
   steps: number;
   limitHit: boolean;
+  ignoredSurplusRate: number;
+  ignoredDiscardRate: number;
+  ignoredSteamRate: number;
+  ignoredRecipeRate: number;
 };
 
 function localizedFallbackName(id: string): LocalizedName {
@@ -155,12 +181,8 @@ function compareText(a: string, b: string, lang: Lang): number {
   return new Intl.Collator(lang === 'ja' ? 'ja' : 'en', { numeric: true, sensitivity: 'base' }).compare(a, b);
 }
 
-function productionRateTotal(row: RecipeStat): number {
-  return Object.values(row.outputRates).reduce((sum, value) => sum + Math.max(0, value), 0);
-}
-
-function surplusTotal(row: RecipeStat): number {
-  return Object.values(row.surplusOutputRates).reduce((sum, value) => sum + Math.max(0, value), 0);
+function surplusTotal(row: MachineMainRow): number {
+  return row.surplusOutputs.reduce((sum, output) => sum + output.rate, 0);
 }
 
 function positiveOutputs(record: Record<string, number>): TableProductionOutput[] {
@@ -178,10 +200,24 @@ function positiveOutputs(record: Record<string, number>): TableProductionOutput[
     });
 }
 
+function usageExpansionIgnoredReason(recipeId: string, productionOutputs?: TableProductionOutput[]): MachineMainRow['expansionIgnoredReason'] | undefined {
+  const recipe = recipeById[recipeId];
+  if (!recipe) return 'missing_recipe';
+  const machine = machineById[recipe.machineId];
+  if (machine?.category === 'steam') return 'steam_recipe';
+  if ((productionOutputs ?? positiveOutputs(Object.fromEntries(recipe.outputs.map((output) => [output.itemId, output.amount])))).some((output) => output.itemId === 'steam')) return 'steam_output';
+  return undefined;
+}
+
+function isUsageExpansionIgnoredRecipe(recipeId: string, productionOutputs?: TableProductionOutput[]): boolean {
+  return usageExpansionIgnoredReason(recipeId, productionOutputs) !== undefined;
+}
+
 function mainRowFromRecipeStat(stat: RecipeStat): MachineMainRow {
   const recipe = recipeName(stat.recipeId);
   const machine = machineName(stat.machineId);
   const productionOutputs = positiveOutputs(stat.outputRates);
+  const expansionIgnoredReason = usageExpansionIgnoredReason(stat.recipeId, productionOutputs);
   return {
     recipeId: stat.recipeId,
     recipeNameJa: recipe.ja,
@@ -194,6 +230,9 @@ function mainRowFromRecipeStat(stat: RecipeStat): MachineMainRow {
     theoreticalMachines: stat.theoreticalMachines,
     actualMachines: stat.actualMachines,
     surplusOutputs: positiveOutputs(stat.surplusOutputRates),
+    expandable: false,
+    expansionIgnored: expansionIgnoredReason !== undefined,
+    expansionIgnoredReason,
   };
 }
 
@@ -203,7 +242,7 @@ function compareMainRows(a: MachineMainRow, b: MachineMainRow, key: MachineTable
   if (key === 'productionRate') return a.productionRateTotal - b.productionRateTotal;
   if (key === 'theoreticalMachines') return a.theoreticalMachines - b.theoreticalMachines;
   if (key === 'actualMachines') return a.actualMachines - b.actualMachines;
-  return a.surplusOutputs.reduce((sum, output) => sum + output.rate, 0) - b.surplusOutputs.reduce((sum, output) => sum + output.rate, 0);
+  return surplusTotal(a) - surplusTotal(b);
 }
 
 function sortMainRows(rows: MachineMainRow[], sort: TablePreferences['machineSort'], lang: Lang): MachineMainRow[] {
@@ -241,7 +280,6 @@ function sortDetailRows(rows: MachineDetailRow[], sort: TablePreferences['machin
 function isAttributableOutputFlow(flow: CalculatedFlow): boolean {
   if (!Number.isFinite(flow.rate) || flow.rate <= EPS) return false;
   if (flow.from.type !== 'recipe') return false;
-  if (flow.role === 'fuel' || flow.role === 'fertilizer' || flow.role === 'steam') return false;
   if (flow.to.type === 'recipe') return true;
   return flow.to.type === 'itemSink' && (flow.to.sinkMode === 'final' || flow.to.sinkMode === 'surplus' || flow.to.sinkMode === 'discard');
 }
@@ -283,12 +321,15 @@ function addOrUpdateRow(ctx: BuildContext, row: MachineDetailRow, productionAggr
     return;
   }
   existing.usageRate += row.usageRate;
-  existing.usagePercent = ctx.sourceOutputRate > EPS ? existing.usageRate / ctx.sourceOutputRate * 100 : 0;
   if (row.productionRate !== undefined) {
     existing.productionRate = productionAggregation === 'max'
       ? Math.max(existing.productionRate ?? 0, row.productionRate)
       : (existing.productionRate ?? 0) + row.productionRate;
   }
+}
+
+function usagePercent(usageRate: number, denominator: number): number {
+  return denominator > EPS ? usageRate / denominator * 100 : 0;
 }
 
 function addFinalRow(ctx: BuildContext, itemId: string, terminalRecipeId: string, usageRate: number, finalOutputRate: number): void {
@@ -302,7 +343,7 @@ function addFinalRow(ctx: BuildContext, itemId: string, terminalRecipeId: string
     sourceItemId: ctx.sourceItemId,
     sourceOutputRate: ctx.sourceOutputRate,
     usageRate,
-    usagePercent: ctx.sourceOutputRate > EPS ? usageRate / ctx.sourceOutputRate * 100 : 0,
+    usagePercent: 0,
     productionRate: finalOutputRate,
     theoreticalMachines: stat?.theoreticalMachines,
     actualMachines: stat?.actualMachines,
@@ -312,20 +353,39 @@ function addFinalRow(ctx: BuildContext, itemId: string, terminalRecipeId: string
   }, 'max');
 }
 
-function addTerminalRow(ctx: BuildContext, kind: 'surplus' | 'discard', itemId: string, usageRate: number): void {
+function addSpecialDemandRow(ctx: BuildContext, kind: 'fuel' | 'fertilizer', itemId: string, usageRate: number): void {
   const name = itemName(itemId);
-  const labelJa = kind === 'surplus' ? `余剰: ${name.ja}` : `破棄: ${name.ja}`;
-  const labelEn = kind === 'surplus' ? `Surplus: ${name.en}` : `Discard: ${name.en}`;
   addOrUpdateRow(ctx, {
     id: `${kind}:${itemId}`,
     kind,
-    labelJa,
-    labelEn,
+    labelJa: `${kind === 'fuel' ? '燃料' : '肥料'}: ${name.ja}`,
+    labelEn: `${kind === 'fuel' ? 'Fuel' : 'Fertilizer'}: ${name.en}`,
     sourceItemId: ctx.sourceItemId,
     sourceOutputRate: ctx.sourceOutputRate,
     usageRate,
-    usagePercent: ctx.sourceOutputRate > EPS ? usageRate / ctx.sourceOutputRate * 100 : 0,
+    usagePercent: 0,
     itemId,
+  });
+}
+
+function addIgnoredRate(ctx: BuildContext, kind: 'surplus' | 'discard' | 'steam' | 'recipe', flow: CalculatedFlow | undefined, usageRate: number, pathRecipeIds: string[], noteJa: string, noteEn: string): void {
+  if (usageRate <= EPS) return;
+  if (kind === 'surplus') ctx.ignoredSurplusRate += usageRate;
+  else if (kind === 'discard') ctx.ignoredDiscardRate += usageRate;
+  else if (kind === 'steam') ctx.ignoredSteamRate += usageRate;
+  else ctx.ignoredRecipeRate += usageRate;
+  addTrace(ctx, {
+    action: kind === 'surplus' ? 'ignoredSurplus' : kind === 'discard' ? 'ignoredDiscard' : kind === 'steam' ? 'ignoredSteam' : 'ignoredRecipe',
+    fromRecipeId: flow?.from.type === 'recipe' ? flow.from.recipeId : undefined,
+    toRecipeId: flow?.to.type === 'recipe' ? flow.to.recipeId : undefined,
+    itemId: flow?.itemId,
+    sinkMode: flow?.to.type === 'itemSink' ? flow.to.sinkMode : undefined,
+    flowRate: flow?.rate,
+    usageRate,
+    pathRecipeIds,
+    ignoredReason: kind,
+    noteJa,
+    noteEn,
   });
 }
 
@@ -339,7 +399,7 @@ function addCycleRow(ctx: BuildContext, recipeId: string, usageRate: number): vo
     sourceItemId: ctx.sourceItemId,
     sourceOutputRate: ctx.sourceOutputRate,
     usageRate,
-    usagePercent: ctx.sourceOutputRate > EPS ? usageRate / ctx.sourceOutputRate * 100 : 0,
+    usagePercent: 0,
     recipeId,
   });
 }
@@ -354,7 +414,7 @@ function addUnallocatedRow(ctx: BuildContext, usageRate: number, reasonJa: strin
     sourceItemId: ctx.sourceItemId,
     sourceOutputRate: ctx.sourceOutputRate,
     usageRate,
-    usagePercent: ctx.sourceOutputRate > EPS ? usageRate / ctx.sourceOutputRate * 100 : 0,
+    usagePercent: 0,
     issueCode: 'TABLE_USAGE_UNALLOCATED',
   });
   addTrace(ctx, {
@@ -377,7 +437,7 @@ function addOverallocatedRow(ctx: BuildContext, usageRate: number): void {
     sourceItemId: ctx.sourceItemId,
     sourceOutputRate: ctx.sourceOutputRate,
     usageRate,
-    usagePercent: ctx.sourceOutputRate > EPS ? usageRate / ctx.sourceOutputRate * 100 : 0,
+    usagePercent: 0,
     issueCode: 'TABLE_USAGE_OVERALLOCATED',
   });
   addTrace(ctx, {
@@ -428,19 +488,19 @@ function consumeFlow(ctx: BuildContext, flow: CalculatedFlow, usageRate: number,
     return;
   }
 
-  if (flow.to.type === 'itemSink') {
-    if (flow.to.sinkMode === 'final') {
-      addFinalRow(ctx, flow.itemId, flow.from.type === 'recipe' ? flow.from.recipeId : '', usageRate, flow.rate);
-    } else if (flow.to.sinkMode === 'surplus') {
-      addTerminalRow(ctx, 'surplus', flow.itemId, usageRate);
-    } else if (flow.to.sinkMode === 'discard') {
-      addTerminalRow(ctx, 'discard', flow.itemId, usageRate);
-    }
+  if (flow.role === 'steam' || flow.itemId === 'steam') {
+    addIgnoredRate(ctx, 'steam', flow, usageRate, pathRecipeIds, '蒸気フローは表の使用量内訳から除外します。', 'Steam flow is ignored by the table usage allocation.');
+    return;
+  }
+
+  if (flow.role === 'fuel' || flow.role === 'fertilizer') {
+    addSpecialDemandRow(ctx, flow.role, flow.itemId, usageRate);
     addTrace(ctx, {
       action: 'terminal',
       fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+      toRecipeId: flow.to.type === 'recipe' ? flow.to.recipeId : undefined,
       itemId: flow.itemId,
-      sinkMode: flow.to.sinkMode,
+      terminalRole: flow.role,
       flowRate: flow.rate,
       usageRate,
       pathRecipeIds,
@@ -448,8 +508,34 @@ function consumeFlow(ctx: BuildContext, flow: CalculatedFlow, usageRate: number,
     return;
   }
 
+  if (flow.to.type === 'itemSink') {
+    if (flow.to.sinkMode === 'final') {
+      addFinalRow(ctx, flow.itemId, flow.from.type === 'recipe' ? flow.from.recipeId : '', usageRate, flow.rate);
+      addTrace(ctx, {
+        action: 'terminal',
+        fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+        itemId: flow.itemId,
+        sinkMode: flow.to.sinkMode,
+        terminalRole: 'final',
+        flowRate: flow.rate,
+        usageRate,
+        pathRecipeIds,
+      });
+    } else if (flow.to.sinkMode === 'surplus') {
+      addIgnoredRate(ctx, 'surplus', flow, usageRate, pathRecipeIds, '余剰は原因ランキングから除外します。', 'Surplus is ignored by the demand ranking.');
+    } else if (flow.to.sinkMode === 'discard') {
+      addIgnoredRate(ctx, 'discard', flow, usageRate, pathRecipeIds, '破棄は原因ランキングから除外します。', 'Discard is ignored by the demand ranking.');
+    }
+    return;
+  }
+
   if (flow.to.type !== 'recipe') return;
   const nextRecipeId = flow.to.recipeId;
+  if (isUsageExpansionIgnoredRecipe(nextRecipeId)) {
+    addIgnoredRate(ctx, 'recipe', flow, usageRate, pathRecipeIds, '蒸気などの中継設備は表の使用量内訳から除外します。', 'Utility recipes such as steam recipes are ignored by the table usage allocation.');
+    return;
+  }
+
   if (pathRecipeIds.includes(nextRecipeId)) {
     addCycleRow(ctx, nextRecipeId, usageRate);
     addTrace(ctx, {
@@ -487,6 +573,11 @@ function visitRecipe(ctx: BuildContext, recipeId: string, usageRate: number, pat
       usageRate,
       pathRecipeIds,
     });
+    return;
+  }
+
+  if (isUsageExpansionIgnoredRecipe(recipeId)) {
+    addIgnoredRate(ctx, 'recipe', undefined, usageRate, pathRecipeIds, '蒸気などの中継設備は表の使用量内訳から除外します。', 'Utility recipes such as steam recipes are ignored by the table usage allocation.');
     return;
   }
 
@@ -529,6 +620,10 @@ function buildDetailGroup(
     issues,
     steps: 0,
     limitHit: false,
+    ignoredSurplusRate: 0,
+    ignoredDiscardRate: 0,
+    ignoredSteamRate: 0,
+    ignoredRecipeRate: 0,
   };
 
   addTrace(ctx, {
@@ -550,29 +645,40 @@ function buildDetailGroup(
   for (const row of rowMap.values()) {
     if (row.kind !== 'unallocated' && row.kind !== 'overallocated') terminalUsageRate += row.usageRate;
   }
-  const diff = sourceOutput.rate - terminalUsageRate;
+  const ignoredTotal = ctx.ignoredSurplusRate + ctx.ignoredDiscardRate + ctx.ignoredSteamRate + ctx.ignoredRecipeRate;
+  const balanceBaseRate = Math.max(0, sourceOutput.rate - ignoredTotal);
+  const diff = balanceBaseRate - terminalUsageRate;
   const tolerance = allocationTolerance(sourceOutput.rate);
-  if (diff > tolerance) addUnallocatedRow(ctx, diff, '使用量の合計が親レシピの対象生産量に届いていません。', 'Usage rows do not add up to the source output rate.');
+  if (diff > tolerance) addUnallocatedRow(ctx, diff, '使用量の合計が余剰・蒸気除外後の対象生産量に届いていません。', 'Usage rows do not add up to the source output rate after ignored surplus and steam are removed.');
   else if (diff < -tolerance) addOverallocatedRow(ctx, Math.abs(diff));
 
   const rowsBeforeSort = [...rowMap.values()].map((row) => ({
     ...row,
-    usagePercent: sourceOutput.rate > EPS ? row.usageRate / sourceOutput.rate * 100 : 0,
+    usagePercent: usagePercent(row.usageRate, balanceBaseRate),
   }));
   const rows = sortDetailRows(rowsBeforeSort, detailSort, lang);
-  const allocatedUsageRate = rows.reduce((sum, row) => sum + (row.kind === 'overallocated' ? 0 : row.usageRate), 0);
   const unallocatedUsageRate = rows.filter((row) => row.kind === 'unallocated').reduce((sum, row) => sum + row.usageRate, 0);
   const overallocatedUsageRate = rows.filter((row) => row.kind === 'overallocated').reduce((sum, row) => sum + row.usageRate, 0);
+  const displayedUsageRate = rows.filter((row) => row.kind !== 'overallocated').reduce((sum, row) => sum + row.usageRate, 0);
+  const terminalRowsUsageRate = rows
+    .filter((row) => row.kind !== 'unallocated' && row.kind !== 'overallocated')
+    .reduce((sum, row) => sum + row.usageRate, 0);
   const summary: TableAllocationSummary = {
     sourceRecipeId,
     sourceItemId: sourceOutput.itemId,
     sourceOutputRate: sourceOutput.rate,
-    allocatedUsageRate,
-    terminalUsageRate,
+    displayedUsageRate,
+    allocatedUsageRate: displayedUsageRate,
+    terminalUsageRate: terminalRowsUsageRate,
+    ignoredSurplusRate: ctx.ignoredSurplusRate,
+    ignoredDiscardRate: ctx.ignoredDiscardRate,
+    ignoredSteamRate: ctx.ignoredSteamRate,
+    ignoredRecipeRate: ctx.ignoredRecipeRate,
     unallocatedUsageRate,
     overallocatedUsageRate,
-    difference: sourceOutput.rate - allocatedUsageRate,
-    allocationBalanced: unallocatedUsageRate <= tolerance && overallocatedUsageRate <= tolerance && Math.abs(sourceOutput.rate - allocatedUsageRate) <= tolerance,
+    balanceBaseRate,
+    difference: balanceBaseRate - displayedUsageRate,
+    allocationBalanced: unallocatedUsageRate <= tolerance && overallocatedUsageRate <= tolerance && Math.abs(balanceBaseRate - displayedUsageRate) <= tolerance,
   };
 
   return {
@@ -603,21 +709,23 @@ export function buildTableViewModel(result: CalculationResult, tablePreferences:
     flows.sort((a, b) => a.id.localeCompare(b.id));
   }
 
-  const mainRows = sortMainRows(
-    Object.values(result.recipeStats).map(mainRowFromRecipeStat),
-    tablePreferences.machineSort,
-    lang,
-  );
+  const unsortedMainRows = Object.values(result.recipeStats).map(mainRowFromRecipeStat);
   const detailGroupsByRecipeId: Record<string, MachineDetailGroup[]> = {};
   const allocationSummariesByRecipeId: Record<string, TableAllocationSummary[]> = {};
   const expansionTraceByRecipeId: Record<string, TableExpansionTraceEntry[]> = {};
+  const ignoredExpansionRecipeIds: string[] = [];
   const issues: TableViewIssue[] = [];
 
-  for (const row of mainRows) {
+  const rowsWithExpandableState = unsortedMainRows.map((row) => {
+    if (row.expansionIgnored) {
+      ignoredExpansionRecipeIds.push(row.recipeId);
+      return row;
+    }
     const groups: MachineDetailGroup[] = [];
     const summaries: TableAllocationSummary[] = [];
     const traces: TableExpansionTraceEntry[] = [];
     for (const output of row.productionOutputs) {
+      if (output.itemId === 'steam') continue;
       const { group, trace } = buildDetailGroup(result, outgoingByRecipe, row.recipeId, output, tablePreferences.machineDetailSort, lang, issues);
       if (group.rows.length > 0) groups.push(group);
       summaries.push(group.allocationSummary);
@@ -626,11 +734,17 @@ export function buildTableViewModel(result: CalculationResult, tablePreferences:
     if (groups.length > 0) detailGroupsByRecipeId[row.recipeId] = groups;
     if (summaries.length > 0) allocationSummariesByRecipeId[row.recipeId] = summaries;
     if (traces.length > 0) expansionTraceByRecipeId[row.recipeId] = traces;
-  }
+    return {
+      ...row,
+      expandable: groups.some((group) => group.rows.length > 0),
+    };
+  });
+
+  const mainRows = sortMainRows(rowsWithExpandableState, tablePreferences.machineSort, lang);
 
   return {
     schemaVersion: TABLE_VIEW_SCHEMA_VERSION,
-    usageMethod: 'direct-flow-and-proportional-downstream-attribution',
+    usageMethod: 'direct-flow-and-proportional-downstream-attribution-ignore-surplus-and-steam',
     mainSort: tablePreferences.machineSort,
     detailSort: tablePreferences.machineDetailSort,
     columns: {
@@ -641,6 +755,7 @@ export function buildTableViewModel(result: CalculationResult, tablePreferences:
     detailGroupsByRecipeId,
     allocationSummariesByRecipeId,
     expansionTraceByRecipeId,
+    ignoredExpansionRecipeIds: [...new Set(ignoredExpansionRecipeIds)].sort((a, b) => a.localeCompare(b)),
     issues,
   };
 }

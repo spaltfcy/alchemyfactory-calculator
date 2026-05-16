@@ -84,8 +84,8 @@ function optionalNumber(value: number | undefined): string {
 
 function detailRowClass(row: MachineDetailRow): string | undefined {
   if (row.kind === 'cycle') return 'machine-detail-cycle';
-  if (row.kind === 'surplus') return 'machine-detail-surplus';
-  if (row.kind === 'discard') return 'machine-detail-discard';
+  if (row.kind === 'fuel') return 'machine-detail-fuel';
+  if (row.kind === 'fertilizer') return 'machine-detail-fertilizer';
   if (row.kind === 'unallocated' || row.kind === 'overallocated') return 'machine-detail-error';
   return undefined;
 }
@@ -190,7 +190,7 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
             <tbody>
               {tableView.mainRows.map((row) => {
                 const detailGroups = tableView.detailGroupsByRecipeId[row.recipeId] ?? [];
-                const isExpandable = detailGroups.some((group) => group.rows.length > 0);
+                const isExpandable = row.expandable && detailGroups.some((group) => group.rows.length > 0);
                 const isExpanded = expandedRecipeIds.has(row.recipeId);
 
                 return (

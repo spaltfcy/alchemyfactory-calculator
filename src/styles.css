@@ -1837,6 +1837,17 @@ a {
   font-weight: 800;
 }
 
+
+.machine-detail-fuel {
+  color: #ffbd7a;
+  font-weight: 800;
+}
+
+.machine-detail-fertilizer {
+  color: #9fe870;
+  font-weight: 800;
+}
+
 .machine-detail-error {
   color: #ffb3b3;
   font-weight: 900;
