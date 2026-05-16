@@ -63,7 +63,7 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
   const machineSort = tablePreferences.machineSort;
   const machineColumns: MachineTableColumn[] = [
     { key: 'recipe', label: t('recipe', lang) },
-    { key: 'machine', label: t('machines', lang) },
+    { key: 'machine', label: lang === 'ja' ? '設備' : 'Machine' },
     { key: 'theoreticalMachines', label: lang === 'ja' ? '理論台数' : 'Theoretical', align: 'right' },
     { key: 'actualMachines', label: lang === 'ja' ? '実台数' : 'Actual', align: 'right' },
     { key: 'surplus', label: t('surplus', lang) },
@@ -73,15 +73,21 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
     const direction = machineSort.direction === 'asc' ? 1 : -1;
     const primary = compareMachineRows(a, b, machineSort.key, lang) * direction;
     if (primary !== 0) return primary;
-    return a.recipeId.localeCompare(b.recipeId);
+    return compareText(recipeName(a, lang), recipeName(b, lang), lang) || a.recipeId.localeCompare(b.recipeId);
   });
   const itemRows = Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId));
   const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
   const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
   const initialPurchasedLabel = lang === 'ja' ? '初期購入' : 'Initial purchase';
 
+  function initialMachineSortDirection(key: MachineTableSortKey): TablePreferences['machineSort']['direction'] {
+    return key === 'theoreticalMachines' || key === 'actualMachines' || key === 'surplus' ? 'desc' : 'asc';
+  }
+
   function setMachineSort(key: MachineTableSortKey): void {
-    const direction = machineSort.key === key && machineSort.direction === 'asc' ? 'desc' : 'asc';
+    const direction = machineSort.key === key
+      ? (machineSort.direction === 'asc' ? 'desc' : 'asc')
+      : initialMachineSortDirection(key);
     onTablePreferencesChange({
       ...tablePreferences,
       machineSort: { key, direction },

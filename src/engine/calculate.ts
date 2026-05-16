@@ -335,7 +335,8 @@ function buildHeatRequiredByRecipeAudit(result: CalculationResult): NonNullable<
   const finiteHeatMultiplier = Number.isFinite(heatConsumptionMultiplier) ? heatConsumptionMultiplier : 1;
   const stats = Object.values(result.recipeStats).sort((a, b) => a.recipeId.localeCompare(b.recipeId));
   for (const stat of stats) {
-    const heatPerSecond = HEAT_CONSUMER_BY_MACHINE_ID[stat.machineId]?.heatPerSec ?? 0;
+    const recipe = recipeById[stat.recipeId];
+    const heatPerSecond = (HEAT_CONSUMER_BY_MACHINE_ID[stat.machineId]?.heatPerSec ?? 0) + (recipe?.heatInputPerSec ?? 0);
     if (!Number.isFinite(heatPerSecond) || heatPerSecond <= EPS) continue;
     const machineBasis = Math.abs(stat.theoreticalMachines) > EPS
       ? stat.theoreticalMachines
@@ -346,7 +347,6 @@ function buildHeatRequiredByRecipeAudit(result: CalculationResult): NonNullable<
     const machineHeatRequiredPerMinute = heatPerSecond * 60 * finiteHeatMultiplier;
     const heatRequiredPerMin = machineHeatRequiredPerMinute * machineBasis;
     if (!Number.isFinite(heatRequiredPerMin) || heatRequiredPerMin <= EPS) continue;
-    const recipe = recipeById[stat.recipeId];
     const recipeTimeSec = Number(recipe?.timeSec ?? 0);
     const baseHeatPerRun = Number.isFinite(recipeTimeSec) && recipeTimeSec > EPS ? heatPerSecond * recipeTimeSec : 0;
     const machineExecutionsPerMinute = stat.runsPerMinute / machineBasis;

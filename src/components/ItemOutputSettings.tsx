@@ -166,7 +166,7 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
   }
 
 
-  function onDragStart(event: DragEvent<HTMLDivElement>, targetId: string): void {
+  function onDragStart(event: DragEvent<HTMLElement>, targetId: string): void {
     const target = event.target;
     if (target instanceof HTMLElement && target.closest('.item-output-value-field')) {
       event.preventDefault();
@@ -239,14 +239,12 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
           <div
             className={draggingTargetId === target.id ? 'item-output-card is-dragging' : 'item-output-card'}
             key={target.id}
-            draggable
-            onDragStart={(event) => onDragStart(event, target.id)}
             onDragEnd={() => setDraggingTargetId(null)}
             onDragOver={onDragOver}
             onDrop={(event) => onDrop(event, target.id)}
             onDoubleClick={() => onFocusGraphNode?.(targetRecipeNodeId(target))}
           >
-            <label className="item-output-field item-output-item-field" onDoubleClick={(event) => event.stopPropagation()}>
+            <label className="item-output-field item-output-item-field" draggable onDragStart={(event) => onDragStart(event, target.id)} onDoubleClick={(event) => event.stopPropagation()}>
               <span className="item-output-item-heading">
                 <span className="item-output-enabled-checkbox" aria-label={enabledLabel} onDoubleClick={(event) => event.stopPropagation()}>
                   <input
@@ -285,7 +283,7 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
               />
             </label>
 
-            <div className="item-output-field item-output-mode-field" onDoubleClick={(event) => event.stopPropagation()}>
+            <div className="item-output-field item-output-mode-field" draggable onDragStart={(event) => onDragStart(event, target.id)} onDoubleClick={(event) => event.stopPropagation()}>
               <div className="item-output-mode-heading">
                 <span>{t('mode', lang)}</span>
                 <button

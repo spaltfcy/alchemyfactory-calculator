@@ -17,9 +17,9 @@
   --page-gap: 1rem;
   --item-output-item-width: 12rem;
   --item-output-value-width: 5.3rem;
-  --item-output-mode-width: 6.2rem;
-  --item-output-gap: 0.42rem;
-  --item-output-card-padding-x: 0.65rem;
+  --item-output-mode-width: 4.1rem;
+  --item-output-gap: 0.34rem;
+  --item-output-card-padding-x: 0.5rem;
   --item-output-card-padding-y: 0.55rem;
   color-scheme: dark;
   font-family:
@@ -348,10 +348,16 @@ a {
   border: 1px solid var(--border);
   border-radius: 11px;
   background: rgba(255, 255, 255, 0.025);
+  cursor: default;
+}
+
+.item-output-item-field,
+.item-output-mode-field {
   cursor: grab;
 }
 
-.item-output-card:active {
+.item-output-item-field:active,
+.item-output-mode-field:active {
   cursor: grabbing;
 }
 
