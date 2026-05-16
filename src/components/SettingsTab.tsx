@@ -195,6 +195,14 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
         ...(imported.settings?.targetDefaults ?? {}),
       },
     },
+    tablePreferences: {
+      ...current.tablePreferences,
+      ...(imported.tablePreferences ?? {}),
+      machineSort: {
+        ...current.tablePreferences.machineSort,
+        ...(imported.tablePreferences?.machineSort ?? {}),
+      },
+    },
     abilities: normalizeAbilitySettings({ ...current.abilities, ...imported.abilities }),
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
     surplusPolicies: { ...current.surplusPolicies, ...imported.surplusPolicies },
@@ -697,25 +705,6 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
           </div>
         </section>
 
-        <section className="panel settings-panel reset-settings-panel">
-          <h2>{lang === 'ja' ? '初期化' : 'Reset'}</h2>
-          <div className="settings-panel-body">
-            <div className="settings-form-grid">
-              <div className="form-field">
-                <span>{lang === 'ja' ? '全設定初期化' : 'Reset all settings'}</span>
-                <button type="button" className="danger" onClick={resetAll}>
-                  {lang === 'ja' ? '実行' : 'Run'}
-                </button>
-              </div>
-              <div className="form-field">
-                <span>{lang === 'ja' ? 'レシピだけ初期化' : 'Reset recipe settings'}</span>
-                <button type="button" className="danger" onClick={resetRecipePreferencesOnly}>
-                  {lang === 'ja' ? '実行' : 'Run'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
 
       <div className="settings-column settings-column-right">
@@ -816,6 +805,27 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
             </div>
           </div>
         </section>
+
+        <section className="panel settings-panel reset-settings-panel">
+          <h2>{lang === 'ja' ? '初期化' : 'Reset'}</h2>
+          <div className="settings-panel-body">
+            <div className="settings-form-grid">
+              <div className="form-field">
+                <span>{lang === 'ja' ? '全設定初期化' : 'Reset all settings'}</span>
+                <button type="button" className="danger" onClick={resetAll}>
+                  {lang === 'ja' ? '実行' : 'Run'}
+                </button>
+              </div>
+              <div className="form-field">
+                <span>{lang === 'ja' ? 'レシピだけ初期化' : 'Reset recipe settings'}</span>
+                <button type="button" className="danger" onClick={resetRecipePreferencesOnly}>
+                  {lang === 'ja' ? '実行' : 'Run'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
 
         <section className="panel settings-panel data-io-panel">
           <h2>{lang === 'ja' ? 'データ入出力' : 'Data I/O'}</h2>

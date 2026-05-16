@@ -186,10 +186,22 @@ export type AppSettings = {
   thermalExtractor: ThermalExtractorSettings;
 };
 
+
+export type MachineTableSortKey = 'recipe' | 'machine' | 'theoreticalMachines' | 'actualMachines' | 'surplus';
+export type SortDirection = 'asc' | 'desc';
+
+export type TablePreferences = {
+  machineSort: {
+    key: MachineTableSortKey;
+    direction: SortDirection;
+  };
+};
+
 export type AppState = {
   version: number;
   language: Lang;
   activeTab: 'graph' | 'table' | 'settings' | 'recipeSettings' | 'about' | 'graphDebug' | 'debug';
+  tablePreferences: TablePreferences;
   targets: ProductionTarget[];
   settings: AppSettings;
   abilities: AbilitySettings;

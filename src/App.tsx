@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
-import type { AbilityId, AppSettings, AppState } from './types';
+import type { AbilityId, AppSettings, AppState, TablePreferences } from './types';
 import { filterPositiveTargets, sanitizeNegativeTargets } from './engine/targetValidation';
 import { calculationInvalidPersistentError, createUserMessage, messageText, type UserMessageInput, type UserMessageLog } from './utils/userMessages';
 import { DEFAULT_STATE } from './defaultState';
 import { calculate } from './engine/calculate';
 import { loadState, saveState } from './utils/storage';
-import { t } from './i18n';
+import { t, text } from './i18n';
 import { ABILITY_IDS, ABILITY_MAX_LEVEL, normalizeAbilityLevel, normalizeAbilitySettings } from './data/abilityTables';
 import { ItemOutputSettings } from './components/ItemOutputSettings';
 import { GraphTab, type GraphFocusRequest } from './components/GraphTab';
@@ -18,8 +18,9 @@ import { DebugTab } from './components/DebugTab';
 import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
+import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.9.26';
+const APP_VERSION = '0.9.27';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -128,6 +129,14 @@ function mergeInitialState(safeMode: boolean): AppState {
         enabled: true,
       },
     },
+    tablePreferences: {
+      ...DEFAULT_STATE.tablePreferences,
+      ...(saved.tablePreferences ?? {}),
+      machineSort: {
+        ...DEFAULT_STATE.tablePreferences.machineSort,
+        ...(saved.tablePreferences?.machineSort ?? {}),
+      },
+    },
     abilities: normalizeAbilitySettings(saved.abilities),
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
     surplusPolicies: { ...DEFAULT_STATE.surplusPolicies, ...saved.surplusPolicies },
@@ -168,6 +177,17 @@ function settingsForCalculation(settings: AppSettings): AppSettings {
     thermalExtractor: {
       ...(settings.thermalExtractor ?? DEFAULT_STATE.settings.thermalExtractor),
       height: Number.isFinite(thermalExtractorHeight) ? thermalExtractorHeight : DEFAULT_STATE.settings.thermalExtractor.height,
+    },
+  };
+}
+
+
+function tablePreferencesWithMachineSort(current: TablePreferences, machineSort: TablePreferences['machineSort']): TablePreferences {
+  return {
+    ...current,
+    machineSort: {
+      ...current.machineSort,
+      ...machineSort,
     },
   };
 }
@@ -314,6 +334,21 @@ export function App() {
     [calculationTargets, calculationSettings, state.abilities, state.recipePreferences, state.surplusPolicies],
   );
 
+  const topMachineLine = useMemo(() => {
+    const unit = lang === 'ja' ? '台' : ' machines';
+    const entries = Object.values(result.recipeStats)
+      .filter((row) => Number.isFinite(row.actualMachines) && row.actualMachines > 0)
+      .sort((a, b) => b.actualMachines - a.actualMachines || a.recipeId.localeCompare(b.recipeId))
+      .slice(0, 3)
+      .map((row) => {
+        const recipe = recipeById[row.recipeId];
+        const recipeName = recipe ? text(recipe.name, lang) : row.recipeId;
+        return `${recipeName}/${formatNumber(row.actualMachines, 3)}${unit}`;
+      });
+    if (entries.length === 0) return '';
+    return (lang === 'ja' ? '実台数Top3: ' : 'Top actual machines: ') + entries.join(' ・ ');
+  }, [lang, result.recipeStats]);
+
   const calculationErrorKey = useMemo(
     () =>
       result.calculationStatus === 'invalid'
@@ -429,6 +464,8 @@ export function App() {
               <span className="debug-metric-inline"> / {debugCalculationLine}</span>
             )}
           </p>
+
+          {topMachineLine && <p className="top-machine-line">{topMachineLine}</p>}
 
           <nav className="tabs">
             {visibleTabs.map((tab) => (
@@ -561,7 +598,19 @@ export function App() {
               debug={runtimeFlags.debug}
             />
           </div>
-          {state.activeTab === 'table' && <TableTab lang={lang} result={result} />}
+          {state.activeTab === 'table' && (
+            <TableTab
+              lang={lang}
+              result={result}
+              tablePreferences={state.tablePreferences}
+              onTablePreferencesChange={(nextPreferences) =>
+                setState((current) => ({
+                  ...current,
+                  tablePreferences: tablePreferencesWithMachineSort(current.tablePreferences, nextPreferences.machineSort),
+                }))
+              }
+            />
+          )}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} onBeginJsonImport={clearActiveUserMessages} onUserMessage={addUserMessage} appVersion={APP_VERSION} gameVersion={GAME_VERSION} />}
           {state.activeTab === 'recipeSettings' && <RecipeSettingsTab state={state} setState={setState} />}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}

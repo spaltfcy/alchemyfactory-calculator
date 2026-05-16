@@ -7,6 +7,12 @@ export const DEFAULT_STATE: AppState = {
   version: 27,
   language: 'ja',
   activeTab: 'graph',
+  tablePreferences: {
+    machineSort: {
+      key: 'recipe',
+      direction: 'asc',
+    },
+  },
   targets: [
     {
       id: 'target-1',

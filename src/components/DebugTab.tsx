@@ -772,6 +772,14 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
         enabled: true,
       },
     },
+    tablePreferences: {
+      ...current.tablePreferences,
+      ...(imported.tablePreferences ?? {}),
+      machineSort: {
+        ...current.tablePreferences.machineSort,
+        ...(imported.tablePreferences?.machineSort ?? {}),
+      },
+    },
     abilities: normalizeAbilitySettings({ ...current.abilities, ...(imported.abilities ?? {}) }),
     recipePreferences: imported.recipePreferences ?? {},
     surplusPolicies: imported.surplusPolicies ?? {},

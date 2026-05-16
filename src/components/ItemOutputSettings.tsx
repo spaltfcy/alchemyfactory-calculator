@@ -66,15 +66,6 @@ function makeTarget(lang: Lang, targetDefaults: TargetDefaults): ProductionTarge
   };
 }
 
-function moveTarget(targets: ProductionTarget[], index: number, delta: number): ProductionTarget[] {
-  const nextIndex = index + delta;
-  if (nextIndex < 0 || nextIndex >= targets.length) return targets;
-  const next = [...targets];
-  const [target] = next.splice(index, 1);
-  next.splice(nextIndex, 0, target);
-  return next;
-}
-
 function moveTargetToIndex(targets: ProductionTarget[], fromIndex: number, toIndex: number): ProductionTarget[] {
   if (fromIndex < 0 || fromIndex >= targets.length || toIndex < 0 || toIndex >= targets.length || fromIndex === toIndex) return targets;
   const next = [...targets];
@@ -174,13 +165,14 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
     if (nextMode !== '') applyBulkOutput(nextMode);
   }
 
-  function reorderTarget(index: number, delta: number) {
-    const nextTargets = moveTarget(draftTargets, index, delta);
-    if (sameTargetOrder(nextTargets, draftTargets)) return;
-    commitTargets(nextTargets);
-  }
 
   function onDragStart(event: DragEvent<HTMLDivElement>, targetId: string): void {
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest('.item-output-value-field')) {
+      event.preventDefault();
+      setDraggingTargetId(null);
+      return;
+    }
     setDraggingTargetId(targetId);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', targetId);
@@ -208,8 +200,6 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
   const bulkOutputLabel = lang === 'ja' ? '全出力' : 'All output';
   const bulkModeLabel = lang === 'ja' ? '全指定方法' : 'All methods';
   const noBulkModeLabel = lang === 'ja' ? '変更なし' : 'No change';
-  const moveUpLabel = lang === 'ja' ? '上へ移動' : 'Move up';
-  const moveDownLabel = lang === 'ja' ? '下へ移動' : 'Move down';
   const removeLabel = lang === 'ja' ? '削除' : 'Remove';
   const enabledLabel = lang === 'ja' ? 'このレシピを使う' : 'Use this recipe';
 
@@ -245,7 +235,7 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
       </div>
 
       <div className="item-output-list" aria-label={t('itemOutputSettings', lang)}>
-        {draftTargets.map((target, index) => (
+        {draftTargets.map((target) => (
           <div
             className={draggingTargetId === target.id ? 'item-output-card is-dragging' : 'item-output-card'}
             key={target.id}
@@ -281,7 +271,7 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
               </select>
             </label>
 
-            <label className="item-output-field" onDoubleClick={(event) => event.stopPropagation()}>
+            <label className="item-output-field item-output-value-field" draggable={false} onDragStart={(event) => event.preventDefault()} onDoubleClick={(event) => event.stopPropagation()}>
               <span>{outputLabel}</span>
               <input
                 type="number"
@@ -295,8 +285,18 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
               />
             </label>
 
-            <label className="item-output-field" onDoubleClick={(event) => event.stopPropagation()}>
-              <span>{t('mode', lang)}</span>
+            <div className="item-output-field item-output-mode-field" onDoubleClick={(event) => event.stopPropagation()}>
+              <div className="item-output-mode-heading">
+                <span>{t('mode', lang)}</span>
+                <button
+                  type="button"
+                  className="item-output-remove danger"
+                  aria-label={removeLabel}
+                  onClick={() => commitTargets(draftTargets.filter((x) => x.id !== target.id))}
+                >
+                  ×
+                </button>
+              </div>
               <select
                 value={target.mode}
                 onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -306,35 +306,6 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
                 <option value="rate">{t('rateShort', lang)}</option>
                 <option value="machines">{t('machinesShort', lang)}</option>
               </select>
-            </label>
-
-            <div className="item-output-card-actions" aria-label={lang === 'ja' ? '削除と並び替え' : 'Remove and sort'} onDoubleClick={(event) => event.stopPropagation()}>
-              <button
-                type="button"
-                className="item-output-remove danger"
-                aria-label={removeLabel}
-                onClick={() => commitTargets(draftTargets.filter((x) => x.id !== target.id))}
-              >
-                ×
-              </button>
-              <button
-                type="button"
-                className="item-output-order-button"
-                disabled={index === 0}
-                aria-label={moveUpLabel}
-                onClick={() => reorderTarget(index, -1)}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className="item-output-order-button"
-                disabled={index === draftTargets.length - 1}
-                aria-label={moveDownLabel}
-                onClick={() => reorderTarget(index, 1)}
-              >
-                ↓
-              </button>
             </div>
           </div>
         ))}
