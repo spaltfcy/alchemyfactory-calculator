@@ -187,7 +187,7 @@ export type AppSettings = {
 };
 
 
-export type MachineTableSortKey = 'recipe' | 'machine' | 'theoreticalMachines' | 'actualMachines' | 'surplus';
+export type MachineTableSortKey = 'recipe' | 'machine' | 'productionRate' | 'theoreticalMachines' | 'actualMachines' | 'surplus';
 export type SortDirection = 'asc' | 'desc';
 
 export type TablePreferences = {
