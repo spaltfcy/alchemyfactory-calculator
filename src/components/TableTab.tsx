@@ -119,7 +119,7 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
                     <th key={column.key} aria-sort={active ? (machineSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
                       <button
                         type="button"
-                        className={column.align === 'right' ? 'table-sort-button table-sort-button-right' : 'table-sort-button'}
+                        className='table-sort-button'
                         onClick={() => setMachineSort(column.key)}
                       >
                         {column.label}{machineSortLabel(active, machineSort.direction)}

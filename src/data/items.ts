@@ -1748,11 +1748,11 @@ export const ITEMS: Item[] = [
   {
     id: 'sol',
     name: {
-      ja: 'ソーラ',
+      ja: 'ソーラー',
       en: 'Sol'
     },
     sortName: {
-      ja: 'そーら'
+      ja: 'そーらー'
     },
     category: 'product',
     physicalState: 'solid',
