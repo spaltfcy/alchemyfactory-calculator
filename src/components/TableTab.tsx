@@ -1,11 +1,11 @@
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
-import type { Lang, MachineTableSortKey, TablePreferences } from '../types';
-import type { CalculatedFlow, CalculationResult, ConveyorEdgeStat, RecipeStat } from '../engine/calculate';
+import type { Lang, MachineDetailTableSortKey, MachineTableSortKey, SortDirection, TablePreferences } from '../types';
+import type { CalculationResult, ConveyorEdgeStat } from '../engine/calculate';
 import { itemById } from '../data/items';
-import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
 import { t, text } from '../i18n';
 import { formatCopper, formatNumber, formatRate } from '../utils/format';
+import { buildTableViewModel, type MachineDetailGroup, type MachineDetailRow, type MachineMainRow, type TableProductionOutput } from '../engine/tableViewModel';
 
 export type TableTabProps = {
   lang: Lang;
@@ -19,9 +19,10 @@ type MachineTableColumn = {
   label: string;
 };
 
-type RecipeExpansionEntry =
-  | { kind: 'final'; itemId: string; rate: number }
-  | { kind: 'cycle'; recipeId: string };
+type MachineDetailTableColumn = {
+  key: MachineDetailTableSortKey;
+  label: string;
+};
 
 function fallbackName(id: string, lang: Lang): string {
   return text({ ja: id, en: id }, lang);
@@ -37,120 +38,70 @@ function transportCountLabel(edge: ConveyorEdgeStat, lang: Lang): string {
   return String(edge.transportUnits ?? edge.belts);
 }
 
-function recipeName(row: RecipeStat, lang: Lang): string {
-  const recipe = recipeById[row.recipeId];
-  return recipe ? text(recipe.name, lang) : row.recipeId;
-}
-
-function recipeNameById(recipeId: string, lang: Lang): string {
-  const recipe = recipeById[recipeId];
-  return recipe ? text(recipe.name, lang) : recipeId;
-}
-
-function machineName(row: RecipeStat, lang: Lang): string {
-  const machine = machineById[row.machineId];
-  return machine ? text(machine.name, lang) : row.machineId;
-}
-
-function surplusTotal(row: RecipeStat): number {
-  return Object.values(row.surplusOutputRates).reduce((sum, value) => sum + Math.max(0, value), 0);
-}
-
-function productionRateTotal(row: RecipeStat): number {
-  return Object.values(row.outputRates).reduce((sum, value) => sum + Math.max(0, value), 0);
-}
-
-function positiveProductionEntries(row: RecipeStat): Array<[string, number]> {
-  return Object.entries(row.outputRates)
-    .filter(([, value]) => Number.isFinite(value) && value > 0)
-    .sort(([a], [b]) => a.localeCompare(b));
-}
-
-function compareText(a: string, b: string, lang: Lang): number {
-  return new Intl.Collator(lang === 'ja' ? 'ja' : 'en', { numeric: true, sensitivity: 'base' }).compare(a, b);
-}
-
-function compareMachineRows(a: RecipeStat, b: RecipeStat, key: MachineTableSortKey, lang: Lang): number {
-  if (key === 'recipe') return compareText(recipeName(a, lang), recipeName(b, lang), lang);
-  if (key === 'machine') return compareText(machineName(a, lang), machineName(b, lang), lang);
-  if (key === 'productionRate') return productionRateTotal(a) - productionRateTotal(b);
-  if (key === 'theoreticalMachines') return a.theoreticalMachines - b.theoreticalMachines;
-  if (key === 'actualMachines') return a.actualMachines - b.actualMachines;
-  return surplusTotal(a) - surplusTotal(b);
-}
-
-function machineSortLabel(active: boolean, direction: TablePreferences['machineSort']['direction']): string {
+function sortLabel(active: boolean, direction: SortDirection): string {
   if (!active) return '';
   return direction === 'asc' ? ' ▲' : ' ▼';
 }
 
-function isDownstreamFlow(flow: CalculatedFlow): boolean {
-  if (flow.rate <= 0) return false;
-  if (flow.from.type !== 'recipe') return false;
-  if (flow.role === 'discard' || flow.role === 'surplus') return false;
-  return flow.to.type === 'recipe' || (flow.to.type === 'itemSink' && flow.to.sinkMode === 'final');
+function initialMachineSortDirection(key: MachineTableSortKey): SortDirection {
+  return key === 'productionRate' || key === 'theoreticalMachines' || key === 'actualMachines' || key === 'surplus' ? 'desc' : 'asc';
 }
 
-function buildRecipeExpansionMap(result: CalculationResult): Map<string, RecipeExpansionEntry[]> {
-  const outgoingByRecipe = new Map<string, CalculatedFlow[]>();
-  for (const flow of result.flows) {
-    if (!isDownstreamFlow(flow) || flow.from.type !== 'recipe') continue;
-    const recipeId = flow.from.recipeId;
-    const outgoing = outgoingByRecipe.get(recipeId) ?? [];
-    outgoing.push(flow);
-    outgoingByRecipe.set(recipeId, outgoing);
-  }
+function initialMachineDetailSortDirection(key: MachineDetailTableSortKey): SortDirection {
+  return key === 'usageRate' || key === 'productionRate' || key === 'theoreticalMachines' || key === 'actualMachines' ? 'desc' : 'asc';
+}
 
-  function buildForRecipe(startRecipeId: string): RecipeExpansionEntry[] {
-    const finalRates = new Map<string, number>();
-    const cycleRecipeIds = new Set<string>();
+function productionSummary(outputs: TableProductionOutput[], lang: Lang): ReactNode {
+  if (outputs.length === 0) return <>-</>;
+  if (outputs.length === 1) return <>{formatRate(outputs[0].rate)}/min</>;
+  return (
+    <div className="machine-production-list">
+      {outputs.map((output) => (
+        <div key={output.itemId}>{lang === 'ja' ? output.itemNameJa : output.itemNameEn} {formatRate(output.rate)}/min</div>
+      ))}
+    </div>
+  );
+}
 
-    function visit(recipeId: string, path: Set<string>): void {
-      const flows = outgoingByRecipe.get(recipeId) ?? [];
-      for (const flow of flows) {
-        if (flow.to.type === 'itemSink' && flow.to.sinkMode === 'final') {
-          const itemId = flow.itemId;
-          const finalRate = result.itemStats[itemId]?.targetActual ?? flow.rate;
-          finalRates.set(itemId, Math.max(finalRates.get(itemId) ?? 0, finalRate));
-          continue;
-        }
+function surplusSummary(row: MachineMainRow, lang: Lang): ReactNode {
+  if (row.surplusOutputs.length === 0) return <>-</>;
+  return row.surplusOutputs
+    .map((output) => `${lang === 'ja' ? output.itemNameJa : output.itemNameEn} +${formatRate(output.rate)}/min`)
+    .join(', ');
+}
 
-        if (flow.to.type !== 'recipe') continue;
-        const nextRecipeId = flow.to.recipeId;
-        if (path.has(nextRecipeId)) {
-          cycleRecipeIds.add(nextRecipeId);
-          continue;
-        }
-        visit(nextRecipeId, new Set([...path, nextRecipeId]));
-      }
-    }
+function usageLabel(row: MachineDetailRow): string {
+  return `${formatRate(row.usageRate)}/min (${formatNumber(row.usagePercent, 1)}%)`;
+}
 
-    visit(startRecipeId, new Set([startRecipeId]));
+function optionalRate(value: number | undefined): string {
+  return Number.isFinite(value) ? `${formatRate(Number(value))}/min` : '-';
+}
 
-    const entries: RecipeExpansionEntry[] = [
-      ...[...finalRates.entries()]
-        .filter(([, rate]) => Number.isFinite(rate) && rate > 0)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([itemId, rate]) => ({ kind: 'final' as const, itemId, rate })),
-      ...[...cycleRecipeIds]
-        .sort((a, b) => a.localeCompare(b))
-        .map((recipeId) => ({ kind: 'cycle' as const, recipeId })),
-    ];
+function optionalNumber(value: number | undefined): string {
+  return Number.isFinite(value) ? formatNumber(Number(value), 3) : '-';
+}
 
-    return entries;
-  }
+function detailRowClass(row: MachineDetailRow): string | undefined {
+  if (row.kind === 'cycle') return 'machine-detail-cycle';
+  if (row.kind === 'surplus') return 'machine-detail-surplus';
+  if (row.kind === 'discard') return 'machine-detail-discard';
+  if (row.kind === 'unallocated' || row.kind === 'overallocated') return 'machine-detail-error';
+  return undefined;
+}
 
-  const map = new Map<string, RecipeExpansionEntry[]>();
-  for (const recipeId of Object.keys(result.recipeStats)) {
-    const entries = buildForRecipe(recipeId);
-    if (entries.length > 0) map.set(recipeId, entries);
-  }
-  return map;
+function detailGroupHeading(group: MachineDetailGroup, lang: Lang): string {
+  const sourceName = lang === 'ja' ? group.sourceItemNameJa : group.sourceItemNameEn;
+  const allocation = group.allocationSummary;
+  const balanceMark = allocation.allocationBalanced ? '' : (lang === 'ja' ? ' / 配賦エラー' : ' / allocation error');
+  return `${lang === 'ja' ? '対象' : 'Source'}: ${sourceName} ${formatRate(group.sourceOutputRate)}/min${balanceMark}`;
 }
 
 export function TableTab({ lang, result, tablePreferences, onTablePreferencesChange }: TableTabProps) {
   const [expandedRecipeIds, setExpandedRecipeIds] = useState<Set<string>>(() => new Set());
+  const tableView = useMemo(() => buildTableViewModel(result, tablePreferences, lang), [result, tablePreferences, lang]);
   const machineSort = tablePreferences.machineSort;
+  const machineDetailSort = tablePreferences.machineDetailSort;
   const machineColumns: MachineTableColumn[] = [
     { key: 'recipe', label: t('recipe', lang) },
     { key: 'machine', label: lang === 'ja' ? '設備' : 'Machine' },
@@ -159,26 +110,18 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
     { key: 'actualMachines', label: lang === 'ja' ? '実台数' : 'Actual' },
     { key: 'surplus', label: t('surplus', lang) },
   ];
+  const detailColumns: MachineDetailTableColumn[] = [
+    { key: 'label', label: lang === 'ja' ? 'レシピ/出力先' : 'Recipe/output' },
+    { key: 'usageRate', label: lang === 'ja' ? '使用量' : 'Usage' },
+    { key: 'productionRate', label: lang === 'ja' ? '生産量' : 'Production' },
+    { key: 'theoreticalMachines', label: lang === 'ja' ? '理論台数' : 'Theoretical' },
+    { key: 'actualMachines', label: lang === 'ja' ? '実台数' : 'Actual' },
+  ];
 
-  const expansionByRecipeId = useMemo(() => buildRecipeExpansionMap(result), [result]);
-  const recipeRows = Object.values(result.recipeStats).sort((a, b) => {
-    const direction = machineSort.direction === 'asc' ? 1 : -1;
-    const primary = compareMachineRows(a, b, machineSort.key, lang) * direction;
-    if (primary !== 0) return primary;
-    return compareText(recipeName(a, lang), recipeName(b, lang), lang) || a.recipeId.localeCompare(b.recipeId);
-  });
   const itemRows = Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId));
   const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
   const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
   const initialPurchasedLabel = lang === 'ja' ? '初期購入' : 'Initial purchase';
-  const finalOutputLabel = lang === 'ja' ? '最終出力' : 'Final output';
-  const relatedRecipeLabel = lang === 'ja' ? '関連レシピ' : 'Related recipe';
-  const actualOutputLabel = lang === 'ja' ? '実出力' : 'Actual output';
-  const cycleSuffix = lang === 'ja' ? ' (循環)' : ' (cycle)';
-
-  function initialMachineSortDirection(key: MachineTableSortKey): TablePreferences['machineSort']['direction'] {
-    return key === 'productionRate' || key === 'theoreticalMachines' || key === 'actualMachines' || key === 'surplus' ? 'desc' : 'asc';
-  }
 
   function setMachineSort(key: MachineTableSortKey): void {
     const direction = machineSort.key === key
@@ -190,6 +133,16 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
     });
   }
 
+  function setMachineDetailSort(key: MachineDetailTableSortKey): void {
+    const direction = machineDetailSort.key === key
+      ? (machineDetailSort.direction === 'asc' ? 'desc' : 'asc')
+      : initialMachineDetailSortDirection(key);
+    onTablePreferencesChange({
+      ...tablePreferences,
+      machineDetailSort: { key, direction },
+    });
+  }
+
   function toggleExpandedRecipe(recipeId: string): void {
     setExpandedRecipeIds((current) => {
       const next = new Set(current);
@@ -197,19 +150,6 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
       else next.add(recipeId);
       return next;
     });
-  }
-
-  function productionSummary(row: RecipeStat): ReactNode {
-    const entries = positiveProductionEntries(row);
-    if (entries.length === 0) return <>-</>;
-    if (entries.length === 1) return <>{formatRate(entries[0][1])}/min</>;
-    return (
-      <div className="machine-production-list">
-        {entries.map(([itemId, value]) => (
-          <div key={itemId}>{itemName(itemId, lang)} {formatRate(value)}/min</div>
-        ))}
-      </div>
-    );
   }
 
   return (
@@ -240,7 +180,7 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
                         className="table-sort-button"
                         onClick={() => setMachineSort(column.key)}
                       >
-                        {column.label}{machineSortLabel(active, machineSort.direction)}
+                        {column.label}{sortLabel(active, machineSort.direction)}
                       </button>
                     </th>
                   );
@@ -248,13 +188,9 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
               </tr>
             </thead>
             <tbody>
-              {recipeRows.map((row) => {
-                const surplus = Object.entries(row.surplusOutputRates)
-                  .filter(([, value]) => value > 0)
-                  .map(([itemId, value]) => `${itemName(itemId, lang)} +${formatRate(value)}/min`)
-                  .join(', ');
-                const expansionEntries = expansionByRecipeId.get(row.recipeId) ?? [];
-                const isExpandable = expansionEntries.length > 0;
+              {tableView.mainRows.map((row) => {
+                const detailGroups = tableView.detailGroupsByRecipeId[row.recipeId] ?? [];
+                const isExpandable = detailGroups.some((group) => group.rows.length > 0);
                 const isExpanded = expandedRecipeIds.has(row.recipeId);
 
                 return (
@@ -274,37 +210,59 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
                           ) : (
                             <span className="machine-expand-spacer" aria-hidden="true" />
                           )}
-                          <span>{recipeName(row, lang)}</span>
+                          <span>{lang === 'ja' ? row.recipeNameJa : row.recipeNameEn}</span>
                         </span>
                       </td>
-                      <td>{machineName(row, lang)}</td>
-                      <td>{productionSummary(row)}</td>
+                      <td>{lang === 'ja' ? row.machineNameJa : row.machineNameEn}</td>
+                      <td>{productionSummary(row.productionOutputs, lang)}</td>
                       <td>{formatNumber(row.theoreticalMachines, 3)}</td>
                       <td>{formatNumber(row.actualMachines, 3)}</td>
-                      <td>{surplus || '-'}</td>
+                      <td>{surplusSummary(row, lang)}</td>
                     </tr>
                     {isExpandable && isExpanded && (
                       <tr key={`${row.recipeId}:expanded`} className="machine-detail-row">
                         <td colSpan={machineColumns.length}>
                           <div className="machine-detail-cell">
-                            <table className="machine-detail-table">
-                              <thead>
-                                <tr>
-                                  <th>{finalOutputLabel} / {relatedRecipeLabel}</th>
-                                  <th>{actualOutputLabel}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {expansionEntries.map((entry) => (
-                                  <tr key={entry.kind === 'final' ? `final:${entry.itemId}` : `cycle:${entry.recipeId}`}>
-                                    <td className={entry.kind === 'cycle' ? 'machine-detail-cycle' : undefined}>
-                                      {entry.kind === 'final' ? itemName(entry.itemId, lang) : recipeNameById(entry.recipeId, lang) + cycleSuffix}
-                                    </td>
-                                    <td>{entry.kind === 'final' ? `${formatRate(entry.rate)}/min` : '-'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                            {detailGroups.map((group) => (
+                              <div className="machine-detail-group" key={`${row.recipeId}:${group.sourceItemId}`}>
+                                {detailGroups.length > 1 && (
+                                  <div className={group.allocationSummary.allocationBalanced ? 'machine-detail-source-heading' : 'machine-detail-source-heading machine-detail-source-heading-error'}>
+                                    {detailGroupHeading(group, lang)}
+                                  </div>
+                                )}
+                                <table className="machine-detail-table">
+                                  <thead>
+                                    <tr>
+                                      {detailColumns.map((column) => {
+                                        const active = machineDetailSort.key === column.key;
+                                        return (
+                                          <th key={column.key} aria-sort={active ? (machineDetailSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                            <button
+                                              type="button"
+                                              className="table-sort-button"
+                                              onClick={() => setMachineDetailSort(column.key)}
+                                            >
+                                              {column.label}{sortLabel(active, machineDetailSort.direction)}
+                                            </button>
+                                          </th>
+                                        );
+                                      })}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {group.rows.map((detailRow) => (
+                                      <tr key={detailRow.id}>
+                                        <td className={detailRowClass(detailRow)}>{lang === 'ja' ? detailRow.labelJa : detailRow.labelEn}</td>
+                                        <td className="machine-detail-usage">{usageLabel(detailRow)}</td>
+                                        <td>{optionalRate(detailRow.productionRate)}</td>
+                                        <td>{optionalNumber(detailRow.theoreticalMachines)}</td>
+                                        <td>{optionalNumber(detailRow.actualMachines)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ))}
                           </div>
                         </td>
                       </tr>

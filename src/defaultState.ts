@@ -12,6 +12,10 @@ export const DEFAULT_STATE: AppState = {
       key: 'recipe',
       direction: 'asc',
     },
+    machineDetailSort: {
+      key: 'usageRate',
+      direction: 'desc',
+    },
   },
   targets: [
     {

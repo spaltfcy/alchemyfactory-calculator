@@ -10,6 +10,7 @@ import { getParadoxSettings, isParadoxableItem } from '../data/paradox';
 import { normalizeAbilitySettings } from '../data/abilityTables';
 import { buildFlowGraphDebugArtifacts, buildFlowGraphSvg, compareFlowGraphLayoutMetrics } from '../engine/graph';
 import { itemById } from '../data/items';
+import { buildTableViewModel } from '../engine/tableViewModel';
 
 type DebugTabProps = {
   lang: Lang;
@@ -779,6 +780,10 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
         ...current.tablePreferences.machineSort,
         ...(imported.tablePreferences?.machineSort ?? {}),
       },
+      machineDetailSort: {
+        ...current.tablePreferences.machineDetailSort,
+        ...(imported.tablePreferences?.machineDetailSort ?? {}),
+      },
     },
     abilities: normalizeAbilitySettings({ ...current.abilities, ...(imported.abilities ?? {}) }),
     recipePreferences: imported.recipePreferences ?? {},
@@ -944,7 +949,18 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       errorSummaries: ignoredDebugErrorSummaries,
       ...debugLogBody
     } = debugLogWithOptionalStatus;
-    const normalizedIssues = normalizeDebugIssues(debugLog.issues);
+    const tableView = buildTableViewModel(result, sourceState.tablePreferences, sourceState.language);
+    const tableViewIssues = tableView.issues.map((issue) => ({
+      severity: issue.severity,
+      code: issue.code,
+      messageJa: issue.messageJa,
+      messageEn: issue.messageEn,
+      data: issue.data,
+    }));
+    const normalizedIssues = [
+      ...normalizeDebugIssues(debugLog.issues),
+      ...tableViewIssues,
+    ];
     const normalizedErrorSummaries = normalizeCycleErrorSummaries(
       resultWithDebugStatus.errorSummaries ?? ignoredDebugErrorSummaries ?? [],
     );
@@ -959,6 +975,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       currentRunMessageLogs,
       allMessageLogs: userMessageLogs,
       userMessageLogs,
+      tableView,
     };
     const resultForSvg = {
       ...result,
@@ -1237,6 +1254,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     if (args.artifact) {
       zip.file(args.baseName + '__input.json', JSON.stringify(args.artifact.input, null, 2));
       zip.file(args.baseName + '__debug.json', JSON.stringify(args.artifact.enrichedDebugLog, null, 2));
+      zip.file(args.baseName + '__table-view.json', JSON.stringify(args.artifact.enrichedDebugLog.tableView ?? {}, null, 2));
       zip.file(args.baseName + '__effective-recipe-rate-audit.json', JSON.stringify(args.artifact.enrichedDebugLog.effectiveRecipeRateAudit ?? [], null, 2));
       zip.file(args.baseName + '__graph-normal.svg', args.artifact.graphArtifacts.normal.svg);
       zip.file(args.baseName + '__graph-debug.svg', args.artifact.graphArtifacts.debug.svg);
@@ -1521,6 +1539,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     zip.file(baseName + '__source.json', raw);
     zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
     zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
+    zip.file(baseName + '__table-view.json', JSON.stringify(artifact.enrichedDebugLog.tableView ?? {}, null, 2));
     zip.file(baseName + '__effective-recipe-rate-audit.json', JSON.stringify(artifact.enrichedDebugLog.effectiveRecipeRateAudit ?? [], null, 2));
     zip.file(baseName + '__user-message-log.json', JSON.stringify({
       currentRunMessageLogs: messageLogs.currentRunMessageLogs,

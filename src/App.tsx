@@ -20,7 +20,7 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.9.31';
+const APP_VERSION = '0.9.32';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -136,6 +136,10 @@ function mergeInitialState(safeMode: boolean): AppState {
         ...DEFAULT_STATE.tablePreferences.machineSort,
         ...(saved.tablePreferences?.machineSort ?? {}),
       },
+      machineDetailSort: {
+        ...DEFAULT_STATE.tablePreferences.machineDetailSort,
+        ...(saved.tablePreferences?.machineDetailSort ?? {}),
+      },
     },
     abilities: normalizeAbilitySettings(saved.abilities),
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
@@ -182,12 +186,17 @@ function settingsForCalculation(settings: AppSettings): AppSettings {
 }
 
 
-function tablePreferencesWithMachineSort(current: TablePreferences, machineSort: TablePreferences['machineSort']): TablePreferences {
+function mergeTablePreferences(current: TablePreferences, next: Partial<TablePreferences>): TablePreferences {
   return {
     ...current,
+    ...next,
     machineSort: {
       ...current.machineSort,
-      ...machineSort,
+      ...(next.machineSort ?? {}),
+    },
+    machineDetailSort: {
+      ...current.machineDetailSort,
+      ...(next.machineDetailSort ?? {}),
     },
   };
 }
@@ -606,7 +615,7 @@ export function App() {
               onTablePreferencesChange={(nextPreferences) =>
                 setState((current) => ({
                   ...current,
-                  tablePreferences: tablePreferencesWithMachineSort(current.tablePreferences, nextPreferences.machineSort),
+                  tablePreferences: mergeTablePreferences(current.tablePreferences, nextPreferences),
                 }))
               }
             />
