@@ -166,9 +166,12 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
   }
 
 
+  function isNumericValueInput(target: EventTarget | null): boolean {
+    return target instanceof HTMLInputElement && target.type === 'number' && target.closest('.item-output-value-field') !== null;
+  }
+
   function onDragStart(event: DragEvent<HTMLElement>, targetId: string): void {
-    const target = event.target;
-    if (target instanceof HTMLElement && target.closest('.item-output-value-field')) {
+    if (isNumericValueInput(event.target)) {
       event.preventDefault();
       setDraggingTargetId(null);
       return;
@@ -269,12 +272,15 @@ export function ItemOutputSettings({ lang, targets, targetDefaults, onChange, on
               </select>
             </label>
 
-            <label className="item-output-field item-output-value-field" draggable={false} onDragStart={(event) => event.preventDefault()} onDoubleClick={(event) => event.stopPropagation()}>
+            <label className="item-output-field item-output-value-field" draggable onDragStart={(event) => onDragStart(event, target.id)} onDoubleClick={(event) => event.stopPropagation()}>
               <span>{outputLabel}</span>
               <input
                 type="number"
                 min={0}
+                draggable={false}
                 value={target.value}
+                onMouseDown={(event) => event.stopPropagation()}
+                onDragStart={(event) => event.preventDefault()}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => {
                   const value = parseNonNegativeInputValue(event.target.value);
                   if (value === undefined) return;

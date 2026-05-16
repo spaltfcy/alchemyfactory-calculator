@@ -17,7 +17,7 @@
   --page-gap: 1rem;
   --item-output-item-width: 12rem;
   --item-output-value-width: 5.3rem;
-  --item-output-mode-width: 4.1rem;
+  --item-output-mode-width: 5.0rem;
   --item-output-gap: 0.34rem;
   --item-output-card-padding-x: 0.5rem;
   --item-output-card-padding-y: 0.55rem;
@@ -352,13 +352,19 @@ a {
 }
 
 .item-output-item-field,
+.item-output-value-field,
 .item-output-mode-field {
   cursor: grab;
 }
 
 .item-output-item-field:active,
+.item-output-value-field:active,
 .item-output-mode-field:active {
   cursor: grabbing;
+}
+
+.item-output-value-field input[type="number"] {
+  cursor: text;
 }
 
 .item-output-card.is-dragging {
