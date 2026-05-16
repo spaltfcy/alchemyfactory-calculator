@@ -744,6 +744,22 @@ function chooseAlternateRecipeForItem(itemId: string, selectedRecipe: Recipe | u
 }
 
 
+function selectedRecipeCycleCanBeBrokenByInputAlternate(recipe: Recipe, input: CalculateInput, diagnostics: SolverDiagnostics): boolean {
+  const activeCycleRecipeIds = recipeIdsInActiveCycles(diagnostics);
+  if (!activeCycleRecipeIds.has(recipe.id)) return false;
+
+  for (const recipeInput of recipe.inputs) {
+    if (recipeInput.kind === 'paradoxableItem') continue;
+    const selectedInputRecipe = chooseRecipeForItem(recipeInput.itemId, input.recipePreferences);
+    if (!selectedInputRecipe || !activeCycleRecipeIds.has(selectedInputRecipe.id)) continue;
+    const alternate = chooseAlternateRecipeForItem(recipeInput.itemId, selectedInputRecipe, diagnostics);
+    if (alternate && alternate.id !== selectedInputRecipe.id && !activeCycleRecipeIds.has(alternate.id)) return true;
+  }
+
+  return false;
+}
+
+
 type SolveRunMapResult = {
   runs: RunMap;
   targetRuns: Map<string, number>;
@@ -1075,10 +1091,14 @@ function solveRunMap(input: CalculateInput, diagnostics: SolverDiagnostics): Sol
                 reason: 'selected_recipe_cycle',
                 rateAdded: remaining,
               });
+            } else if (selectedRecipeCycleCanBeBrokenByInputAlternate(selectedRecipe, input, diagnostics)) {
+              // Allow repeated expansion when the recipe itself has no alternate producer, but one of
+              // its cyclic inputs can be completed by an alternate recipe outside the cycle.
+              // Example: charcoal_powder_from_charcoal exposes charcoal, whose selected cyclic producer
+              // coke_and_charcoal can be replaced by charcoal_from_plank.
+              recipeToUse = selectedRecipe;
             } else if ((runs.get(selectedRecipe.id) ?? 0) <= EPS) {
               // Allow one expansion step so the actual cycle-closing input can be evaluated.
-              // Example: charcoal_powder has no alternate producer, but expanding it exposes charcoal,
-              // whose selected cyclic producer can be replaced by charcoal_from_plank.
               recipeToUse = selectedRecipe;
             } else {
               addSelectedRecipeCycleBlock(selectedRecipeCycleBlocks, {

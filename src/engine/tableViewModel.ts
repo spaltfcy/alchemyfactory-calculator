@@ -7,7 +7,7 @@ import { recipeById } from '../data/recipes';
 const EPS = 1e-9;
 const MAX_DEPTH = 64;
 const MAX_STEPS_PER_SOURCE = 10000;
-const TABLE_VIEW_SCHEMA_VERSION = 'table-view-v0933' as const;
+const TABLE_VIEW_SCHEMA_VERSION = 'table-view-v0934' as const;
 
 type LocalizedName = {
   ja: string;
@@ -30,6 +30,10 @@ export type MachineMainRow = {
   machineNameEn: string;
   productionOutputs: TableProductionOutput[];
   productionRateTotal: number;
+  productionRateSource: 'positive-netRates';
+  grossOutputRates: Record<string, number>;
+  netProductionRates: Record<string, number>;
+  suppressedGrossOutputs: Array<{ itemId: string; itemNameJa: string; itemNameEn: string; grossOutputRate: number; netRate: number; reason: 'net_non_positive' }>;
   theoreticalMachines: number;
   actualMachines: number;
   surplusOutputs: TableProductionOutput[];
@@ -124,7 +128,7 @@ export type TableViewIssue = {
 
 export type TableViewModel = {
   schemaVersion: typeof TABLE_VIEW_SCHEMA_VERSION;
-  usageMethod: 'direct-flow-and-proportional-downstream-attribution-ignore-surplus-and-steam';
+  usageMethod: 'positive-net-production-demand-attribution-ignore-surplus-and-steam';
   mainSort: TablePreferences['machineSort'];
   detailSort: TablePreferences['machineDetailSort'];
   columns: {
@@ -213,10 +217,37 @@ function isUsageExpansionIgnoredRecipe(recipeId: string, productionOutputs?: Tab
   return usageExpansionIgnoredReason(recipeId, productionOutputs) !== undefined;
 }
 
+function positiveRecord(record: Record<string, number>): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const [itemId, rate] of Object.entries(record)) {
+    if (Number.isFinite(rate) && rate > EPS) result[itemId] = rate;
+  }
+  return result;
+}
+
+function suppressedGrossOutputs(outputRates: Record<string, number>, netRates: Record<string, number>): MachineMainRow['suppressedGrossOutputs'] {
+  return Object.entries(outputRates)
+    .filter(([, grossOutputRate]) => Number.isFinite(grossOutputRate) && grossOutputRate > EPS)
+    .filter(([itemId]) => (netRates[itemId] ?? 0) <= EPS)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([itemId, grossOutputRate]) => {
+      const name = itemName(itemId);
+      return {
+        itemId,
+        itemNameJa: name.ja,
+        itemNameEn: name.en,
+        grossOutputRate,
+        netRate: netRates[itemId] ?? 0,
+        reason: 'net_non_positive' as const,
+      };
+    });
+}
+
 function mainRowFromRecipeStat(stat: RecipeStat): MachineMainRow {
   const recipe = recipeName(stat.recipeId);
   const machine = machineName(stat.machineId);
-  const productionOutputs = positiveOutputs(stat.outputRates);
+  const netProductionRates = positiveRecord(stat.netRates);
+  const productionOutputs = positiveOutputs(netProductionRates);
   const expansionIgnoredReason = usageExpansionIgnoredReason(stat.recipeId, productionOutputs);
   return {
     recipeId: stat.recipeId,
@@ -227,6 +258,10 @@ function mainRowFromRecipeStat(stat: RecipeStat): MachineMainRow {
     machineNameEn: machine.en,
     productionOutputs,
     productionRateTotal: productionOutputs.reduce((sum, output) => sum + output.rate, 0),
+    productionRateSource: 'positive-netRates',
+    grossOutputRates: { ...stat.outputRates },
+    netProductionRates,
+    suppressedGrossOutputs: suppressedGrossOutputs(stat.outputRates, stat.netRates),
     theoreticalMachines: stat.theoreticalMachines,
     actualMachines: stat.actualMachines,
     surplusOutputs: positiveOutputs(stat.surplusOutputRates),
@@ -744,7 +779,7 @@ export function buildTableViewModel(result: CalculationResult, tablePreferences:
 
   return {
     schemaVersion: TABLE_VIEW_SCHEMA_VERSION,
-    usageMethod: 'direct-flow-and-proportional-downstream-attribution-ignore-surplus-and-steam',
+    usageMethod: 'positive-net-production-demand-attribution-ignore-surplus-and-steam',
     mainSort: tablePreferences.machineSort,
     detailSort: tablePreferences.machineDetailSort,
     columns: {
