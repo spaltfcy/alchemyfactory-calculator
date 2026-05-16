@@ -6,7 +6,7 @@ export const UI = {
   table: { ja: '表', en: 'Table' },
   settings: { ja: '設定', en: 'Settings' },
   about: { ja: 'About', en: 'About' },
-  itemOutputSettings: { ja: 'アイテム出力設定', en: 'Item output settings' },
+  itemOutputSettings: { ja: '出力', en: 'Output' },
   recipeSettings: { ja: 'レシピ設定', en: 'Recipe settings' },
   targets: { ja: 'アイテム出力設定', en: 'Item output settings' },
   addTarget: { ja: '追加', en: 'Add' },
