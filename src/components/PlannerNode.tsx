@@ -61,6 +61,10 @@ export function PlannerNode({ data }: NodeProps) {
         </div>
       </div>
 
+      {nodeData.machineLabel && <div className="planner-node-machine">{nodeData.machineLabel}</div>}
+      {nodeData.ioLabel && <div className="planner-node-io">{nodeData.ioLabel}</div>}
+      {nodeData.countLabel && <div className="planner-node-count">{nodeData.countLabel}</div>}
+
       {nodeData.badges && nodeData.badges.length > 0 && (
         <div className="planner-node-badges">
           {nodeData.badges.map((badge, index) => (
@@ -71,8 +75,6 @@ export function PlannerNode({ data }: NodeProps) {
         </div>
       )}
 
-      {nodeData.machineLabel && <div className="planner-node-machine">{nodeData.machineLabel}</div>}
-      {nodeData.countLabel && <div className="planner-node-count">{nodeData.countLabel}</div>}
       {nodeData.subLabel && <pre className="planner-node-subtitle">{nodeData.subLabel}</pre>}
 
       {sourceHandles.map((handle) => (

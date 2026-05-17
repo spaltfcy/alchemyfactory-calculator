@@ -21,6 +21,7 @@ export type PlannerNodeData = {
   kind: 'item' | 'recipe' | 'surplus' | 'discard' | 'final';
   subLabel?: string;
   machineLabel?: string;
+  ioLabel?: string;
   countLabel?: string;
   completed?: boolean;
   tooltip?: string;
@@ -256,18 +257,26 @@ function formatGraphMachineCount(value: number): string {
 }
 
 function recipeMachineLabel(stat: RecipeStat | undefined, fallbackMachineId: string, lang: Lang): string {
-  const base = machineName(stat?.machineId ?? fallbackMachineId, lang);
-  const perMachine = stat?.perMachineProductionRate ?? 0;
-  if (!Number.isFinite(perMachine) || perMachine <= 0) return base;
-  if (lang === 'ja') return base + '（1台 ' + formatRate(perMachine) + '/min）';
-  return base + ' (1 machine ' + formatRate(perMachine) + '/min)';
+  return machineName(stat?.machineId ?? fallbackMachineId, lang);
+}
+
+function sumPositiveRates(rates: Record<string, number> | undefined): number {
+  if (!rates) return 0;
+  return Object.values(rates).reduce((sum, rate) => (Number.isFinite(rate) && rate > 0 ? sum + rate : sum), 0);
+}
+
+function recipeMachineIoLabel(stat: RecipeStat | undefined): string | undefined {
+  if (!stat || !Number.isFinite(stat.actualMachines) || stat.actualMachines <= 0) return undefined;
+  const inputPerMachine = sumPositiveRates(stat.inputRates) / stat.actualMachines;
+  const outputPerMachine = sumPositiveRates(stat.outputRates) / stat.actualMachines;
+  return 'in ' + formatRate(inputPerMachine) + '/min, out ' + formatRate(outputPerMachine) + '/min';
 }
 
 function recipeMachineCountLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
   if (!stat) return undefined;
   const productionRate = stat.positiveNetProductionRate;
-  if (lang === 'ja') return '設置台数 ' + formatGraphMachineCount(stat.actualMachines) + '台 (' + formatRate(productionRate) + '/min)';
-  return 'Machines ' + formatGraphMachineCount(stat.actualMachines) + ' (' + formatRate(productionRate) + '/min)';
+  if (lang === 'ja') return formatGraphMachineCount(stat.actualMachines) + '台 (' + formatRate(productionRate) + '/min)';
+  return formatGraphMachineCount(stat.actualMachines) + ' machines (' + formatRate(productionRate) + '/min)';
 }
 
 function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResult, lang: Lang): Node {
@@ -276,6 +285,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const rs = result.recipeStats[endpoint.recipeId];
     const recipe = recipeById[endpoint.recipeId];
     const machineLabel = recipeMachineLabel(rs, recipe?.machineId ?? '', lang);
+    const ioLabel = recipeMachineIoLabel(rs);
     const countLabel = recipeMachineCountLabel(rs, lang);
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
@@ -291,6 +301,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
         label: recipeName(endpoint.recipeId, lang),
         kind: 'recipe',
         machineLabel,
+        ioLabel,
         countLabel,
         badges: badges.length ? badges : undefined,
         hasStartupWarning: requiredStartupItemIds.length > 0,
@@ -596,7 +607,7 @@ function nodeTheme(kind: PlannerNodeData['kind'], completed?: boolean, data: Pla
 function measureSvgNode(node: Node): { width: number; height: number } {
   const data = node.data as PlannerNodeData;
   const subLines = splitNodeText(data.subLabel);
-  const detailLines = [data.machineLabel, data.countLabel, ...subLines].filter(Boolean) as string[];
+  const detailLines = [data.machineLabel, data.ioLabel, data.countLabel, ...subLines].filter(Boolean) as string[];
   const titleWidth = estimateSvgTextWidth(data.label, 15, true) + 28;
   const detailWidth = detailLines.reduce((max, line) => Math.max(max, estimateSvgTextWidth(line, 12) + 28), 0);
   const badgeWidth = (data.badges ?? []).reduce((sum, badge) => sum + Math.max(42, estimateSvgTextWidth(badge.text, 11, true) + 16) + 6, 0);
@@ -964,7 +975,7 @@ function renderSvgNode(node: SvgGraphNode): string {
   const data = node.data;
   const theme = nodeTheme(data.kind, data.completed, data);
   const subLines = splitNodeText(data.subLabel);
-  const detailLines = [data.machineLabel, data.countLabel, ...subLines].filter(Boolean) as string[];
+  const detailLines = [data.machineLabel, data.ioLabel, data.countLabel, ...subLines].filter(Boolean) as string[];
   const lines: string[] = [];
   let currentY = node.y + 22;
 
