@@ -168,7 +168,7 @@ const COMPACT_VERIFICATION_ZIP_INCLUDE: VerificationZipIncludeOptions = {
   sourceJson: true,
   inputJson: true,
   fullDebugLog: false,
-  tableView: true,
+  tableView: false,
   effectiveRecipeRateAudit: false,
   userMessageLog: true,
   graphSvg: false,
@@ -196,8 +196,18 @@ const FULL_VERIFICATION_ZIP_INCLUDE: VerificationZipIncludeOptions = {
 
 const VERIFICATION_ZIP_OPTION_KEYS = Object.keys(COMPACT_VERIFICATION_ZIP_INCLUDE) as Array<keyof VerificationZipIncludeOptions>;
 
-function mergeVerificationZipIncludeOptions(options?: Partial<VerificationZipIncludeOptions>): VerificationZipIncludeOptions {
-  return { ...COMPACT_VERIFICATION_ZIP_INCLUDE, ...(options ?? {}) };
+function normalizeVerificationZipIncludeOptions(value: unknown): Partial<VerificationZipIncludeOptions> | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const source = value as Partial<Record<keyof VerificationZipIncludeOptions, unknown>>;
+  const normalized: Partial<VerificationZipIncludeOptions> = {};
+  for (const key of VERIFICATION_ZIP_OPTION_KEYS) {
+    if (typeof source[key] === 'boolean') normalized[key] = source[key];
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function mergeVerificationZipIncludeOptions(...optionsList: Array<Partial<VerificationZipIncludeOptions> | undefined>): VerificationZipIncludeOptions {
+  return Object.assign({}, FULL_VERIFICATION_ZIP_INCLUDE, ...optionsList.filter(Boolean));
 }
 
 function compactObjectSummary(value: unknown): unknown {
@@ -952,7 +962,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
   const zipInputRef = useRef<HTMLInputElement | null>(null);
   const [lastSummary, setLastSummary] = useState<LastSummary | null>(null);
   const [status, setStatus] = useState('');
-  const [zipIncludeOptions, setZipIncludeOptions] = useState<VerificationZipIncludeOptions>(() => COMPACT_VERIFICATION_ZIP_INCLUDE);
+  const [zipIncludeOptions, setZipIncludeOptions] = useState<VerificationZipIncludeOptions>(() => FULL_VERIFICATION_ZIP_INCLUDE);
 
   const labels =
     lang === 'ja'
@@ -1443,7 +1453,9 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const baseName = safeFilePart(source.name);
     const timestamp = timestampForFile();
     const runId = createRunId('verification');
-    const include = mergeVerificationZipIncludeOptions(options.zipIncludeOptions);
+    let include = mergeVerificationZipIncludeOptions(options.zipIncludeOptions);
+    let includeOptionsSource: 'default' | 'debug-tab' | 'verification-json' = options.zipIncludeOptions ? 'debug-tab' : 'default';
+    let verificationJsonIncludeOptions: Partial<VerificationZipIncludeOptions> | undefined;
     if (options.resetMessages !== false) onBeginJsonImport?.();
 
     let raw = source.raw ?? '';
@@ -1493,6 +1505,11 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
 
     try {
       imported = JSON.parse(raw) as Partial<AppState>;
+      verificationJsonIncludeOptions = normalizeVerificationZipIncludeOptions((imported as Partial<AppState> & { zipIncludeOptions?: unknown }).zipIncludeOptions);
+      if (verificationJsonIncludeOptions) {
+        include = mergeVerificationZipIncludeOptions(options.zipIncludeOptions, verificationJsonIncludeOptions);
+        includeOptionsSource = 'verification-json';
+      }
     } catch (error) {
       const message = emitUserMessage(messageWithRun(verificationErrorMessage({
         code: 'INVALID_JSON',
@@ -1662,8 +1679,15 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       gameVersion,
       debugSchemaVersion: 47,
       include,
-      noteJa: 'このZIPはDEBUGタブの選択内容に従って出力しています。未選択の詳細ログは省略されています。',
-      noteEn: 'This ZIP was generated according to the DEBUG tab content selection. Unselected detailed logs are omitted.',
+      includeOptionsSource,
+      verificationJsonIncludeOptions: verificationJsonIncludeOptions ?? null,
+      debugTabIncludeOptions: mergeVerificationZipIncludeOptions(options.zipIncludeOptions),
+      noteJa: includeOptionsSource === 'verification-json'
+        ? 'このZIPは検証JSON内のzipIncludeOptionsを優先して出力しています。未選択の詳細ログは省略されています。'
+        : 'このZIPはDEBUGタブの選択内容に従って出力しています。未選択の詳細ログは省略されています。',
+      noteEn: includeOptionsSource === 'verification-json'
+        ? 'This ZIP was generated using zipIncludeOptions from the verification JSON. Unselected detailed logs are omitted.'
+        : 'This ZIP was generated according to the DEBUG tab content selection. Unselected detailed logs are omitted.',
     }, null, 2));
     if (include.sourceJson) zip.file(baseName + '__source.json', raw);
     if (include.inputJson) zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
@@ -1788,7 +1812,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
   }
 
   async function saveVerificationZipFromFile(file: File): Promise<void> {
-    const result = await buildVerificationZipFromSource(sourceFileFromFile(file), { resetMessages: true, applyState: true, captureLiveGraph: zipIncludeOptions.liveGraph, zipIncludeOptions });
+    const result = await buildVerificationZipFromSource(sourceFileFromFile(file), { resetMessages: true, applyState: true, captureLiveGraph: true, zipIncludeOptions });
     downloadBlob(result.resultZipName, result.blob);
     setStatus(result.status === 'ok' ? labels.zipSaved : labels.zipSavedInvalid);
   }
@@ -1823,7 +1847,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       const result = await buildVerificationZipFromSource(sourceFileFromZipEntry(entry.name, raw, file), {
         resetMessages: false,
         applyState: true,
-        captureLiveGraph: zipIncludeOptions.liveGraph,
+        captureLiveGraph: true,
         expectation: expectationForSource(expectations, entry.name),
         zipIncludeOptions,
       });
@@ -1839,7 +1863,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
-      include: mergeVerificationZipIncludeOptions(zipIncludeOptions),
+      defaultInclude: mergeVerificationZipIncludeOptions(zipIncludeOptions),
       total: results.length,
       ok: results.filter((result) => result.status === 'ok').length,
       invalid: results.filter((result) => result.status === 'invalid').length,
