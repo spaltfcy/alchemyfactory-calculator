@@ -20,7 +20,7 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.9.35';
+const APP_VERSION = '0.9.36';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -144,6 +144,10 @@ function mergeInitialState(safeMode: boolean): AppState {
         ...DEFAULT_STATE.tablePreferences.materialFlowSort,
         ...(saved.tablePreferences?.materialFlowSort ?? {}),
       },
+      itemFlowSort: {
+        ...DEFAULT_STATE.tablePreferences.itemFlowSort,
+        ...(saved.tablePreferences?.itemFlowSort ?? {}),
+      },
     },
     abilities: normalizeAbilitySettings(saved.abilities),
     recipePreferences: { ...DEFAULT_STATE.recipePreferences, ...saved.recipePreferences },
@@ -205,6 +209,10 @@ function mergeTablePreferences(current: TablePreferences, next: Partial<TablePre
     materialFlowSort: {
       ...current.materialFlowSort,
       ...(next.materialFlowSort ?? {}),
+    },
+    itemFlowSort: {
+      ...current.itemFlowSort,
+      ...(next.itemFlowSort ?? {}),
     },
   };
 }

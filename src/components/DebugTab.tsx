@@ -784,6 +784,14 @@ function mergeImportedState(current: AppState, imported: Partial<AppState>): App
         ...current.tablePreferences.machineDetailSort,
         ...(imported.tablePreferences?.machineDetailSort ?? {}),
       },
+      materialFlowSort: {
+        ...current.tablePreferences.materialFlowSort,
+        ...(imported.tablePreferences?.materialFlowSort ?? {}),
+      },
+      itemFlowSort: {
+        ...current.tablePreferences.itemFlowSort,
+        ...(imported.tablePreferences?.itemFlowSort ?? {}),
+      },
     },
     abilities: normalizeAbilitySettings({ ...current.abilities, ...(imported.abilities ?? {}) }),
     recipePreferences: imported.recipePreferences ?? {},

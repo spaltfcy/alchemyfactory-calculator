@@ -210,6 +210,10 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
         ...current.tablePreferences.materialFlowSort,
         ...(imported.tablePreferences?.materialFlowSort ?? {}),
       },
+      itemFlowSort: {
+        ...current.tablePreferences.itemFlowSort,
+        ...(imported.tablePreferences?.itemFlowSort ?? {}),
+      },
     },
     abilities: normalizeAbilitySettings({ ...current.abilities, ...imported.abilities }),
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },

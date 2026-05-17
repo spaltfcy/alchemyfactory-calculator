@@ -20,6 +20,10 @@ export const DEFAULT_STATE: AppState = {
       key: 'flow',
       direction: 'desc',
     },
+    itemFlowSort: {
+      key: 'item',
+      direction: 'asc',
+    },
   },
   targets: [
     {

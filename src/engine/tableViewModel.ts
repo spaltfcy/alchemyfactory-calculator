@@ -7,7 +7,7 @@ import { recipeById } from '../data/recipes';
 const EPS = 1e-9;
 const MAX_DEPTH = 64;
 const MAX_STEPS_PER_SOURCE = 10000;
-const TABLE_VIEW_SCHEMA_VERSION = 'table-view-v0935' as const;
+const TABLE_VIEW_SCHEMA_VERSION = 'table-view-v0936' as const;
 
 type LocalizedName = {
   ja: string;
@@ -35,8 +35,8 @@ export type MachineMainRow = {
   grossOutputRates: Record<string, number>;
   netProductionRates: Record<string, number>;
   suppressedGrossOutputs: Array<{ itemId: string; itemNameJa: string; itemNameEn: string; grossOutputRate: number; netRate: number; reason: 'net_non_positive' }>;
-  theoreticalMachines: number;
-  actualMachines: number;
+  theoreticalMachines?: number;
+  actualMachines?: number;
   surplusOutputs: TableProductionOutput[];
   expandable: boolean;
   expansionIgnored: boolean;
@@ -162,6 +162,8 @@ type BuildContext = {
   ignoredSteamRate: number;
   ignoredRecipeRate: number;
   finalLabelMode?: 'item' | 'itemAndRecipe';
+  traceSpecialDemandThroughSteam?: boolean;
+  suppressSpecialDemandTerminals?: boolean;
 };
 
 function localizedFallbackName(id: string): LocalizedName {
@@ -278,8 +280,8 @@ function compareMainRows(a: MachineMainRow, b: MachineMainRow, key: MachineTable
   if (key === 'recipe') return compareText(lang === 'ja' ? a.recipeNameJa : a.recipeNameEn, lang === 'ja' ? b.recipeNameJa : b.recipeNameEn, lang);
   if (key === 'machine') return compareText(lang === 'ja' ? a.machineNameJa : a.machineNameEn, lang === 'ja' ? b.machineNameJa : b.machineNameEn, lang);
   if (key === 'productionRate') return a.productionRateTotal - b.productionRateTotal;
-  if (key === 'theoreticalMachines') return a.theoreticalMachines - b.theoreticalMachines;
-  if (key === 'actualMachines') return a.actualMachines - b.actualMachines;
+  if (key === 'theoreticalMachines') return compareNullableNumber(a.theoreticalMachines, b.theoreticalMachines);
+  if (key === 'actualMachines') return compareNullableNumber(a.actualMachines, b.actualMachines);
   return surplusTotal(a) - surplusTotal(b);
 }
 
@@ -530,11 +532,44 @@ function consumeFlow(ctx: BuildContext, flow: CalculatedFlow, usageRate: number,
   }
 
   if (flow.role === 'steam' || flow.itemId === 'steam') {
+    if (ctx.traceSpecialDemandThroughSteam && flow.to.type === 'recipe') {
+      const nextRecipeId = flow.to.recipeId;
+      if (pathRecipeIds.includes(nextRecipeId)) {
+        addCycleRow(ctx, nextRecipeId, usageRate);
+        addTrace(ctx, {
+          action: 'cycle',
+          fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+          toRecipeId: nextRecipeId,
+          itemId: flow.itemId,
+          flowRate: flow.rate,
+          usageRate,
+          pathRecipeIds: [...pathRecipeIds, nextRecipeId],
+        });
+        return;
+      }
+      addTrace(ctx, {
+        action: 'advance',
+        fromRecipeId: flow.from.type === 'recipe' ? flow.from.recipeId : undefined,
+        toRecipeId: nextRecipeId,
+        itemId: flow.itemId,
+        flowRate: flow.rate,
+        usageRate,
+        pathRecipeIds: [...pathRecipeIds, nextRecipeId],
+        noteJa: '燃料需要の内訳では、蒸気を消費先レシピへ中継して追跡します。',
+        noteEn: 'For fuel demand attribution, steam is traced through to consuming recipes.',
+      });
+      visitRecipe(ctx, nextRecipeId, usageRate, [...pathRecipeIds, nextRecipeId], depth + 1);
+      return;
+    }
     addIgnoredRate(ctx, 'steam', flow, usageRate, pathRecipeIds, '蒸気フローは表の使用量内訳から除外します。', 'Steam flow is ignored by the table usage allocation.');
     return;
   }
 
   if (flow.role === 'fuel' || flow.role === 'fertilizer') {
+    if (ctx.suppressSpecialDemandTerminals) {
+      addIgnoredRate(ctx, 'recipe', flow, usageRate, pathRecipeIds, '特殊需要の内訳内に燃料・肥料需要行は混ぜません。', 'Nested fuel/fertilizer demand is omitted from special-demand detail rows.');
+      return;
+    }
     addSpecialDemandRow(ctx, flow.role, flow.itemId, usageRate);
     addTrace(ctx, {
       action: 'terminal',
@@ -572,7 +607,7 @@ function consumeFlow(ctx: BuildContext, flow: CalculatedFlow, usageRate: number,
 
   if (flow.to.type !== 'recipe') return;
   const nextRecipeId = flow.to.recipeId;
-  if (isUsageExpansionIgnoredRecipe(nextRecipeId)) {
+  if (isUsageExpansionIgnoredRecipe(nextRecipeId) && !ctx.traceSpecialDemandThroughSteam) {
     addIgnoredRate(ctx, 'recipe', flow, usageRate, pathRecipeIds, '蒸気などの中継設備は表の使用量内訳から除外します。', 'Utility recipes such as steam recipes are ignored by the table usage allocation.');
     return;
   }
@@ -617,7 +652,7 @@ function visitRecipe(ctx: BuildContext, recipeId: string, usageRate: number, pat
     return;
   }
 
-  if (isUsageExpansionIgnoredRecipe(recipeId)) {
+  if (isUsageExpansionIgnoredRecipe(recipeId) && !ctx.traceSpecialDemandThroughSteam) {
     addIgnoredRate(ctx, 'recipe', undefined, usageRate, pathRecipeIds, '蒸気などの中継設備は表の使用量内訳から除外します。', 'Utility recipes such as steam recipes are ignored by the table usage allocation.');
     return;
   }
@@ -751,7 +786,21 @@ function specialDemandRowId(kind: 'fuel' | 'fertilizer', itemId: string): string
   return `__special:${kind}:${itemId}`;
 }
 
-function makeSpecialDemandMainRow(kind: 'fuel' | 'fertilizer', itemId: string, rate: number): MachineMainRow {
+function estimateSpecialDemandTheoreticalMachines(result: CalculationResult, itemId: string, rate: number): number | undefined {
+  if (!Number.isFinite(rate) || rate <= EPS) return undefined;
+  let totalProduction = 0;
+  let totalTheoreticalMachines = 0;
+  for (const stat of Object.values(result.recipeStats)) {
+    const produced = stat.netRates[itemId] ?? 0;
+    if (!Number.isFinite(produced) || produced <= EPS) continue;
+    totalProduction += produced;
+    totalTheoreticalMachines += Number.isFinite(stat.theoreticalMachines) ? stat.theoreticalMachines : 0;
+  }
+  if (totalProduction <= EPS || totalTheoreticalMachines <= EPS) return undefined;
+  return totalTheoreticalMachines * rate / totalProduction;
+}
+
+function makeSpecialDemandMainRow(result: CalculationResult, kind: 'fuel' | 'fertilizer', itemId: string, rate: number): MachineMainRow {
   const name = itemName(itemId);
   const labelJa = `${kind === 'fuel' ? '燃料' : '肥料'}: ${name.ja}`;
   const labelEn = `${kind === 'fuel' ? 'Fuel' : 'Fertilizer'}: ${name.en}`;
@@ -769,8 +818,8 @@ function makeSpecialDemandMainRow(kind: 'fuel' | 'fertilizer', itemId: string, r
     grossOutputRates: {},
     netProductionRates: { [itemId]: rate },
     suppressedGrossOutputs: [],
-    theoreticalMachines: 0,
-    actualMachines: 0,
+    theoreticalMachines: estimateSpecialDemandTheoreticalMachines(result, itemId, rate),
+    actualMachines: undefined,
     surplusOutputs: [],
     expandable: false,
     expansionIgnored: false,
@@ -808,6 +857,8 @@ function buildSpecialDemandDetailGroup(
     ignoredSteamRate: 0,
     ignoredRecipeRate: 0,
     finalLabelMode: 'itemAndRecipe',
+    traceSpecialDemandThroughSteam: true,
+    suppressSpecialDemandTerminals: true,
   };
 
   addTrace(ctx, {
@@ -917,7 +968,7 @@ function appendSpecialDemandRows(
   for (const entry of [...grouped.values()].sort((a, b) => `${a.kind}:${a.itemId}`.localeCompare(`${b.kind}:${b.itemId}`))) {
     const totalRate = entry.flows.reduce((sum, flow) => sum + Math.max(0, flow.rate), 0);
     if (totalRate <= EPS) continue;
-    const row = makeSpecialDemandMainRow(entry.kind, entry.itemId, totalRate);
+    const row = makeSpecialDemandMainRow(result, entry.kind, entry.itemId, totalRate);
     const { group, trace } = buildSpecialDemandDetailGroup(result, outgoingByRecipe, entry.kind, entry.itemId, entry.flows, tablePreferences.machineDetailSort, lang, issues);
     if (group.rows.length > 0) {
       detailGroupsByRecipeId[row.recipeId] = [group];

@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
-import type { Lang, MachineDetailTableSortKey, MachineTableSortKey, MaterialFlowTableSortKey, SortDirection, TablePreferences } from '../types';
-import type { CalculationResult, ConveyorEdgeStat } from '../engine/calculate';
+import type { ItemFlowTableSortKey, Lang, MachineDetailTableSortKey, MachineTableSortKey, MaterialFlowTableSortKey, SortDirection, TablePreferences } from '../types';
+import type { CalculationResult, ConveyorEdgeStat, ItemStat } from '../engine/calculate';
 import { itemById } from '../data/items';
 import { recipeById } from '../data/recipes';
 import { t, text } from '../i18n';
@@ -26,6 +26,11 @@ type MachineDetailTableColumn = {
 
 type MaterialFlowTableColumn = {
   key: MaterialFlowTableSortKey;
+  label: string;
+};
+
+type ItemFlowTableColumn = {
+  key: ItemFlowTableSortKey;
   label: string;
 };
 
@@ -55,6 +60,24 @@ function compareMaterialFlowEdges(a: ConveyorEdgeStat, b: ConveyorEdgeStat, key:
   return new Intl.Collator(lang === 'ja' ? 'ja' : 'en', { numeric: true, sensitivity: 'base' }).compare(materialFlowRouteLabel(a, lang), materialFlowRouteLabel(b, lang));
 }
 
+function itemFlowName(row: ItemStat, lang: Lang): string {
+  return itemName(row.itemId, lang);
+}
+
+function compareItemFlowRows(a: ItemStat, b: ItemStat, key: ItemFlowTableSortKey, lang: Lang): number {
+  if (key === 'item') return new Intl.Collator(lang === 'ja' ? 'ja' : 'en', { numeric: true, sensitivity: 'base' }).compare(itemFlowName(a, lang), itemFlowName(b, lang));
+  if (key === 'targetRequested') return a.targetRequested - b.targetRequested;
+  if (key === 'targetActual') return a.targetActual - b.targetActual;
+  if (key === 'consumed') return a.consumed - b.consumed;
+  if (key === 'produced') return a.produced - b.produced;
+  if (key === 'surplus') return a.surplus - b.surplus;
+  if (key === 'purchased') return a.purchased - b.purchased;
+  if (key === 'initialPurchased') return a.initialPurchased - b.initialPurchased;
+  if (key === 'runningCost') return a.purchaseCostCopperPerMin - b.purchaseCostCopperPerMin;
+  if (key === 'initialCost') return a.initialCostCopper - b.initialCostCopper;
+  return a.revenueCopperPerMin - b.revenueCopperPerMin;
+}
+
 function sortLabel(active: boolean, direction: SortDirection): string {
   if (!active) return '';
   return direction === 'asc' ? ' ▲' : ' ▼';
@@ -70,6 +93,10 @@ function initialMachineDetailSortDirection(key: MachineDetailTableSortKey): Sort
 
 function initialMaterialFlowSortDirection(key: MaterialFlowTableSortKey): SortDirection {
   return key === 'flow' || key === 'transport' ? 'desc' : 'asc';
+}
+
+function initialItemFlowSortDirection(key: ItemFlowTableSortKey): SortDirection {
+  return key === 'item' ? 'asc' : 'desc';
 }
 
 function productionSummary(outputs: TableProductionOutput[], lang: Lang): ReactNode {
@@ -103,8 +130,8 @@ function optionalNumber(value: number | undefined): string {
   return Number.isFinite(value) ? formatNumber(Number(value), 3) : '-';
 }
 
-function mainMachineNumber(row: MachineMainRow, value: number): string {
-  return row.rowKind === 'recipe' && Number.isFinite(value) ? formatNumber(value, 3) : '-';
+function mainMachineNumber(value: number | undefined): string {
+  return optionalNumber(value);
 }
 
 function detailRowClass(row: MachineDetailRow): string | undefined {
@@ -128,6 +155,7 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
   const machineSort = tablePreferences.machineSort;
   const machineDetailSort = tablePreferences.machineDetailSort;
   const materialFlowSort = tablePreferences.materialFlowSort;
+  const itemFlowSort = tablePreferences.itemFlowSort;
   const machineColumns: MachineTableColumn[] = [
     { key: 'recipe', label: t('recipe', lang) },
     { key: 'machine', label: lang === 'ja' ? '設備' : 'Machine' },
@@ -148,8 +176,28 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
     { key: 'flow', label: t('flow', lang) },
     { key: 'transport', label: lang === 'ja' ? '搬送' : 'Transport' },
   ];
+  const itemFlowColumns: ItemFlowTableColumn[] = [
+    { key: 'item', label: lang === 'ja' ? 'アイテム' : 'Item' },
+    { key: 'targetRequested', label: t('targetRequested', lang) },
+    { key: 'targetActual', label: t('targetActual', lang) },
+    { key: 'consumed', label: t('consumed', lang) },
+    { key: 'produced', label: t('produced', lang) },
+    { key: 'surplus', label: t('surplus', lang) },
+    { key: 'purchased', label: `${t('purchased', lang)}/min` },
+    { key: 'initialPurchased', label: lang === 'ja' ? '初期購入' : 'Initial purchase' },
+    { key: 'runningCost', label: lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min' },
+    { key: 'initialCost', label: lang === 'ja' ? '初期コスト' : 'Initial cost' },
+    { key: 'revenue', label: t('revenue', lang) },
+  ];
 
-  const itemRows = Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId));
+  const itemRows = useMemo(() => {
+    const direction = itemFlowSort.direction === 'asc' ? 1 : -1;
+    return Object.values(result.itemStats).sort((a, b) => {
+      const primary = compareItemFlowRows(a, b, itemFlowSort.key, lang) * direction;
+      if (primary !== 0) return primary;
+      return itemFlowName(a, lang).localeCompare(itemFlowName(b, lang)) || a.itemId.localeCompare(b.itemId);
+    });
+  }, [result.itemStats, itemFlowSort, lang]);
   const materialFlowRows = useMemo(() => {
     const direction = materialFlowSort.direction === 'asc' ? 1 : -1;
     return [...result.conveyorEdges].sort((a, b) => {
@@ -158,10 +206,6 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
       return materialFlowRouteLabel(a, lang).localeCompare(materialFlowRouteLabel(b, lang)) || a.id.localeCompare(b.id);
     });
   }, [result.conveyorEdges, materialFlowSort, lang]);
-  const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
-  const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
-  const initialPurchasedLabel = lang === 'ja' ? '初期購入' : 'Initial purchase';
-
   function setMachineSort(key: MachineTableSortKey): void {
     const direction = machineSort.key === key
       ? (machineSort.direction === 'asc' ? 'desc' : 'asc')
@@ -189,6 +233,16 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
     onTablePreferencesChange({
       ...tablePreferences,
       materialFlowSort: { key, direction },
+    });
+  }
+
+  function setItemFlowSort(key: ItemFlowTableSortKey): void {
+    const direction = itemFlowSort.key === key
+      ? (itemFlowSort.direction === 'asc' ? 'desc' : 'asc')
+      : initialItemFlowSortDirection(key);
+    onTablePreferencesChange({
+      ...tablePreferences,
+      itemFlowSort: { key, direction },
     });
   }
 
@@ -264,8 +318,8 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
                       </td>
                       <td>{lang === 'ja' ? row.machineNameJa : row.machineNameEn}</td>
                       <td>{productionSummary(row.productionOutputs, lang)}</td>
-                      <td>{mainMachineNumber(row, row.theoreticalMachines)}</td>
-                      <td>{mainMachineNumber(row, row.actualMachines)}</td>
+                      <td>{mainMachineNumber(row.theoreticalMachines)}</td>
+                      <td>{mainMachineNumber(row.actualMachines)}</td>
                       <td>{surplusSummary(row, lang)}</td>
                     </tr>
                     {isExpandable && isExpanded && (
@@ -331,17 +385,20 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
           <table className="data-table">
             <thead>
               <tr>
-                <th>{lang === 'ja' ? 'アイテム' : 'Item'}</th>
-                <th>{t('targetRequested', lang)}</th>
-                <th>{t('targetActual', lang)}</th>
-                <th>{t('consumed', lang)}</th>
-                <th>{t('produced', lang)}</th>
-                <th>{t('surplus', lang)}</th>
-                <th>{t('purchased', lang)}/min</th>
-                <th>{initialPurchasedLabel}</th>
-                <th>{runningCostLabel}</th>
-                <th>{initialCostLabel}</th>
-                <th>{t('revenue', lang)}</th>
+                {itemFlowColumns.map((column) => {
+                  const active = itemFlowSort.key === column.key;
+                  return (
+                    <th key={column.key} aria-sort={active ? (itemFlowSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                      <button
+                        type="button"
+                        className="table-sort-button"
+                        onClick={() => setItemFlowSort(column.key)}
+                      >
+                        {column.label}{sortLabel(active, itemFlowSort.direction)}
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
