@@ -57,9 +57,13 @@ export function getEffectiveRecipeTimeSec(recipe: Recipe, settings: AppSettings)
 }
 
 export function getEffectiveRecipeForCalculation(recipe: Recipe, settings: AppSettings): EffectiveRecipe {
+  const machineId = getEffectiveRecipeMachineId(recipe, settings);
+  const timeSec = getEffectiveRecipeTimeSec(recipe, settings);
+
   return {
     ...recipe,
+    machineId,
     inputs: getResolvedRecipeInputs(recipe, settings),
-    timeSec: getEffectiveRecipeTimeSec(recipe, settings),
+    timeSec,
   };
 }
