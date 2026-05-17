@@ -182,6 +182,9 @@ function alchemyOutputMultiplierForRecipe(recipe: Recipe, input: CalculateInput)
 function createRecipeStat(recipe: Recipe, runsPerMinute: number, input: CalculateInput, productionSpeedMultiplier: number, conveyorItemsPerMinute: number): RecipeStat {
   const machineRunRate = runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
+  const positiveNetPerRun = positiveNetProductionPerRun(recipe, input);
+  const positiveNetProductionRate = positiveNetPerRun * runsPerMinute;
+  const perMachineProductionRate = positiveNetPerRun * machineRunRate;
   const effectiveMachineId = getEffectiveRecipeMachineId(recipe, input.settings);
   const thermalHeightMultiplier = thermalHeightMultiplierForRecipe(recipe, input);
   const alchemyOutputMultiplier = alchemyOutputMultiplierForRecipe(recipe, input);
@@ -191,6 +194,8 @@ function createRecipeStat(recipe: Recipe, runsPerMinute: number, input: Calculat
     theoreticalMachines,
     actualMachines: theoreticalMachines,
     runsPerMinute,
+    positiveNetProductionRate,
+    perMachineProductionRate,
     inputRates: {},
     outputRates: {},
     netRates: {},
@@ -246,6 +251,10 @@ function rateBalancePerRun(recipe: Recipe, itemId: string, input: CalculateInput
 
 function positiveRatePerRun(recipe: Recipe, itemId: string, input: CalculateInput): number {
   return Math.max(0, rateBalancePerRun(recipe, itemId, input));
+}
+
+function positiveNetProductionPerRun(recipe: Recipe, input: CalculateInput): number {
+  return recipeItemIds(recipe).reduce((sum, itemId) => sum + positiveRatePerRun(recipe, itemId, input), 0);
 }
 
 function recipeItemIds(recipe: Recipe): string[] {

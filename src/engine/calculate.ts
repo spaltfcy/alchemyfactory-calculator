@@ -315,6 +315,8 @@ function buildEffectiveRecipeRateAudit(result: CalculationResult): NonNullable<C
         theoreticalMachines: stat.theoreticalMachines,
         actualMachines: stat.actualMachines,
         machineExecutionsPerMinute: divisor > EPS ? stat.runsPerMinute / divisor : stat.runsPerMinute,
+        positiveNetProductionRate: stat.positiveNetProductionRate,
+        perMachineProductionRate: stat.perMachineProductionRate,
         machineInputRatesPerMinute: divideRates(stat.inputRates, divisor),
         machineOutputRatesPerMinute: divideRates(stat.outputRates, divisor),
         machineNetRatesPerMinute: divideRates(stat.netRates, divisor),

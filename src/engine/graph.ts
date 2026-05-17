@@ -249,18 +249,25 @@ function nodeSubtitle(lines: string[]): string {
   return lines.filter(Boolean).join('\n');
 }
 
-function recipePositiveNetProductionRate(stat: RecipeStat | undefined): number {
-  if (!stat) return 0;
-  return Object.values(stat.netRates).reduce((sum, rate) => {
-    return sum + (Number.isFinite(rate) && rate > 0 ? rate : 0);
-  }, 0);
+function formatGraphMachineCount(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0';
+  if (value < 0.01) return '0.01';
+  return formatNumber(value);
+}
+
+function recipeMachineLabel(stat: RecipeStat | undefined, fallbackMachineId: string, lang: Lang): string {
+  const base = machineName(stat?.machineId ?? fallbackMachineId, lang);
+  const perMachine = stat?.perMachineProductionRate ?? 0;
+  if (!Number.isFinite(perMachine) || perMachine <= 0) return base;
+  if (lang === 'ja') return base + '（1台 ' + formatRate(perMachine) + '/min）';
+  return base + ' (1 machine ' + formatRate(perMachine) + '/min)';
 }
 
 function recipeMachineCountLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
   if (!stat) return undefined;
-  const productionRate = recipePositiveNetProductionRate(stat);
-  if (lang === 'ja') return '設置台数 ' + formatNumber(stat.actualMachines) + '台 (' + formatRate(productionRate) + '/min)';
-  return 'Machines ' + formatNumber(stat.actualMachines) + ' (' + formatRate(productionRate) + '/min)';
+  const productionRate = stat.positiveNetProductionRate;
+  if (lang === 'ja') return '設置台数 ' + formatGraphMachineCount(stat.actualMachines) + '台 (' + formatRate(productionRate) + '/min)';
+  return 'Machines ' + formatGraphMachineCount(stat.actualMachines) + ' (' + formatRate(productionRate) + '/min)';
 }
 
 function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResult, lang: Lang): Node {
@@ -268,7 +275,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
   if (endpoint.type === 'recipe') {
     const rs = result.recipeStats[endpoint.recipeId];
     const recipe = recipeById[endpoint.recipeId];
-    const machineLabel = machineName(rs?.machineId ?? recipe?.machineId ?? '', lang);
+    const machineLabel = recipeMachineLabel(rs, recipe?.machineId ?? '', lang);
     const countLabel = recipeMachineCountLabel(rs, lang);
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');

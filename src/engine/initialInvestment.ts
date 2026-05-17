@@ -30,6 +30,18 @@ function outputRatePerMachine(recipe: Recipe, itemId: string, input: CalculateIn
   return outputPerRun(recipe, itemId) * runRatePerMachine(recipe, input, productionSpeedMultiplier);
 }
 
+function positiveNetProductionPerRun(recipe: Recipe): number {
+  const inputRates: Record<string, number> = {};
+  const outputRates: Record<string, number> = {};
+  for (const entry of recipe.inputs) if (isItemRecipeInput(entry)) inputRates[entry.itemId] = (inputRates[entry.itemId] ?? 0) + entry.amount;
+  for (const entry of recipe.outputs) outputRates[entry.itemId] = (outputRates[entry.itemId] ?? 0) + entry.amount * (entry.probability ?? 1);
+  let total = 0;
+  for (const itemId of new Set([...Object.keys(inputRates), ...Object.keys(outputRates)])) {
+    total += Math.max(0, (outputRates[itemId] ?? 0) - (inputRates[itemId] ?? 0));
+  }
+  return total;
+}
+
 function inputAmountPerRun(recipe: Recipe, itemId: string): number {
   return recipe.inputs.filter((entry) => isItemRecipeInput(entry) && entry.itemId === itemId).reduce((sum, entry) => sum + entry.amount, 0);
 }
@@ -52,6 +64,9 @@ function transportKindForItem(itemId: string): InitialInvestmentTransportKind {
 function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMinute: number, input: CalculateInput, productionSpeedMultiplier: number): void {
   const machineRunRate = runRatePerMachine(recipe, input, productionSpeedMultiplier);
   const theoreticalMachines = machineRunRate > EPS ? runsPerMinute / machineRunRate : 0;
+  const positiveNetPerRun = positiveNetProductionPerRun(recipe);
+  const positiveNetProductionRate = positiveNetPerRun * runsPerMinute;
+  const perMachineProductionRate = positiveNetPerRun * machineRunRate;
   const inputRates: Record<string, number> = {};
   const outputRates: Record<string, number> = {};
   const netRates: Record<string, number> = {};
@@ -69,6 +84,8 @@ function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMin
       theoreticalMachines,
       actualMachines: theoreticalMachines,
       runsPerMinute,
+      positiveNetProductionRate,
+      perMachineProductionRate,
       inputRates,
       outputRates,
       netRates,
@@ -82,6 +99,8 @@ function addRecipeStat(group: InitialInvestmentGroup, recipe: Recipe, runsPerMin
   existing.theoreticalMachines += theoreticalMachines;
   existing.actualMachines += theoreticalMachines;
   existing.runsPerMinute += runsPerMinute;
+  existing.positiveNetProductionRate += positiveNetProductionRate;
+  existing.perMachineProductionRate = Math.max(existing.perMachineProductionRate, perMachineProductionRate);
   for (const [itemId, rate] of Object.entries(inputRates)) existing.inputRates[itemId] = (existing.inputRates[itemId] ?? 0) + rate;
   for (const [itemId, rate] of Object.entries(outputRates)) existing.outputRates[itemId] = (existing.outputRates[itemId] ?? 0) + rate;
   for (const [itemId, rate] of Object.entries(netRates)) existing.netRates[itemId] = (existing.netRates[itemId] ?? 0) + rate;

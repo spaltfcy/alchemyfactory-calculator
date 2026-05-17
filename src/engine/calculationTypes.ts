@@ -24,6 +24,8 @@ export type RecipeStat = {
   theoreticalMachines: number;
   actualMachines: number;
   runsPerMinute: number;
+  positiveNetProductionRate: number;
+  perMachineProductionRate: number;
   inputRates: Record<string, number>;
   outputRates: Record<string, number>;
   netRates: Record<string, number>;
@@ -258,6 +260,8 @@ export type CalculationDebugLog = {
     theoreticalMachines: number;
     actualMachines: number;
     machineExecutionsPerMinute: number;
+    positiveNetProductionRate: number;
+    perMachineProductionRate: number;
     machineInputRatesPerMinute: Record<string, number>;
     machineOutputRatesPerMinute: Record<string, number>;
     machineNetRatesPerMinute: Record<string, number>;
