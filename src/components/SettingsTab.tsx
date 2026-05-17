@@ -202,6 +202,14 @@ function mergeState(current: AppState, imported: Partial<AppState>): AppState {
         ...current.tablePreferences.machineSort,
         ...(imported.tablePreferences?.machineSort ?? {}),
       },
+      machineDetailSort: {
+        ...current.tablePreferences.machineDetailSort,
+        ...(imported.tablePreferences?.machineDetailSort ?? {}),
+      },
+      materialFlowSort: {
+        ...current.tablePreferences.materialFlowSort,
+        ...(imported.tablePreferences?.materialFlowSort ?? {}),
+      },
     },
     abilities: normalizeAbilitySettings({ ...current.abilities, ...imported.abilities }),
     recipePreferences: { ...current.recipePreferences, ...imported.recipePreferences },
@@ -453,6 +461,18 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
     setState({
       ...state,
       recipePreferences: { ...DEFAULT_STATE.recipePreferences },
+    });
+  }
+
+  function resetItemOutputSettingsOnly() {
+    const message =
+      lang === 'ja' ? 'アイテム出力設定だけ初期化します。よろしいですか？' : 'Reset item output settings only. Are you sure?';
+
+    if (!window.confirm(message)) return;
+
+    setState({
+      ...state,
+      targets: DEFAULT_STATE.targets.map((target) => ({ ...target })),
     });
   }
 
@@ -855,6 +875,12 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
               <div className="form-field">
                 <span>{lang === 'ja' ? 'レシピだけ初期化' : 'Reset recipe settings'}</span>
                 <button type="button" className="danger" onClick={resetRecipePreferencesOnly}>
+                  {lang === 'ja' ? '実行' : 'Run'}
+                </button>
+              </div>
+              <div className="form-field">
+                <span>{lang === 'ja' ? 'アイテム出力設定だけ初期化' : 'Reset item output settings'}</span>
+                <button type="button" className="danger" onClick={resetItemOutputSettingsOnly}>
                   {lang === 'ja' ? '実行' : 'Run'}
                 </button>
               </div>

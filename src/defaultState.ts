@@ -16,6 +16,10 @@ export const DEFAULT_STATE: AppState = {
       key: 'usageRate',
       direction: 'desc',
     },
+    materialFlowSort: {
+      key: 'flow',
+      direction: 'desc',
+    },
   },
   targets: [
     {

@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
-import type { Lang, MachineDetailTableSortKey, MachineTableSortKey, SortDirection, TablePreferences } from '../types';
+import type { Lang, MachineDetailTableSortKey, MachineTableSortKey, MaterialFlowTableSortKey, SortDirection, TablePreferences } from '../types';
 import type { CalculationResult, ConveyorEdgeStat } from '../engine/calculate';
 import { itemById } from '../data/items';
 import { recipeById } from '../data/recipes';
@@ -24,6 +24,11 @@ type MachineDetailTableColumn = {
   label: string;
 };
 
+type MaterialFlowTableColumn = {
+  key: MaterialFlowTableSortKey;
+  label: string;
+};
+
 function fallbackName(id: string, lang: Lang): string {
   return text({ ja: id, en: id }, lang);
 }
@@ -38,6 +43,18 @@ function transportCountLabel(edge: ConveyorEdgeStat, lang: Lang): string {
   return String(edge.transportUnits ?? edge.belts);
 }
 
+function materialFlowRouteLabel(edge: ConveyorEdgeStat, lang: Lang): string {
+  const item = itemById[edge.fromItemId];
+  const recipe = recipeById[edge.toRecipeId];
+  return `${item ? text(item.name, lang) : edge.fromItemId} → ${recipe ? text(recipe.name, lang) : edge.toRecipeId}`;
+}
+
+function compareMaterialFlowEdges(a: ConveyorEdgeStat, b: ConveyorEdgeStat, key: MaterialFlowTableSortKey, lang: Lang): number {
+  if (key === 'flow') return a.rate - b.rate;
+  if (key === 'transport') return (a.transportUnits ?? a.belts) - (b.transportUnits ?? b.belts);
+  return new Intl.Collator(lang === 'ja' ? 'ja' : 'en', { numeric: true, sensitivity: 'base' }).compare(materialFlowRouteLabel(a, lang), materialFlowRouteLabel(b, lang));
+}
+
 function sortLabel(active: boolean, direction: SortDirection): string {
   if (!active) return '';
   return direction === 'asc' ? ' ▲' : ' ▼';
@@ -49,6 +66,10 @@ function initialMachineSortDirection(key: MachineTableSortKey): SortDirection {
 
 function initialMachineDetailSortDirection(key: MachineDetailTableSortKey): SortDirection {
   return key === 'usageRate' || key === 'productionRate' || key === 'theoreticalMachines' || key === 'actualMachines' ? 'desc' : 'asc';
+}
+
+function initialMaterialFlowSortDirection(key: MaterialFlowTableSortKey): SortDirection {
+  return key === 'flow' || key === 'transport' ? 'desc' : 'asc';
 }
 
 function productionSummary(outputs: TableProductionOutput[], lang: Lang): ReactNode {
@@ -82,6 +103,10 @@ function optionalNumber(value: number | undefined): string {
   return Number.isFinite(value) ? formatNumber(Number(value), 3) : '-';
 }
 
+function mainMachineNumber(row: MachineMainRow, value: number): string {
+  return row.rowKind === 'recipe' && Number.isFinite(value) ? formatNumber(value, 3) : '-';
+}
+
 function detailRowClass(row: MachineDetailRow): string | undefined {
   if (row.kind === 'cycle') return 'machine-detail-cycle';
   if (row.kind === 'fuel') return 'machine-detail-fuel';
@@ -102,6 +127,7 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
   const tableView = useMemo(() => buildTableViewModel(result, tablePreferences, lang), [result, tablePreferences, lang]);
   const machineSort = tablePreferences.machineSort;
   const machineDetailSort = tablePreferences.machineDetailSort;
+  const materialFlowSort = tablePreferences.materialFlowSort;
   const machineColumns: MachineTableColumn[] = [
     { key: 'recipe', label: t('recipe', lang) },
     { key: 'machine', label: lang === 'ja' ? '設備' : 'Machine' },
@@ -117,8 +143,21 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
     { key: 'theoreticalMachines', label: lang === 'ja' ? '理論台数' : 'Theoretical' },
     { key: 'actualMachines', label: lang === 'ja' ? '実台数' : 'Actual' },
   ];
+  const materialFlowColumns: MaterialFlowTableColumn[] = [
+    { key: 'route', label: lang === 'ja' ? '経路' : 'Route' },
+    { key: 'flow', label: t('flow', lang) },
+    { key: 'transport', label: lang === 'ja' ? '搬送' : 'Transport' },
+  ];
 
   const itemRows = Object.values(result.itemStats).sort((a, b) => a.itemId.localeCompare(b.itemId));
+  const materialFlowRows = useMemo(() => {
+    const direction = materialFlowSort.direction === 'asc' ? 1 : -1;
+    return [...result.conveyorEdges].sort((a, b) => {
+      const primary = compareMaterialFlowEdges(a, b, materialFlowSort.key, lang) * direction;
+      if (primary !== 0) return primary;
+      return materialFlowRouteLabel(a, lang).localeCompare(materialFlowRouteLabel(b, lang)) || a.id.localeCompare(b.id);
+    });
+  }, [result.conveyorEdges, materialFlowSort, lang]);
   const initialCostLabel = lang === 'ja' ? '初期コスト' : 'Initial cost';
   const runningCostLabel = lang === 'ja' ? 'ランニングコスト/min' : 'Running cost/min';
   const initialPurchasedLabel = lang === 'ja' ? '初期購入' : 'Initial purchase';
@@ -140,6 +179,16 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
     onTablePreferencesChange({
       ...tablePreferences,
       machineDetailSort: { key, direction },
+    });
+  }
+
+  function setMaterialFlowSort(key: MaterialFlowTableSortKey): void {
+    const direction = materialFlowSort.key === key
+      ? (materialFlowSort.direction === 'asc' ? 'desc' : 'asc')
+      : initialMaterialFlowSortDirection(key);
+    onTablePreferencesChange({
+      ...tablePreferences,
+      materialFlowSort: { key, direction },
     });
   }
 
@@ -215,8 +264,8 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
                       </td>
                       <td>{lang === 'ja' ? row.machineNameJa : row.machineNameEn}</td>
                       <td>{productionSummary(row.productionOutputs, lang)}</td>
-                      <td>{formatNumber(row.theoreticalMachines, 3)}</td>
-                      <td>{formatNumber(row.actualMachines, 3)}</td>
+                      <td>{mainMachineNumber(row, row.theoreticalMachines)}</td>
+                      <td>{mainMachineNumber(row, row.actualMachines)}</td>
                       <td>{surplusSummary(row, lang)}</td>
                     </tr>
                     {isExpandable && isExpanded && (
@@ -327,21 +376,27 @@ export function TableTab({ lang, result, tablePreferences, onTablePreferencesCha
           <table className="data-table">
             <thead>
               <tr>
-                <th>{lang === 'ja' ? '経路' : 'Route'}</th>
-                <th>{t('flow', lang)}</th>
-                <th>{lang === 'ja' ? '搬送' : 'Transport'}</th>
+                {materialFlowColumns.map((column) => {
+                  const active = materialFlowSort.key === column.key;
+                  return (
+                    <th key={column.key} aria-sort={active ? (materialFlowSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                      <button
+                        type="button"
+                        className="table-sort-button"
+                        onClick={() => setMaterialFlowSort(column.key)}
+                      >
+                        {column.label}{sortLabel(active, materialFlowSort.direction)}
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {result.conveyorEdges.map((edge) => {
-                const item = itemById[edge.fromItemId];
-                const recipe = recipeById[edge.toRecipeId];
-
+              {materialFlowRows.map((edge) => {
                 return (
                   <tr key={edge.id}>
-                    <td>
-                      {item ? text(item.name, lang) : edge.fromItemId} → {recipe ? text(recipe.name, lang) : edge.toRecipeId}
-                    </td>
+                    <td>{materialFlowRouteLabel(edge, lang)}</td>
                     <td>{formatRate(edge.rate)}/min</td>
                     <td>{transportCountLabel(edge, lang)}</td>
                   </tr>

@@ -621,6 +621,14 @@ function sourceUseRate(sourceUses: SourceUse[], itemId: string, role: SourceRole
 
 type SourceUse = { itemId: string; rate: number; sourceMode: Extract<SourceMode, 'buy' | 'external' | 'cycleInput'>; sourceKind: SourceKind | 'cycleInput'; role: SourceRole };
 
+function isNurseryStartupSeedDemand(consumerRecipeId: string, itemId: string, input: CalculateInput): boolean {
+  const baseRecipe = recipeById[consumerRecipeId];
+  if (!baseRecipe) return false;
+  const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
+  return recipe.machineId === 'nursery' && itemById[itemId]?.category === 'seed' && isBuyableItem(itemId);
+}
+
+
 function consumeSourceBucket(
   sourceMap: SourceBucket,
   itemId: string,
@@ -1472,6 +1480,7 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
   const purchaseCostByItem = new Map<string, number>();
   const byproductFuelUses: ByproductFuelUse[] = [];
   const actualSourceUses: SourceUse[] = [];
+  const nurseryStartupSeedPurchases = new Map<string, { recipeId: string; itemId: string; count: number; costCopper: number }>();
 
   function stat(itemId: string): ItemStat {
     itemStats[itemId] ??= createItemStat(itemId);
@@ -1480,6 +1489,15 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
 
   function pushFlow(flow: CalculatedFlow | undefined): void {
     if (flow) flows.push(flow);
+  }
+
+  function registerNurseryStartupSeedPurchase(recipeId: string, itemId: string): void {
+    const key = recipeId + ':' + itemId;
+    if (nurseryStartupSeedPurchases.has(key)) return;
+    const recipeStat = recipeStats[recipeId];
+    const machineCount = Math.max(1, safeCeil(Math.max(0, recipeStat?.actualMachines ?? 1)));
+    const price = itemById[itemId]?.buyPriceCopper ?? 0;
+    nurseryStartupSeedPurchases.set(key, { recipeId, itemId, count: machineCount, costCopper: machineCount * price });
   }
 
   for (const [recipeId, runsPerMinute] of solved.runs.entries()) {
@@ -1608,8 +1626,13 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
 
       const sourceUse = consumeSourceBucket(sourceAvailable, demand.itemId, 'material', ['materialBuy'], remaining);
       remaining = sourceUse.remaining;
+      const isStartupSeed = isNurseryStartupSeedDemand(demand.consumerRecipeId, demand.itemId, input);
       for (const use of sourceUse.uses) {
-        actualSourceUses.push(use);
+        if (isStartupSeed && use.sourceMode === 'buy' && use.sourceKind === 'materialBuy') {
+          registerNurseryStartupSeedPurchase(demand.consumerRecipeId, use.itemId);
+        } else {
+          actualSourceUses.push(use);
+        }
         pushFlow(makeFlow({ type: 'itemSource', itemId: use.itemId, sourceMode: use.sourceMode }, consumer, use.itemId, use.rate, 'material', conveyorItemsPerMinute));
       }
     } else if (demand.role === 'fuel') {
@@ -1640,6 +1663,20 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
     const cost = sourceUseCostCopper(use);
     s.purchaseCostCopperPerMin += cost;
     addToMap(purchaseCostByItem, use.itemId, cost);
+  }
+
+  let initialCostCopper = 0;
+  const initialRequiredByRecipe: Record<string, string[]> = {};
+  const initialPurchasedItemIds = new Set<string>();
+  for (const purchase of nurseryStartupSeedPurchases.values()) {
+    const s = stat(purchase.itemId);
+    s.initialPurchased += purchase.count;
+    s.initialCostCopper += purchase.costCopper;
+    initialCostCopper += purchase.costCopper;
+    initialPurchasedItemIds.add(purchase.itemId);
+    const required = initialRequiredByRecipe[purchase.recipeId] ?? [];
+    if (!required.includes(purchase.itemId)) required.push(purchase.itemId);
+    initialRequiredByRecipe[purchase.recipeId] = required;
   }
 
   for (const [itemId, lots] of supplyLotsByItem.entries()) {
@@ -1774,7 +1811,7 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
     calculationStatus: errorSummaries.length > 0 ? 'invalid' : 'ok',
     errorSummaries,
     totals: {
-      initialCostCopper: 0,
+      initialCostCopper,
       runningCostCopperPerMin: purchaseCostCopperPerMin,
       purchaseCostCopperPerMin,
       revenueCopperPerMin,
@@ -1796,6 +1833,12 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
       queueMax: solved.queueSafetyLimit,
     },
     residualUnresolvedFlows: [],
+    initialInvestment: {
+      groups: [],
+      requiredByRecipe: initialRequiredByRecipe,
+      purchasedItemIds: [...initialPurchasedItemIds],
+      unresolvedItemIds: [],
+    },
   };
 
   return {

@@ -189,6 +189,7 @@ export type AppSettings = {
 
 export type MachineTableSortKey = 'recipe' | 'machine' | 'productionRate' | 'theoreticalMachines' | 'actualMachines' | 'surplus';
 export type MachineDetailTableSortKey = 'label' | 'usageRate' | 'productionRate' | 'theoreticalMachines' | 'actualMachines';
+export type MaterialFlowTableSortKey = 'route' | 'flow' | 'transport';
 export type SortDirection = 'asc' | 'desc';
 
 export type TablePreferences = {
@@ -198,6 +199,10 @@ export type TablePreferences = {
   };
   machineDetailSort: {
     key: MachineDetailTableSortKey;
+    direction: SortDirection;
+  };
+  materialFlowSort: {
+    key: MaterialFlowTableSortKey;
     direction: SortDirection;
   };
 };
