@@ -1469,6 +1469,7 @@ a {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "debug-header debug-actions"
+    "debug-options debug-options"
     "debug-summary debug-summary"
     "debug-status debug-status";
   gap: 0.9rem 1.25rem;
@@ -1508,6 +1509,59 @@ a {
   min-height: 2.35rem;
   padding: 0.55rem 1rem;
   white-space: nowrap;
+}
+
+.debug-panel .debug-zip-options {
+  grid-area: debug-options;
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.debug-zip-options-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+}
+
+.debug-zip-options-header span {
+  display: inline-flex;
+  gap: 0.42rem;
+  align-items: center;
+}
+
+.debug-zip-options-header button {
+  min-height: 1.85rem;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.82rem;
+}
+
+.debug-zip-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.6rem, 1fr));
+  gap: 0.35rem 0.8rem;
+}
+
+.debug-zip-option {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  min-width: 0;
+  color: var(--muted-text);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.debug-zip-option input {
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .debug-panel .debug-summary {
@@ -1557,6 +1611,7 @@ a {
     grid-template-areas:
       "debug-header"
       "debug-actions"
+      "debug-options"
       "debug-summary"
       "debug-status";
   }

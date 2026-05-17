@@ -149,6 +149,73 @@ type VerificationExpectation = {
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
 
+type VerificationZipIncludeOptions = {
+  sourceJson: boolean;
+  inputJson: boolean;
+  fullDebugLog: boolean;
+  tableView: boolean;
+  effectiveRecipeRateAudit: boolean;
+  userMessageLog: boolean;
+  graphSvg: boolean;
+  graphModel: boolean;
+  graphMetrics: boolean;
+  plannerDetails: boolean;
+  structuredTraces: boolean;
+  liveGraph: boolean;
+};
+
+const COMPACT_VERIFICATION_ZIP_INCLUDE: VerificationZipIncludeOptions = {
+  sourceJson: true,
+  inputJson: true,
+  fullDebugLog: false,
+  tableView: true,
+  effectiveRecipeRateAudit: false,
+  userMessageLog: true,
+  graphSvg: false,
+  graphModel: false,
+  graphMetrics: true,
+  plannerDetails: false,
+  structuredTraces: false,
+  liveGraph: false,
+};
+
+const FULL_VERIFICATION_ZIP_INCLUDE: VerificationZipIncludeOptions = {
+  sourceJson: true,
+  inputJson: true,
+  fullDebugLog: true,
+  tableView: true,
+  effectiveRecipeRateAudit: true,
+  userMessageLog: true,
+  graphSvg: true,
+  graphModel: true,
+  graphMetrics: true,
+  plannerDetails: true,
+  structuredTraces: true,
+  liveGraph: true,
+};
+
+const VERIFICATION_ZIP_OPTION_KEYS = Object.keys(COMPACT_VERIFICATION_ZIP_INCLUDE) as Array<keyof VerificationZipIncludeOptions>;
+
+function mergeVerificationZipIncludeOptions(options?: Partial<VerificationZipIncludeOptions>): VerificationZipIncludeOptions {
+  return { ...COMPACT_VERIFICATION_ZIP_INCLUDE, ...(options ?? {}) };
+}
+
+function compactObjectSummary(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value ?? null;
+  const record = value as Record<string, unknown>;
+  const summary: Record<string, unknown> = {};
+  for (const key of ['status', 'mode', 'version', 'fallbackUsed', 'acceptedResultEngine', 'acceptedSolverCore', 'comparisonStatus', 'comparisonMode']) {
+    if (record[key] !== undefined) summary[key] = record[key];
+  }
+  for (const key of ['cycleDecisions', 'uses', 'blockedCycles', 'cycleComponents', 'unresolvedItemIds', 'notesJa', 'notesEn']) {
+    const entry = record[key];
+    if (Array.isArray(entry)) summary[key + 'Count'] = entry.length;
+  }
+  if (record.comparison && typeof record.comparison === 'object') summary.comparison = record.comparison;
+  return summary;
+}
+
+
 function expectationForSource(expectations: VerificationExpectations, sourceFileName: string): VerificationExpectation | undefined {
   return expectations[sourceFileName] ?? expectations[sourceFileName.split('/').pop() ?? sourceFileName];
 }
@@ -885,6 +952,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
   const zipInputRef = useRef<HTMLInputElement | null>(null);
   const [lastSummary, setLastSummary] = useState<LastSummary | null>(null);
   const [status, setStatus] = useState('');
+  const [zipIncludeOptions, setZipIncludeOptions] = useState<VerificationZipIncludeOptions>(() => COMPACT_VERIFICATION_ZIP_INCLUDE);
 
   const labels =
     lang === 'ja'
@@ -898,6 +966,23 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
           saveLog: 'ログ保存',
           saveGraph: 'グラフSVG保存',
           saveZip: '検証JSON/ZIP読込&ログ保存',
+          zipOptionsTitle: '検証ZIPに含める内容',
+          zipPresetCompact: '軽量',
+          zipPresetFull: '全部',
+          zipOptionLabels: {
+            sourceJson: '元JSON',
+            inputJson: '計算入力',
+            fullDebugLog: '詳細debug.json',
+            tableView: '表ログ',
+            effectiveRecipeRateAudit: 'レシピ速度監査',
+            userMessageLog: 'メッセージログ',
+            graphSvg: '静的グラフSVG',
+            graphModel: 'グラフmodel',
+            graphMetrics: 'グラフmetrics',
+            plannerDetails: 'Planner詳細',
+            structuredTraces: '構造化trace',
+            liveGraph: 'ライブグラフ画像',
+          },
           notYet: '未生成',
           logSaved: 'ログを保存しました。',
           graphSaved: 'グラフSVGを保存しました。',
@@ -917,6 +1002,23 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
           saveLog: 'Save log',
           saveGraph: 'Save graph SVG',
           saveZip: 'Load verification JSON/ZIP & save logs',
+          zipOptionsTitle: 'Verification ZIP contents',
+          zipPresetCompact: 'Compact',
+          zipPresetFull: 'Full',
+          zipOptionLabels: {
+            sourceJson: 'Source JSON',
+            inputJson: 'Calculation input',
+            fullDebugLog: 'Full debug.json',
+            tableView: 'Table log',
+            effectiveRecipeRateAudit: 'Recipe rate audit',
+            userMessageLog: 'Message log',
+            graphSvg: 'Static graph SVG',
+            graphModel: 'Graph model',
+            graphMetrics: 'Graph metrics',
+            plannerDetails: 'Planner details',
+            structuredTraces: 'Structured traces',
+            liveGraph: 'Live graph image',
+          },
           notYet: 'Not generated',
           logSaved: 'Saved log.',
           graphSaved: 'Saved graph SVG.',
@@ -939,6 +1041,14 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
 
   function emitUserMessage(input: UserMessageInput): UserMessageLog {
     return onUserMessage?.(input) ?? createUserMessage(input);
+  }
+
+  function setZipIncludeOption(key: keyof VerificationZipIncludeOptions, checked: boolean): void {
+    setZipIncludeOptions((current) => ({ ...current, [key]: checked }));
+  }
+
+  function zipOptionLabel(key: keyof VerificationZipIncludeOptions): string {
+    return labels.zipOptionLabels[key];
   }
 
   function buildDebugArtifact(sourceState: AppState, userMessageLogs: UserMessageLog[] = userMessages, currentRunMessageLogs: UserMessageLog[] = []) {
@@ -1329,10 +1439,11 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     };
   }
 
-  async function buildVerificationZipFromSource(source: VerificationSourceFile, options: { resetMessages?: boolean; applyState?: boolean; captureLiveGraph?: boolean; expectation?: VerificationExpectation } = {}): Promise<VerificationZipResult> {
+  async function buildVerificationZipFromSource(source: VerificationSourceFile, options: { resetMessages?: boolean; applyState?: boolean; captureLiveGraph?: boolean; expectation?: VerificationExpectation; zipIncludeOptions?: Partial<VerificationZipIncludeOptions> } = {}): Promise<VerificationZipResult> {
     const baseName = safeFilePart(source.name);
     const timestamp = timestampForFile();
     const runId = createRunId('verification');
+    const include = mergeVerificationZipIncludeOptions(options.zipIncludeOptions);
     if (options.resetMessages !== false) onBeginJsonImport?.();
 
     let raw = source.raw ?? '';
@@ -1540,16 +1651,26 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       };
     }
 
-    setStatus(lang === 'ja' ? '検証JSONを反映して非表示グラフ描画を待っています。' : 'Applied verification JSON. Waiting for hidden graph render.');
+    setStatus(include.liveGraph && options.captureLiveGraph !== false
+      ? (lang === 'ja' ? '検証JSONを反映して非表示グラフ描画を待っています。' : 'Applied verification JSON. Waiting for hidden graph render.')
+      : (lang === 'ja' ? '検証JSONを反映してログを作成しています。' : 'Applied verification JSON. Building logs.'));
     if (options.applyState !== false) setState(importedState);
 
     const zip = new JSZip();
-    zip.file(baseName + '__source.json', raw);
-    zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
-    zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
-    zip.file(baseName + '__table-view.json', JSON.stringify(artifact.enrichedDebugLog.tableView ?? {}, null, 2));
-    zip.file(baseName + '__effective-recipe-rate-audit.json', JSON.stringify(artifact.enrichedDebugLog.effectiveRecipeRateAudit ?? [], null, 2));
-    zip.file(baseName + '__user-message-log.json', JSON.stringify({
+    zip.file(baseName + '__zip-contents.json', JSON.stringify({
+      appVersion,
+      gameVersion,
+      debugSchemaVersion: 47,
+      include,
+      noteJa: 'このZIPはDEBUGタブの選択内容に従って出力しています。未選択の詳細ログは省略されています。',
+      noteEn: 'This ZIP was generated according to the DEBUG tab content selection. Unselected detailed logs are omitted.',
+    }, null, 2));
+    if (include.sourceJson) zip.file(baseName + '__source.json', raw);
+    if (include.inputJson) zip.file(baseName + '__input.json', JSON.stringify(artifact.input, null, 2));
+    if (include.fullDebugLog) zip.file(baseName + '__debug.json', JSON.stringify(artifact.enrichedDebugLog, null, 2));
+    if (include.tableView) zip.file(baseName + '__table-view.json', JSON.stringify(artifact.enrichedDebugLog.tableView ?? {}, null, 2));
+    if (include.effectiveRecipeRateAudit) zip.file(baseName + '__effective-recipe-rate-audit.json', JSON.stringify(artifact.enrichedDebugLog.effectiveRecipeRateAudit ?? [], null, 2));
+    if (include.userMessageLog) zip.file(baseName + '__user-message-log.json', JSON.stringify({
       currentRunMessageLogs: messageLogs.currentRunMessageLogs,
       allMessageLogs: messageLogs.allMessageLogs,
       previousMessageCount: Math.max(0, messageLogs.allMessageLogs.length - messageLogs.currentRunMessageLogs.length),
@@ -1563,37 +1684,43 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         displayedMessageEn: warningInput?.messageEn,
       }, null, 2));
     }
-    zip.file(baseName + '__graph.svg', artifact.graphArtifacts.normal.svg);
-    zip.file(baseName + '__graph-normal.svg', artifact.graphArtifacts.normal.svg);
-    zip.file(baseName + '__graph-debug.svg', artifact.graphArtifacts.debug.svg);
-    zip.file(baseName + '__graph-normal-model.json', JSON.stringify(artifact.graphArtifacts.normal.model, null, 2));
-    zip.file(baseName + '__graph-debug-model.json', JSON.stringify(artifact.graphArtifacts.debug.model, null, 2));
-    zip.file(baseName + '__graph-layout-metrics.json', JSON.stringify(artifact.graphArtifacts.metrics, null, 2));
-    zip.file(baseName + '__graph-layout-diff.json', JSON.stringify(artifact.graphArtifacts.metrics.diff, null, 2));
+    if (include.graphSvg) {
+      zip.file(baseName + '__graph.svg', artifact.graphArtifacts.normal.svg);
+      zip.file(baseName + '__graph-normal.svg', artifact.graphArtifacts.normal.svg);
+      zip.file(baseName + '__graph-debug.svg', artifact.graphArtifacts.debug.svg);
+    }
+    if (include.graphModel) {
+      zip.file(baseName + '__graph-normal-model.json', JSON.stringify(artifact.graphArtifacts.normal.model, null, 2));
+      zip.file(baseName + '__graph-debug-model.json', JSON.stringify(artifact.graphArtifacts.debug.model, null, 2));
+    }
+    if (include.graphMetrics) {
+      zip.file(baseName + '__graph-layout-metrics.json', JSON.stringify(artifact.graphArtifacts.metrics, null, 2));
+      zip.file(baseName + '__graph-layout-diff.json', JSON.stringify(artifact.graphArtifacts.metrics.diff, null, 2));
+    }
     zip.file(baseName + '__result-summary.json', JSON.stringify({
       calculationStatus: artifact.enrichedDebugLog.calculationStatus,
       totals: artifact.result.totals,
       summary: artifact.debugLog.summary,
       diagnosticComparison: artifact.enrichedDebugLog.diagnosticComparison,
-      materialPlannerShadowSummary: (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: { status?: string }; comparison?: unknown } }).materialPlannerShadow?.comparison,
-      structuredMaterialPlanSummary: (artifact.enrichedDebugLog as { structuredMaterialPlan?: { status?: string; mode?: string; cycleDecisions?: unknown[] } }).structuredMaterialPlan,
+      materialPlannerShadowSummary: compactObjectSummary((artifact.enrichedDebugLog as { materialPlannerShadow?: unknown }).materialPlannerShadow),
+      structuredMaterialPlanSummary: compactObjectSummary((artifact.enrichedDebugLog as { structuredMaterialPlan?: unknown }).structuredMaterialPlan),
       cycleDecisionCount: ((artifact.enrichedDebugLog as { cycleDecisions?: unknown[] }).cycleDecisions ?? []).length,
-      solver: (artifact.enrichedDebugLog as { solver?: unknown }).solver,
+      solver: compactObjectSummary((artifact.enrichedDebugLog as { solver?: unknown }).solver),
       solverIdentity: (artifact.enrichedDebugLog as { solverIdentity?: unknown }).solverIdentity,
-      structuredBalanceTrace: (artifact.enrichedDebugLog as { structuredBalanceTrace?: unknown }).structuredBalanceTrace,
+      structuredBalanceTraceSummary: compactObjectSummary((artifact.enrichedDebugLog as { structuredBalanceTrace?: unknown }).structuredBalanceTrace),
     }, null, 2));
     const materialPlannerShadow = (artifact.enrichedDebugLog as { materialPlannerShadow?: { shadowResult?: unknown; comparison?: unknown; cycleComponents?: unknown[]; planModel?: unknown } }).materialPlannerShadow;
-    if (materialPlannerShadow) {
+    if (include.plannerDetails && materialPlannerShadow) {
       zip.file(baseName + '__material-planner-shadow.json', JSON.stringify(materialPlannerShadow, null, 2));
       zip.file(baseName + '__planner-comparison.json', JSON.stringify(materialPlannerShadow.comparison ?? {}, null, 2));
       zip.file(baseName + '__cycle-components.json', JSON.stringify(materialPlannerShadow.cycleComponents ?? [], null, 2));
     }
     const structuredBalanceTrace = (artifact.enrichedDebugLog as { structuredBalanceTrace?: unknown }).structuredBalanceTrace;
-    if (structuredBalanceTrace) zip.file(baseName + '__structured-balance-trace.json', JSON.stringify(structuredBalanceTrace, null, 2));
+    if (include.structuredTraces && structuredBalanceTrace) zip.file(baseName + '__structured-balance-trace.json', JSON.stringify(structuredBalanceTrace, null, 2));
     const structuredMaterialPlan = (artifact.enrichedDebugLog as { structuredMaterialPlan?: unknown }).structuredMaterialPlan;
-    if (structuredMaterialPlan) zip.file(baseName + '__structured-material-plan.json', JSON.stringify(structuredMaterialPlan, null, 2));
+    if (include.structuredTraces && structuredMaterialPlan) zip.file(baseName + '__structured-material-plan.json', JSON.stringify(structuredMaterialPlan, null, 2));
     const cycleDecisions = (artifact.enrichedDebugLog as { cycleDecisions?: unknown }).cycleDecisions;
-    if (cycleDecisions) zip.file(baseName + '__cycle-decisions.json', JSON.stringify(cycleDecisions, null, 2));
+    if (include.structuredTraces && cycleDecisions) zip.file(baseName + '__cycle-decisions.json', JSON.stringify(cycleDecisions, null, 2));
     if (calculationInvalid) {
       zip.file(
         baseName + '__error-summary.json',
@@ -1618,7 +1745,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       );
     }
 
-    if (options.captureLiveGraph !== false) {
+    if (include.liveGraph && options.captureLiveGraph !== false) {
       try {
         await waitForGraphRender();
         const liveGraph = await captureLiveGraphFile();
@@ -1661,7 +1788,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
   }
 
   async function saveVerificationZipFromFile(file: File): Promise<void> {
-    const result = await buildVerificationZipFromSource(sourceFileFromFile(file), { resetMessages: true, applyState: true, captureLiveGraph: true });
+    const result = await buildVerificationZipFromSource(sourceFileFromFile(file), { resetMessages: true, applyState: true, captureLiveGraph: zipIncludeOptions.liveGraph, zipIncludeOptions });
     downloadBlob(result.resultZipName, result.blob);
     setStatus(result.status === 'ok' ? labels.zipSaved : labels.zipSavedInvalid);
   }
@@ -1696,8 +1823,9 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       const result = await buildVerificationZipFromSource(sourceFileFromZipEntry(entry.name, raw, file), {
         resetMessages: false,
         applyState: true,
-        captureLiveGraph: true,
+        captureLiveGraph: zipIncludeOptions.liveGraph,
         expectation: expectationForSource(expectations, entry.name),
+        zipIncludeOptions,
       });
       batchZip.file(result.resultZipName, result.blob);
       const { blob: ignoredBlob, ...summary } = result;
@@ -1711,6 +1839,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
+      include: mergeVerificationZipIncludeOptions(zipIncludeOptions),
       total: results.length,
       ok: results.filter((result) => result.status === 'ok').length,
       invalid: results.filter((result) => result.status === 'invalid').length,
@@ -1788,6 +1917,27 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
             void onVerificationZipFileChange(event);
           }}
         />
+      </div>
+      <div className="debug-zip-options">
+        <div className="debug-zip-options-header">
+          <strong>{labels.zipOptionsTitle}</strong>
+          <span>
+            <button type="button" onClick={() => setZipIncludeOptions(COMPACT_VERIFICATION_ZIP_INCLUDE)}>{labels.zipPresetCompact}</button>
+            <button type="button" onClick={() => setZipIncludeOptions(FULL_VERIFICATION_ZIP_INCLUDE)}>{labels.zipPresetFull}</button>
+          </span>
+        </div>
+        <div className="debug-zip-option-grid">
+          {VERIFICATION_ZIP_OPTION_KEYS.map((key) => (
+            <label key={key} className="debug-zip-option">
+              <input
+                type="checkbox"
+                checked={zipIncludeOptions[key]}
+                onChange={(event) => setZipIncludeOption(key, event.currentTarget.checked)}
+              />
+              <span>{zipOptionLabel(key)}</span>
+            </label>
+          ))}
+        </div>
       </div>
       <div className="debug-summary">
         {summaryItems.map(([label, value]) => (

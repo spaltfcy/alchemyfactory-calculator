@@ -252,7 +252,7 @@ function nodeSubtitle(lines: string[]): string {
 function formatGraphMachineCount(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return '0';
   if (value < 0.01) return '0.01';
-  return formatNumber(value);
+  return formatNumber(value, 3);
 }
 
 function recipeMachineLabel(stat: RecipeStat | undefined, fallbackMachineId: string, lang: Lang): string {
