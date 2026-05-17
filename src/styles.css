@@ -561,8 +561,9 @@ a {
 
 .planner-node {
   position: relative;
+  width: max-content;
   min-width: 10.5rem;
-  max-width: 18rem;
+  max-width: none;
   padding: 0.85rem 1rem;
   border: 1px solid #7864bb;
   border-radius: 12px;
@@ -574,13 +575,30 @@ a {
 .planner-node-title {
   font-weight: 900;
   line-height: 1.25;
+  white-space: nowrap;
+}
+
+.planner-node-machine,
+.planner-node-count {
+  color: #b7c7e3;
+  font-weight: 750;
+  line-height: 1.28;
+  white-space: nowrap;
+}
+
+.planner-node-machine {
+  margin-top: 0.34rem;
+}
+
+.planner-node-count {
+  margin-top: 0.16rem;
 }
 
 .planner-node-subtitle {
   margin: 0.35rem 0 0;
   color: #b7c7e3;
   font: inherit;
-  white-space: pre-wrap;
+  white-space: pre;
 }
 
 .planner-node-final {
@@ -995,20 +1013,16 @@ a {
 
 /* v0.3.14: heat/fuel graph badges and side handles */
 .planner-node-title-line {
-  position: relative;
   display: block;
   min-height: 1.35rem;
-  padding-right: 8.8rem;
 }
 
 .planner-node-badges {
-  position: absolute;
-  top: -0.1rem;
-  right: 0;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.3rem;
   z-index: 2;
 }
 
@@ -1031,6 +1045,22 @@ a {
  background: rgba(125, 196, 255, 0.18);
  border: 1px solid rgba(125, 196, 255, 0.5);
  color: #a8d9ff;
+}
+
+.planner-node-badge-buy {
+ background: rgba(67, 217, 213, 0.2);
+ border: 1px solid rgba(67, 217, 213, 0.72);
+ color: #b9fffc;
+}
+
+.planner-node.is-purchased-source {
+ border-color: rgba(67, 217, 213, 0.92);
+ background: linear-gradient(180deg, rgba(16, 45, 55, 0.98), rgba(12, 35, 44, 0.98));
+ box-shadow: 0 0 0 1px rgba(67, 217, 213, 0.28), 0 0 18px rgba(67, 217, 213, 0.14), var(--shadow);
+}
+
+.planner-node.is-purchased-source .planner-node-title {
+ color: #e8ffff;
 }
 
 .planner-node .react-flow__handle-top,

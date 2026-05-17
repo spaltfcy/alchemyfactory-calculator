@@ -36,6 +36,7 @@ export function PlannerNode({ data }: NodeProps) {
     kind +
     (nodeData.completed ? ' is-completed' : '') +
     (nodeData.isFuelSource ? ' is-fuel-source' : '') +
+    (nodeData.isPurchasedSource ? ' is-purchased-source' : '') +
     (nodeData.focused ? ' is-focused' : '') +
     (nodeData.isInitialInvestment ? ' is-initial-investment' : '') +
     (nodeData.hasStartupWarning ? ' is-startup-warning' : '');
@@ -58,17 +59,20 @@ export function PlannerNode({ data }: NodeProps) {
           {nodeData.completed ? '✓ ' : ''}
           {nodeData.label}
         </div>
-        {nodeData.badges && nodeData.badges.length > 0 && (
-          <div className="planner-node-badges">
-            {nodeData.badges.map((badge, index) => (
-              <span key={index} className={'planner-node-badge planner-node-badge-' + badge.kind}>
-                {badge.text}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
+      {nodeData.badges && nodeData.badges.length > 0 && (
+        <div className="planner-node-badges">
+          {nodeData.badges.map((badge, index) => (
+            <span key={index} className={'planner-node-badge planner-node-badge-' + badge.kind}>
+              {badge.text}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {nodeData.machineLabel && <div className="planner-node-machine">{nodeData.machineLabel}</div>}
+      {nodeData.countLabel && <div className="planner-node-count">{nodeData.countLabel}</div>}
       {nodeData.subLabel && <pre className="planner-node-subtitle">{nodeData.subLabel}</pre>}
 
       {sourceHandles.map((handle) => (

@@ -1,6 +1,6 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react';
 import type { AppSettings, Lang } from '../types';
-import type { CalculatedEndpoint, CalculatedFlow, CalculationResult, CalculatedFlowRole, InitialInvestmentEndpoint, InitialInvestmentFlow } from './calculate';
+import type { CalculatedEndpoint, CalculatedFlow, CalculationResult, CalculatedFlowRole, InitialInvestmentEndpoint, InitialInvestmentFlow, RecipeStat } from './calculate';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
@@ -20,14 +20,17 @@ export type PlannerNodeData = {
   label: string;
   kind: 'item' | 'recipe' | 'surplus' | 'discard' | 'final';
   subLabel?: string;
+  machineLabel?: string;
+  countLabel?: string;
   completed?: boolean;
   tooltip?: string;
   sourceHandles?: PlannerHandleData[];
   targetHandles?: PlannerHandleData[];
-  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' }>;
+  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' | 'buy' }>;
   isInitialInvestment?: boolean;
   hasStartupWarning?: boolean;
   isFuelSource?: boolean;
+  isPurchasedSource?: boolean;
   focused?: boolean;
 };
 
@@ -246,15 +249,27 @@ function nodeSubtitle(lines: string[]): string {
   return lines.filter(Boolean).join('\n');
 }
 
+function recipePositiveNetProductionRate(stat: RecipeStat | undefined): number {
+  if (!stat) return 0;
+  return Object.values(stat.netRates).reduce((sum, rate) => {
+    return sum + (Number.isFinite(rate) && rate > 0 ? rate : 0);
+  }, 0);
+}
+
+function recipeMachineCountLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
+  if (!stat) return undefined;
+  const productionRate = recipePositiveNetProductionRate(stat);
+  if (lang === 'ja') return '設置台数 ' + formatNumber(stat.actualMachines) + '台 (' + formatRate(productionRate) + '/min)';
+  return 'Machines ' + formatNumber(stat.actualMachines) + ' (' + formatRate(productionRate) + '/min)';
+}
+
 function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResult, lang: Lang): Node {
   const id = endpointNodeId(endpoint);
   if (endpoint.type === 'recipe') {
     const rs = result.recipeStats[endpoint.recipeId];
     const recipe = recipeById[endpoint.recipeId];
-    const lines = [
-      machineName(rs?.machineId ?? recipe?.machineId ?? '', lang),
-      rs ? formatNumber(rs.theoreticalMachines) + ' → ' + formatNumber(rs.actualMachines) + ' ' + (lang === 'ja' ? '台' : 'machines') : '',
-    ];
+    const machineLabel = machineName(rs?.machineId ?? recipe?.machineId ?? '', lang);
+    const countLabel = recipeMachineCountLabel(rs, lang);
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const requiredStartupItemIds = result.initialInvestment?.requiredByRecipe?.[endpoint.recipeId] ?? [];
@@ -268,7 +283,8 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       data: {
         label: recipeName(endpoint.recipeId, lang),
         kind: 'recipe',
-        subLabel: nodeSubtitle(lines),
+        machineLabel,
+        countLabel,
         badges: badges.length ? badges : undefined,
         hasStartupWarning: requiredStartupItemIds.length > 0,
         isFuelSource,
@@ -289,6 +305,9 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
         : endpoint.sourceMode === 'buy'
           ? (lang === 'ja' ? '購入' : 'Buy')
           : (lang === 'ja' ? '未解決' : 'Unresolved');
+    const badges: PlannerNodeData['badges'] = endpoint.sourceMode === 'buy'
+      ? [{ text: lang === 'ja' ? '購入' : 'Buy', kind: 'buy' }]
+      : [];
     return {
       id,
       type: 'plannerNode',
@@ -297,6 +316,8 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
         label,
         kind: 'item',
         subLabel: modeLabel + (rate > 0 ? ' ' + formatRate(rate) + '/min' : ''),
+        badges: badges.length ? badges : undefined,
+        isPurchasedSource: endpoint.sourceMode === 'buy',
       } satisfies PlannerNodeData,
     };
   }
@@ -560,6 +581,7 @@ function nodeTheme(kind: PlannerNodeData['kind'], completed?: boolean, data: Pla
             ? { fill: '#3a1d1d', stroke: '#ff8787', title: '#fff5f5', sub: '#ffc9c9' }
             : { fill: '#182233', stroke: '#4dabf7', title: '#eef6ff', sub: '#d0e4ff' };
   if (data.isInitialInvestment) return { fill: '#20242b', stroke: '#9aa4b2', title: '#edf2f7', sub: '#c7ced8' };
+  if (data.isPurchasedSource) return { fill: '#112c35', stroke: '#43d9d5', title: '#e8ffff', sub: '#b7f4f2' };
   if (!completed) return theme;
   return { ...theme, stroke: '#63e6be' };
 }
@@ -567,16 +589,16 @@ function nodeTheme(kind: PlannerNodeData['kind'], completed?: boolean, data: Pla
 function measureSvgNode(node: Node): { width: number; height: number } {
   const data = node.data as PlannerNodeData;
   const subLines = splitNodeText(data.subLabel);
-  const badgeWidths = (data.badges ?? []).map((badge) => estimateSvgTextWidth(badge.text, 11, true) + 22);
+  const detailLines = [data.machineLabel, data.countLabel, ...subLines].filter(Boolean) as string[];
   const titleWidth = estimateSvgTextWidth(data.label, 15, true) + 28;
-  const subWidth = subLines.reduce((max, line) => Math.max(max, estimateSvgTextWidth(line, 12) + 24), 0);
-  const stackedBadgeWidth = badgeWidths.length ? Math.max(...badgeWidths) + 18 : 0;
-  let width = Math.max(180, Math.ceil(Math.max(titleWidth + stackedBadgeWidth, subWidth)));
+  const detailWidth = detailLines.reduce((max, line) => Math.max(max, estimateSvgTextWidth(line, 12) + 28), 0);
+  const badgeWidth = (data.badges ?? []).reduce((sum, badge) => sum + Math.max(42, estimateSvgTextWidth(badge.text, 11, true) + 16) + 6, 0);
+  let width = Math.max(180, Math.ceil(Math.max(titleWidth, detailWidth, badgeWidth + 24)));
   if (data.kind === 'recipe') width = Math.max(width, 228);
   if (data.kind === 'final') width = Math.max(width, 210);
-  if (data.hasStartupWarning) width = Math.ceil(width * 1.2);
-  const stackedBadgeExtraHeight = Math.max(0, ((data.badges?.length ?? 0) - 1) * 20);
-  const height = 48 + subLines.length * 16 + stackedBadgeExtraHeight;
+  if (data.hasStartupWarning) width = Math.ceil(width * 1.08);
+  const badgeExtraHeight = (data.badges?.length ?? 0) > 0 ? 22 : 0;
+  const height = 42 + badgeExtraHeight + detailLines.length * 16;
   return { width, height: Math.max(56, height) };
 }
 
@@ -924,36 +946,42 @@ function renderSvgNodeHandles(node: SvgGraphNode, handles: PlannerHandleData[] |
     .join('\n');
 }
 
+function svgBadgeColors(kind: 'heat' | 'info' | 'warning' | 'buy'): { fill: string; stroke: string; text: string } {
+  if (kind === 'heat') return { fill: '#4a2a0a', stroke: '#ff922b', text: '#ffe8cc' };
+  if (kind === 'warning') return { fill: '#4a3b0a', stroke: '#ffd43b', text: '#fff3bf' };
+  if (kind === 'buy') return { fill: '#09343a', stroke: '#43d9d5', text: '#c5fffc' };
+  return { fill: '#14314a', stroke: '#4dabf7', text: '#d0ebff' };
+}
+
 function renderSvgNode(node: SvgGraphNode): string {
   const data = node.data;
   const theme = nodeTheme(data.kind, data.completed, data);
   const subLines = splitNodeText(data.subLabel);
-  const titleY = node.y + 22;
-  let currentY = node.y + 40;
+  const detailLines = [data.machineLabel, data.countLabel, ...subLines].filter(Boolean) as string[];
   const lines: string[] = [];
+  let currentY = node.y + 22;
 
   lines.push('<g class="node node-' + escapeSvgText(data.kind) + '">');
   lines.push('<rect x="' + node.x.toFixed(1) + '" y="' + node.y.toFixed(1) + '" width="' + node.width.toFixed(1) + '" height="' + node.height.toFixed(1) + '" rx="12" ry="12" fill="' + theme.fill + '" stroke="' + theme.stroke + '" stroke-width="2"/>');
-  lines.push('<text x="' + (node.x + 14).toFixed(1) + '" y="' + titleY.toFixed(1) + '" fill="' + theme.title + '" font-size="15" font-family="Segoe UI, Noto Sans JP, sans-serif" font-weight="700">' + escapeSvgText(data.label) + '</text>');
-
-  for (const line of subLines) {
-    lines.push('<text x="' + (node.x + 14).toFixed(1) + '" y="' + currentY.toFixed(1) + '" fill="' + theme.sub + '" font-size="12" font-family="Segoe UI, Noto Sans JP, sans-serif">' + escapeSvgText(line) + '</text>');
-    currentY += 16;
-  }
+  lines.push('<text x="' + (node.x + 14).toFixed(1) + '" y="' + currentY.toFixed(1) + '" fill="' + theme.title + '" font-size="15" font-family="Segoe UI, Noto Sans JP, sans-serif" font-weight="700">' + escapeSvgText(data.label) + '</text>');
+  currentY += 18;
 
   if ((data.badges?.length ?? 0) > 0) {
-    const badgeRight = node.x + node.width - 10;
-    let badgeY = node.y + 8;
+    let badgeX = node.x + 14;
+    const badgeY = currentY - 12;
     for (const badge of data.badges ?? []) {
       const badgeWidth = Math.max(42, estimateSvgTextWidth(badge.text, 11, true) + 16);
-      const badgeX = badgeRight - badgeWidth;
-      const fill = badge.kind === 'heat' ? '#4a2a0a' : badge.kind === 'warning' ? '#4a3b0a' : '#14314a';
-      const stroke = badge.kind === 'heat' ? '#ff922b' : badge.kind === 'warning' ? '#ffd43b' : '#4dabf7';
-      const textFill = badge.kind === 'heat' ? '#ffe8cc' : badge.kind === 'warning' ? '#fff3bf' : '#d0ebff';
-      lines.push('<rect x="' + badgeX.toFixed(1) + '" y="' + badgeY.toFixed(1) + '" width="' + badgeWidth.toFixed(1) + '" height="18" rx="9" ry="9" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>');
-      lines.push('<text x="' + (badgeX + badgeWidth / 2).toFixed(1) + '" y="' + (badgeY + 12.5).toFixed(1) + '" fill="' + textFill + '" font-size="11" font-family="Segoe UI, Noto Sans JP, sans-serif" font-weight="700" text-anchor="middle">' + escapeSvgText(badge.text) + '</text>');
-      badgeY += 20;
+      const colors = svgBadgeColors(badge.kind);
+      lines.push('<rect x="' + badgeX.toFixed(1) + '" y="' + badgeY.toFixed(1) + '" width="' + badgeWidth.toFixed(1) + '" height="18" rx="9" ry="9" fill="' + colors.fill + '" stroke="' + colors.stroke + '" stroke-width="1"/>');
+      lines.push('<text x="' + (badgeX + badgeWidth / 2).toFixed(1) + '" y="' + (badgeY + 12.5).toFixed(1) + '" fill="' + colors.text + '" font-size="11" font-family="Segoe UI, Noto Sans JP, sans-serif" font-weight="700" text-anchor="middle">' + escapeSvgText(badge.text) + '</text>');
+      badgeX += badgeWidth + 6;
     }
+    currentY += 20;
+  }
+
+  for (const line of detailLines) {
+    lines.push('<text x="' + (node.x + 14).toFixed(1) + '" y="' + currentY.toFixed(1) + '" fill="' + theme.sub + '" font-size="12" font-family="Segoe UI, Noto Sans JP, sans-serif">' + escapeSvgText(line) + '</text>');
+    currentY += 16;
   }
 
   lines.push(renderSvgNodeHandles(node, data.targetHandles, 'target'));
