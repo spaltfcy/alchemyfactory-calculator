@@ -43,6 +43,7 @@ export const DEFAULT_STATE: AppState = {
     showCompleted: true,
     showInitialInvestmentLines: true,
     allowAlternateRecipeCompletion: false,
+    minimizeSurplusWithAlternateRecipes: false,
     useByproductFuel: false,
     targetDefaults: {
       mode: 'rate',

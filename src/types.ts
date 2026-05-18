@@ -177,6 +177,7 @@ export type AppSettings = {
   showCompleted: boolean;
   showInitialInvestmentLines: boolean;
   allowAlternateRecipeCompletion: boolean;
+  minimizeSurplusWithAlternateRecipes: boolean;
   useByproductFuel: boolean;
   targetDefaults: TargetDefaults;
   machinePreferences: MachinePreferences;

@@ -612,6 +612,20 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                 </span>
               </label>
               <label className="form-field">
+                <span>{lang === 'ja' ? '余剰を別レシピで再利用' : 'Reuse surplus with alternate recipes'}</span>
+                <span className="checkbox-control">
+                  <input
+                    id="minimize-surplus-with-alternate-recipes"
+                    name="minimize-surplus-with-alternate-recipes"
+                    type="checkbox"
+                    checked={state.settings.minimizeSurplusWithAlternateRecipes ?? false}
+                    autoComplete="off"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => patchSettings({ minimizeSurplusWithAlternateRecipes: event.target.checked })}
+                  />
+                  <span>{lang === 'ja' ? '有効' : 'Enabled'}</span>
+                </span>
+              </label>
+              <label className="form-field">
                 <span>{lang === 'ja' ? '副産物を燃料として利用' : 'Use byproducts as fuel'}</span>
                 <span className="checkbox-control">
                   <input

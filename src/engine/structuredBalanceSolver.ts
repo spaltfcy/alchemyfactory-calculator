@@ -2,7 +2,7 @@ import type {
   AppSettings,
   Recipe,
 } from '../types';
-import { getRecipesProducing, recipeById } from '../data/recipes';
+import { RECIPES, getRecipesProducing, recipeById } from '../data/recipes';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import {
@@ -85,6 +85,36 @@ type AlternateRecipeUse = { itemId: string; selectedRecipeId: string; alternateR
 type SelectedRecipeCycleBlock = { itemId: string; selectedRecipeId: string; consumerRecipeId: string; reason: 'alternate_recipe_disabled' | 'no_alternate_recipe'; rateBlocked: number; cycleRecipeIds: string[]; cycleItemIds: string[] };
 type ByproductFuelUse = { itemId: string; producerRecipeId: string; consumerRecipeId: string; rate: number; preferredFuelEquivalentRate: number };
 
+type SurplusReuseAdoption = {
+  surplusItemId: string;
+  candidateRecipeId: string;
+  replacedRecipeId: string;
+  outputItemId: string;
+  addedRunsPerMinute: number;
+  reducedRunsPerMinute: number;
+  consumedSurplusRate: number;
+  replacementOutputRate: number;
+  surplusBefore: Record<string, number>;
+  surplusAfter: Record<string, number>;
+};
+
+type SurplusReuseRejection = {
+  surplusItemId: string;
+  candidateRecipeId: string;
+  outputItemId?: string;
+  reason: string;
+};
+
+type SurplusReuseTrace = {
+  mode: 'surplus-reuse-v09430';
+  enabled: boolean;
+  applied: boolean;
+  iterations: number;
+  adoptions: SurplusReuseAdoption[];
+  rejected: SurplusReuseRejection[];
+  skippedReason?: string;
+};
+
 type StructuredBalanceTrace = {
   mode: 'structured-balance-v09280';
   version: typeof BALANCE_SOLVER_VERSION;
@@ -102,6 +132,7 @@ type StructuredBalanceTrace = {
     fertilizerExternal: Record<string, number>;
   };
   coProductReconciliation?: CoProductReconciliationTrace;
+  surplusReuse?: SurplusReuseTrace;
   alternateRecipeCompletion: {
     enabled: boolean;
     uses: AlternateRecipeUse[];
@@ -882,6 +913,309 @@ function estimateSurplusByItemForRuns(
   return surplus;
 }
 
+function mapToRecord(map: Map<string, number>): Record<string, number> {
+  const record: Record<string, number> = {};
+  for (const [key, value] of map.entries()) {
+    if (Math.abs(value) > EPS) record[key] = value;
+  }
+  return record;
+}
+
+function surplusScore(surplus: Map<string, number>): number {
+  let total = 0;
+  for (const value of surplus.values()) total += Math.max(0, value);
+  return total;
+}
+
+function netInputPerRun(recipe: Recipe, itemId: string, input: CalculateInput): number {
+  return Math.max(0, -rateBalancePerRun(recipe, itemId, input));
+}
+
+function materialSourceSupplyRate(base: SolveRunMapResult, itemId: string): number {
+  let total = 0;
+  for (const lot of base.sources.values()) {
+    if (lot.itemId === itemId) total += lot.rate;
+  }
+  for (const lot of base.cycleInputs.values()) {
+    if (lot.itemId === itemId) total += lot.rate;
+  }
+  return total;
+}
+
+function materialDeficitScore(
+  runs: RunMap,
+  base: SolveRunMapResult,
+  input: CalculateInput,
+  solution: SpecialResourceSolutionTrace,
+  productionSpeedMultiplier: number,
+): number {
+  const analysis = analyzeRuns(runs, input, productionSpeedMultiplier);
+  const demand = estimateDemandByItemForRuns(runs, base.targetRates, input, solution, productionSpeedMultiplier);
+  let score = 0;
+  for (const [itemId, required] of demand.entries()) {
+    const available = (analysis.produced.get(itemId) ?? 0) + materialSourceSupplyRate(base, itemId);
+    const deficit = required - available;
+    if (deficit > 0.000001) score += deficit;
+  }
+  return score;
+}
+
+function recipesConsumingItem(itemId: string): Recipe[] {
+  return RECIPES
+    .filter((recipe) => !recipe.internal && recipe.inputs.some((entry) => entry.kind !== 'paradoxableItem' && entry.itemId === itemId && entry.amount > 0))
+    .sort((a, b) => (a.order ?? 999999) - (b.order ?? 999999) || a.id.localeCompare(b.id));
+}
+
+function positiveOutputItemIds(recipe: Recipe, input: CalculateInput): string[] {
+  return recipeItemIds(recipe).filter((itemId) => positiveRatePerRun(recipe, itemId, input) > EPS);
+}
+
+function recipeHasSpecialResourceDemand(recipe: Recipe, input: CalculateInput, productionSpeedMultiplier: number): boolean {
+  return (
+    fuelHeatPerRun(recipe, input, productionSpeedMultiplier) > EPS ||
+    steamRequiredPerRun(recipe, input, productionSpeedMultiplier) > EPS ||
+    fertilizerNutrientsPerRun(recipe, input) > EPS
+  );
+}
+
+function replacementProtectedRuns(producerRecipeId: string, outputItemId: string, base: SolveRunMapResult): number {
+  if ((base.targetRates.get(outputItemId) ?? 0) > EPS) return 0;
+  return base.targetRuns.get(producerRecipeId) ?? 0;
+}
+
+function producerRecipesForOutput(
+  runs: RunMap,
+  candidateRecipeId: string,
+  outputItemId: string,
+  input: CalculateInput,
+  base: SolveRunMapResult,
+): Array<{ recipe: Recipe; currentRuns: number; removableRuns: number; outputPerRun: number }> {
+  const producers: Array<{ recipe: Recipe; currentRuns: number; removableRuns: number; outputPerRun: number }> = [];
+  for (const [recipeId, currentRuns] of runs.entries()) {
+    if (recipeId === candidateRecipeId || currentRuns <= EPS) continue;
+    const baseRecipe = recipeById[recipeId];
+    if (!baseRecipe) continue;
+    const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
+    const outputPerRun = positiveRatePerRun(recipe, outputItemId, input);
+    if (outputPerRun <= EPS) continue;
+    const protectedRuns = replacementProtectedRuns(recipeId, outputItemId, base);
+    const removableRuns = Math.max(0, currentRuns - protectedRuns);
+    if (removableRuns <= EPS) continue;
+    producers.push({ recipe, currentRuns, removableRuns, outputPerRun });
+  }
+  return producers.sort((a, b) => b.removableRuns - a.removableRuns || a.recipe.id.localeCompare(b.recipe.id));
+}
+
+
+function trimRedundantSurplusRuns(
+  sourceRuns: RunMap,
+  base: SolveRunMapResult,
+  input: CalculateInput,
+  solution: SpecialResourceSolutionTrace,
+  productionSpeedMultiplier: number,
+): RunMap {
+  const runs = cloneRunMapValues(sourceRuns);
+  const maxPasses = Math.max(4, Math.min(32, runs.size * 2 + 4));
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const surplus = estimateSurplusByItemForRuns(runs, base.targetRates, input, solution, productionSpeedMultiplier);
+    let changed = false;
+    for (const [recipeId, currentRuns] of [...runs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      if (currentRuns <= EPS) continue;
+      const baseRecipe = recipeById[recipeId];
+      if (!baseRecipe) continue;
+      const recipe = getEffectiveRecipeForCalculation(baseRecipe, input.settings);
+      const outputs = positiveOutputItemIds(recipe, input);
+      if (outputs.length === 0) continue;
+      let removableRuns = Number.POSITIVE_INFINITY;
+      for (const itemId of outputs) {
+        const perRun = positiveRatePerRun(recipe, itemId, input);
+        if (perRun <= EPS) continue;
+        const itemSurplus = surplus.get(itemId) ?? 0;
+        if (itemSurplus <= 0.000001) {
+          removableRuns = 0;
+          break;
+        }
+        removableRuns = Math.min(removableRuns, itemSurplus / perRun);
+      }
+      if (!Number.isFinite(removableRuns) || removableRuns <= 0.000001) continue;
+      const delta = Math.min(currentRuns, removableRuns);
+      if (delta <= 0.000001) continue;
+      addToMap(runs, recipeId, -delta);
+      if ((runs.get(recipeId) ?? 0) <= EPS) runs.delete(recipeId);
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  return runs;
+}
+
+function tryReuseSurplusWithCandidate(
+  runs: RunMap,
+  base: SolveRunMapResult,
+  input: CalculateInput,
+  solution: SpecialResourceSolutionTrace,
+  productionSpeedMultiplier: number,
+  surplusItemId: string,
+  candidateBaseRecipe: Recipe,
+  rejected: SurplusReuseRejection[],
+): { runs: RunMap; adoption?: SurplusReuseAdoption } {
+  const candidate = getEffectiveRecipeForCalculation(candidateBaseRecipe, input.settings);
+  const surplusBefore = estimateSurplusByItemForRuns(runs, base.targetRates, input, solution, productionSpeedMultiplier);
+  const surplusRate = surplusBefore.get(surplusItemId) ?? 0;
+  if (surplusRate <= 0.000001) return { runs };
+
+  const candidateSurplusInputPerRun = netInputPerRun(candidate, surplusItemId, input);
+  if (candidateSurplusInputPerRun <= EPS) {
+    rejected.push({ surplusItemId, candidateRecipeId: candidate.id, reason: 'candidate does not consume surplus item on balance' });
+    return { runs };
+  }
+  if (recipeHasSpecialResourceDemand(candidate, input, productionSpeedMultiplier)) {
+    rejected.push({ surplusItemId, candidateRecipeId: candidate.id, reason: 'candidate requires heat, steam, or fertilizer; skipped in v0.9.43 conservative pass' });
+    return { runs };
+  }
+
+  const demand = estimateDemandByItemForRuns(runs, base.targetRates, input, solution, productionSpeedMultiplier);
+  const beforeScore = surplusScore(surplusBefore);
+  const beforeDeficit = materialDeficitScore(runs, base, input, solution, productionSpeedMultiplier);
+
+  for (const outputItemId of positiveOutputItemIds(candidate, input)) {
+    if (outputItemId === surplusItemId) continue;
+    if ((demand.get(outputItemId) ?? 0) <= EPS) {
+      rejected.push({ surplusItemId, candidateRecipeId: candidate.id, outputItemId, reason: 'output is not used by current line' });
+      continue;
+    }
+    const candidateOutputPerRun = positiveRatePerRun(candidate, outputItemId, input);
+    if (candidateOutputPerRun <= EPS) continue;
+
+    const producers = producerRecipesForOutput(runs, candidate.id, outputItemId, input, base);
+    if (producers.length === 0) {
+      rejected.push({ surplusItemId, candidateRecipeId: candidate.id, outputItemId, reason: 'no replaceable producer for useful output' });
+      continue;
+    }
+
+    for (const producer of producers) {
+      const producerSurplusOutputPerRun = Math.max(0, rateBalancePerRun(producer.recipe, surplusItemId, input));
+      const producerReductionPerCandidateRun = candidateOutputPerRun / producer.outputPerRun;
+      const surplusReductionPerCandidateRun = candidateSurplusInputPerRun + producerSurplusOutputPerRun * producerReductionPerCandidateRun;
+      if (surplusReductionPerCandidateRun <= EPS) continue;
+
+      const maxCandidateBySurplus = surplusRate / surplusReductionPerCandidateRun;
+      const maxCandidateByProducer = producer.removableRuns / producerReductionPerCandidateRun;
+      const addedRuns = Math.min(maxCandidateBySurplus, maxCandidateByProducer);
+      if (!Number.isFinite(addedRuns) || addedRuns <= 0.000001) continue;
+      const reducedRuns = addedRuns * producerReductionPerCandidateRun;
+
+      let trialRuns = cloneRunMapValues(runs);
+      addToMap(trialRuns, candidate.id, addedRuns);
+      addToMap(trialRuns, producer.recipe.id, -reducedRuns);
+      if ((trialRuns.get(producer.recipe.id) ?? 0) <= EPS) trialRuns.delete(producer.recipe.id);
+      trialRuns = trimRedundantSurplusRuns(trialRuns, base, input, solution, productionSpeedMultiplier);
+
+      const afterDeficit = materialDeficitScore(trialRuns, base, input, solution, productionSpeedMultiplier);
+      if (afterDeficit > beforeDeficit + 0.000001) {
+        rejected.push({ surplusItemId, candidateRecipeId: candidate.id, outputItemId, reason: 'trial creates material shortage' });
+        continue;
+      }
+
+      const surplusAfter = estimateSurplusByItemForRuns(trialRuns, base.targetRates, input, solution, productionSpeedMultiplier);
+      const afterScore = surplusScore(surplusAfter);
+      const targetSurplusAfter = surplusAfter.get(surplusItemId) ?? 0;
+      if (targetSurplusAfter >= surplusRate - 0.000001 || afterScore >= beforeScore - 0.000001) {
+        rejected.push({ surplusItemId, candidateRecipeId: candidate.id, outputItemId, reason: 'trial does not reduce total surplus' });
+        continue;
+      }
+
+      return {
+        runs: trialRuns,
+        adoption: {
+          surplusItemId,
+          candidateRecipeId: candidate.id,
+          replacedRecipeId: producer.recipe.id,
+          outputItemId,
+          addedRunsPerMinute: addedRuns,
+          reducedRunsPerMinute: reducedRuns,
+          consumedSurplusRate: addedRuns * candidateSurplusInputPerRun,
+          replacementOutputRate: addedRuns * candidateOutputPerRun,
+          surplusBefore: mapToRecord(surplusBefore),
+          surplusAfter: mapToRecord(surplusAfter),
+        },
+      };
+    }
+  }
+
+  return { runs };
+}
+
+function reuseSurplusWithAlternateRecipes(
+  base: SolveRunMapResult,
+  input: CalculateInput,
+  solution: SpecialResourceSolutionTrace,
+): { solved: SolveRunMapResult; trace: SurplusReuseTrace } {
+  if (!input.settings.minimizeSurplusWithAlternateRecipes) {
+    return {
+      solved: base,
+      trace: { mode: 'surplus-reuse-v09430', enabled: false, applied: false, iterations: 0, adoptions: [], rejected: [], skippedReason: 'disabled' },
+    };
+  }
+  if (!solution.finite) {
+    return {
+      solved: base,
+      trace: { mode: 'surplus-reuse-v09430', enabled: true, applied: false, iterations: 0, adoptions: [], rejected: [], skippedReason: 'special resource solution is not finite' },
+    };
+  }
+
+  const productionSpeedMultiplier = getProductionSpeedMultiplier(input.abilities);
+  let runs = cloneRunMapValues(base.runs);
+  const adoptions: SurplusReuseAdoption[] = [];
+  const rejected: SurplusReuseRejection[] = [];
+  let iterations = 0;
+  const maxPasses = Math.max(4, Math.min(32, runs.size * 3 + 8));
+
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    iterations = pass + 1;
+    const surplus = estimateSurplusByItemForRuns(runs, base.targetRates, input, solution, productionSpeedMultiplier);
+    const surplusItems = [...surplus.entries()]
+      .filter(([, rate]) => rate > 0.000001)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    let changed = false;
+
+    for (const [surplusItemId] of surplusItems) {
+      const candidates = recipesConsumingItem(surplusItemId);
+      for (const candidate of candidates) {
+        const result = tryReuseSurplusWithCandidate(runs, base, input, solution, productionSpeedMultiplier, surplusItemId, candidate, rejected);
+        if (result.adoption) {
+          runs = result.runs;
+          adoptions.push(result.adoption);
+          changed = true;
+          break;
+        }
+      }
+      if (changed) break;
+    }
+
+    if (!changed) break;
+  }
+
+  const analysis = analyzeRuns(runs, input, productionSpeedMultiplier);
+  return {
+    solved: {
+      ...base,
+      runs,
+      heatRequiredPerMin: analysis.heatRequiredPerMin,
+      steamRequiredPerMin: analysis.steamRequiredPerMin,
+      fertilizerNutrientsRequiredPerMin: analysis.fertilizerNutrientsRequiredPerMin,
+    },
+    trace: {
+      mode: 'surplus-reuse-v09430',
+      enabled: true,
+      applied: adoptions.length > 0,
+      iterations,
+      adoptions,
+      rejected: rejected.slice(0, 80),
+    },
+  };
+}
+
 function reconcileCoProductsAfterSpecialResources(
   base: SolveRunMapResult,
   input: CalculateInput,
@@ -1481,7 +1815,8 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
   const specialApplication = solveSpecialResources(baseSolved, input, diagnostics);
   const appliedSolved = applySpecialResourceApplication(baseSolved, input, specialApplication);
   const coProductReconciliation = reconcileCoProductsAfterSpecialResources(appliedSolved, input, specialApplication.solution);
-  const solved = coProductReconciliation.solved;
+  const surplusReuse = reuseSurplusWithAlternateRecipes(coProductReconciliation.solved, input, specialApplication.solution);
+  const solved = surplusReuse.solved;
   const itemStats: Record<string, ItemStat> = {};
   const recipeStats: Record<string, RecipeStat> = {};
   const flows: CalculatedFlow[] = [];
@@ -1869,6 +2204,7 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
         fertilizerExternal: sourceUseRatesByKind(actualSourceUses, 'fertilizerExternal'),
       },
       coProductReconciliation: coProductReconciliation.trace,
+      surplusReuse: surplusReuse.trace,
       alternateRecipeCompletion: {
         enabled: input.settings.allowAlternateRecipeCompletion,
         uses: solved.alternateRecipeUses,
