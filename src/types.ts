@@ -142,6 +142,7 @@ export type FuelSettings = {
   fuelItemId: string; // 使用する燃料アイテムID
   sourceMode: ExternalSourceMode; // 内部生産か外部生産か
   heatingMode: HeatingMode; // 直接加熱か蒸気加熱か
+  steamPadCrucibleCapacity: number; // 蒸気加熱パッド1つで扱う坩堝系設備台数
 };
 
 export type FertilizerSettings = {

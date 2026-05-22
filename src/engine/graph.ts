@@ -27,7 +27,8 @@ export type PlannerNodeData = {
   tooltip?: string;
   sourceHandles?: PlannerHandleData[];
   targetHandles?: PlannerHandleData[];
-  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' | 'buy' }>;
+  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' | 'buy' | 'surplusReuse' }>;
+  isSurplusReuseAdded?: boolean;
   isInitialInvestment?: boolean;
   hasStartupWarning?: boolean;
   isFuelSource?: boolean;
@@ -272,11 +273,20 @@ function recipeMachineIoLabel(stat: RecipeStat | undefined): string | undefined 
   return 'in ' + formatRate(inputPerMachine) + '/min, out ' + formatRate(outputPerMachine) + '/min';
 }
 
-function recipeMachineCountLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
+function isSteamBoilerRecipe(recipeId: string): boolean {
+  return recipeId === 'steam_boiler_low' || recipeId === 'steam_boiler_medium' || recipeId === 'steam_boiler_high';
+}
+
+function recipeMachineCountLabel(recipeId: string, stat: RecipeStat | undefined, lang: Lang): string | undefined {
   if (!stat) return undefined;
   const productionRate = stat.positiveNetProductionRate;
-  if (lang === 'ja') return formatGraphMachineCount(stat.actualMachines) + '台 (' + formatRate(productionRate) + '/min)';
-  return formatGraphMachineCount(stat.actualMachines) + ' machines (' + formatRate(productionRate) + '/min)';
+  const machineCount = formatGraphMachineCount(stat.actualMachines);
+  if (isSteamBoilerRecipe(recipeId)) {
+    if (lang === 'ja') return '約' + machineCount + '台 (' + formatRate(productionRate) + '/min)';
+    return 'approx. ' + machineCount + ' machines (' + formatRate(productionRate) + '/min)';
+  }
+  if (lang === 'ja') return machineCount + '台 (' + formatRate(productionRate) + '/min)';
+  return machineCount + ' machines (' + formatRate(productionRate) + '/min)';
 }
 
 function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResult, lang: Lang): Node {
@@ -286,13 +296,19 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const recipe = recipeById[endpoint.recipeId];
     const machineLabel = recipeMachineLabel(rs, recipe?.machineId ?? '', lang);
     const ioLabel = recipeMachineIoLabel(rs);
-    const countLabel = recipeMachineCountLabel(rs, lang);
+    const countLabel = recipeMachineCountLabel(endpoint.recipeId, rs, lang);
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const requiredStartupItemIds = result.initialInvestment?.requiredByRecipe?.[endpoint.recipeId] ?? [];
     const badges: PlannerNodeData['badges'] = [];
+    if (rs?.surplusReuseAdded) badges.push({ text: lang === 'ja' ? '♻ 余剰再利用' : '♻ Surplus reuse', kind: 'surplusReuse' });
     if (hasHeat) badges.push({ text: lang === 'ja' ? '要:熱源' : 'Heat', kind: 'heat' });
     for (const itemId of requiredStartupItemIds) badges.push({ text: (lang === 'ja' ? '⚠ 要:' : '⚠ Need:') + itemName(itemId, lang), kind: 'warning' });
+    const surplusReuseTooltip = rs?.surplusReuseAdded
+      ? (lang === 'ja'
+        ? '余剰再利用で追加: ' + (rs.surplusReuseSourceItemIds ?? []).map((itemId) => itemName(itemId, lang)).join(' / ')
+        : 'Added by surplus reuse: ' + (rs.surplusReuseSourceItemIds ?? []).map((itemId) => itemName(itemId, lang)).join(' / '))
+      : undefined;
     return {
       id,
       type: 'plannerNode',
@@ -306,6 +322,8 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
         badges: badges.length ? badges : undefined,
         hasStartupWarning: requiredStartupItemIds.length > 0,
         isFuelSource,
+        isSurplusReuseAdded: rs?.surplusReuseAdded ?? false,
+        tooltip: surplusReuseTooltip,
       } satisfies PlannerNodeData,
     };
   }
@@ -600,6 +618,7 @@ function nodeTheme(kind: PlannerNodeData['kind'], completed?: boolean, data: Pla
             : { fill: '#182233', stroke: '#4dabf7', title: '#eef6ff', sub: '#d0e4ff' };
   if (data.isInitialInvestment) return { fill: '#20242b', stroke: '#9aa4b2', title: '#edf2f7', sub: '#c7ced8' };
   if (data.isPurchasedSource) return { fill: '#112c35', stroke: '#43d9d5', title: '#e8ffff', sub: '#b7f4f2' };
+  if (data.isSurplusReuseAdded) return { fill: '#103136', stroke: '#4dd0c8', title: '#e8ffff', sub: '#bffaf0' };
   if (!completed) return theme;
   return { ...theme, stroke: '#63e6be' };
 }
@@ -964,10 +983,11 @@ function renderSvgNodeHandles(node: SvgGraphNode, handles: PlannerHandleData[] |
     .join('\n');
 }
 
-function svgBadgeColors(kind: 'heat' | 'info' | 'warning' | 'buy'): { fill: string; stroke: string; text: string } {
+function svgBadgeColors(kind: 'heat' | 'info' | 'warning' | 'buy' | 'surplusReuse'): { fill: string; stroke: string; text: string } {
   if (kind === 'heat') return { fill: '#4a2a0a', stroke: '#ff922b', text: '#ffe8cc' };
   if (kind === 'warning') return { fill: '#4a3b0a', stroke: '#ffd43b', text: '#fff3bf' };
   if (kind === 'buy') return { fill: '#09343a', stroke: '#43d9d5', text: '#c5fffc' };
+  if (kind === 'surplusReuse') return { fill: '#083b3d', stroke: '#4dd0c8', text: '#c5fffc' };
   return { fill: '#14314a', stroke: '#4dabf7', text: '#d0ebff' };
 }
 

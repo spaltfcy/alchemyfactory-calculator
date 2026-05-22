@@ -30,6 +30,7 @@ const DEFAULT_FUEL_SETTINGS: AppSettings['fuel'] = {
   fuelItemId: 'charcoal_powder',
   sourceMode: 'internal',
   heatingMode: 'direct',
+  steamPadCrucibleCapacity: 3,
 };
 
 const DEFAULT_FERTILIZER_SETTINGS: AppSettings['fertilizer'] = {
@@ -798,6 +799,25 @@ export function SettingsTab({ state, setState, safeMode = false, onBeginJsonImpo
                   <option value="direct">{lang === 'ja' ? '直接加熱' : 'Direct heating'}</option>
                   <option value="steam">{lang === 'ja' ? '蒸気加熱' : 'Steam heating'}</option>
                 </select>
+              </label>
+
+              <label className="form-field">
+                <span>{lang === 'ja' ? '坩堝系 1パッドあたり台数' : 'Crucibles per steam pad'}</span>
+                <input
+                  id="steam-pad-crucible-capacity"
+                  name="steam-pad-crucible-capacity"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={fuel.steamPadCrucibleCapacity ?? 3}
+                  autoComplete="off"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    patchFuelSettings({ steamPadCrucibleCapacity: Math.max(1, Math.floor(value)) });
+                  }}
+                />
+                <small>{lang === 'ja' ? '蒸気加熱時、坩堝系はこの台数ごとに蒸気加熱パッド1つとして基礎消費を加算します。' : 'In steam heating mode, crucible-family machines share one steam heating pad per this many machines.'}</small>
               </label>
             </div>
           </div>

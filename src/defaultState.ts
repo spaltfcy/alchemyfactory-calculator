@@ -56,6 +56,7 @@ export const DEFAULT_STATE: AppState = {
       fuelItemId: 'charcoal_powder',
       sourceMode: 'internal',
       heatingMode: 'direct',
+      steamPadCrucibleCapacity: 3,
     },
     fertilizer: {
       enabled: true,

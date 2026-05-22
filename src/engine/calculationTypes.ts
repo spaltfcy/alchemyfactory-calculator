@@ -38,6 +38,10 @@ export type RecipeStat = {
   thermalExtractorBonusPercent?: number;
   alchemyOutputMultiplier?: number;
   effectiveOutputPerMinuteMultiplier?: number;
+  surplusReuseAdded?: boolean;
+  surplusReuseAddedRunsPerMinute?: number;
+  surplusReuseSourceItemIds?: string[];
+  surplusReuseReplacedRecipeIds?: string[];
 };
 
 export type CalculatedEndpoint =

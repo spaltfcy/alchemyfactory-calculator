@@ -375,6 +375,45 @@ function usesSteamHeating(input: CalculateInput): boolean {
   return Boolean(input.settings.fuel?.enabled && input.settings.fuel.heatingMode === 'steam');
 }
 
+function normalizeSteamPadCrucibleCapacity(input: CalculateInput): number {
+  const raw = Number(input.settings.fuel?.steamPadCrucibleCapacity ?? 3);
+  if (!Number.isFinite(raw)) return 3;
+  return Math.max(1, Math.floor(raw));
+}
+
+function isCrucibleFamilyMachine(machineId: string): boolean {
+  return machineId === 'crucible' || machineId === 'stackable_crucible';
+}
+
+function steamHeatingPadCountForRecipe(
+  recipe: Recipe,
+  runsPerMinute: number,
+  input: CalculateInput,
+  productionSpeedMultiplier: number,
+  conveyorItemsPerMinute: number,
+): number {
+  if (!usesSteamHeating(input) || runsPerMinute <= EPS) return 0;
+  const effectiveMachineId = getEffectiveRecipeMachineId(recipe, input.settings);
+  const heatPerSec = HEAT_CONSUMER_BY_MACHINE_ID[effectiveMachineId]?.heatPerSec ?? 0;
+  if (heatPerSec <= EPS) return 0;
+  const runsPerMachine = runRateForRecipe(recipe, input, productionSpeedMultiplier, conveyorItemsPerMinute);
+  if (runsPerMachine <= EPS) return 0;
+  const actualMachines = runsPerMinute / runsPerMachine;
+  if (!Number.isFinite(actualMachines) || actualMachines <= EPS) return 0;
+  const capacity = isCrucibleFamilyMachine(effectiveMachineId) ? normalizeSteamPadCrucibleCapacity(input) : 1;
+  return Math.max(1, safeCeil(actualMachines / capacity));
+}
+
+function steamHeatingPadIdleSteamPerMinForRecipe(
+  recipe: Recipe,
+  runsPerMinute: number,
+  input: CalculateInput,
+  productionSpeedMultiplier: number,
+  conveyorItemsPerMinute: number,
+): number {
+  return steamHeatingPadCountForRecipe(recipe, runsPerMinute, input, productionSpeedMultiplier, conveyorItemsPerMinute) * 60;
+}
+
 function fuelHeatPerRun(recipe: Recipe, input: CalculateInput, productionSpeedMultiplier: number): number {
   if (!input.settings.fuel?.enabled) return 0;
   const directMachineHeat = usesSteamHeating(input) ? 0 : machineHeatPerRun(recipe, input, productionSpeedMultiplier);
@@ -502,6 +541,17 @@ function analyzeRuns(runs: RunMap, input: CalculateInput, productionSpeedMultipl
       const steamRate = steamPerRun * runsPerMinute;
       steamRequiredPerMin += steamRate;
       addDemand(recipe.id, 'steam', steamRate, 'steam');
+    }
+    const steamPadIdleSteamRate = steamHeatingPadIdleSteamPerMinForRecipe(
+      recipe,
+      runsPerMinute,
+      input,
+      productionSpeedMultiplier,
+      getConveyorItemsPerMinute(input.abilities),
+    );
+    if (steamPadIdleSteamRate > EPS) {
+      steamRequiredPerMin += steamPadIdleSteamRate;
+      addDemand(recipe.id, 'steam', steamPadIdleSteamRate, 'steam');
     }
     const nutrientsPerRun = fertilizerNutrientsPerRun(recipe, input);
     if (nutrientsPerRun > EPS) fertilizerNutrientsRequiredPerMin += nutrientsPerRun * runsPerMinute;
@@ -1860,6 +1910,27 @@ export function calculateStructuredBalance(input: CalculateInput, diagnostics: S
       addToRecord(recipeStat.netRates, itemId, difference);
       if (difference > EPS) stat(itemId).produced += difference;
     }
+  }
+
+  const surplusReuseAddedRunsByRecipe = new Map<string, number>();
+  const surplusReuseSourceItemsByRecipe = new Map<string, Set<string>>();
+  const surplusReuseReplacedRecipesByRecipe = new Map<string, Set<string>>();
+  for (const adoption of surplusReuse.trace.adoptions) {
+    addToMap(surplusReuseAddedRunsByRecipe, adoption.candidateRecipeId, adoption.addedRunsPerMinute);
+    const sourceItems = surplusReuseSourceItemsByRecipe.get(adoption.candidateRecipeId) ?? new Set<string>();
+    sourceItems.add(adoption.surplusItemId);
+    surplusReuseSourceItemsByRecipe.set(adoption.candidateRecipeId, sourceItems);
+    const replacedRecipes = surplusReuseReplacedRecipesByRecipe.get(adoption.candidateRecipeId) ?? new Set<string>();
+    replacedRecipes.add(adoption.replacedRecipeId);
+    surplusReuseReplacedRecipesByRecipe.set(adoption.candidateRecipeId, replacedRecipes);
+  }
+  for (const [recipeId, addedRuns] of surplusReuseAddedRunsByRecipe.entries()) {
+    const recipeStat = recipeStats[recipeId];
+    if (!recipeStat) continue;
+    recipeStat.surplusReuseAdded = true;
+    recipeStat.surplusReuseAddedRunsPerMinute = addedRuns;
+    recipeStat.surplusReuseSourceItemIds = [...(surplusReuseSourceItemsByRecipe.get(recipeId) ?? new Set<string>())];
+    recipeStat.surplusReuseReplacedRecipeIds = [...(surplusReuseReplacedRecipesByRecipe.get(recipeId) ?? new Set<string>())];
   }
 
   const targetRecipeIdsByItem = new Map<string, string[]>();

@@ -616,6 +616,22 @@ a {
   color: #ffe4a8;
 }
 
+.planner-node.is-surplus-reuse-added {
+  border-color: rgba(77, 208, 200, 0.95);
+  background: linear-gradient(180deg, rgba(16, 49, 54, 0.98), rgba(12, 34, 39, 0.98));
+  box-shadow: 0 0 0 1px rgba(77, 208, 200, 0.12), var(--shadow);
+}
+
+.planner-node.is-surplus-reuse-added .planner-node-title {
+  color: #e8ffff;
+}
+
+.planner-node-badge-surplusReuse {
+  border-color: rgba(77, 208, 200, 0.68);
+  background: rgba(77, 208, 200, 0.18);
+  color: #c5fffc;
+}
+
 .planner-node .react-flow__handle {
   width: 0.7rem;
   height: 0.7rem;
