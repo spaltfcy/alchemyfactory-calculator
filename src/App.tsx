@@ -15,12 +15,13 @@ import { SettingsTab } from './components/SettingsTab';
 import { RecipeSettingsTab } from './components/RecipeSettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
+import { CauldronTab } from './components/CauldronTab';
 import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.9.44';
+const APP_VERSION = '0.10.0';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -154,6 +155,10 @@ function mergeInitialState(safeMode: boolean): AppState {
     surplusPolicies: { ...DEFAULT_STATE.surplusPolicies, ...saved.surplusPolicies },
     completedGraphNodeIds: { ...DEFAULT_STATE.completedGraphNodeIds, ...saved.completedGraphNodeIds },
     nodeNotes: { ...DEFAULT_STATE.nodeNotes, ...saved.nodeNotes },
+    cauldronState: {
+      ...DEFAULT_STATE.cauldronState,
+      ...(saved.cauldronState ?? {}),
+    },
   };
 
   if (merged.settings.showInitialInvestmentLines === undefined) merged.settings.showInitialInvestmentLines = DEFAULT_STATE.settings.showInitialInvestmentLines;
@@ -458,8 +463,8 @@ export function App() {
     : '';
 
   const visibleTabs: AppState['activeTab'][] = runtimeFlags.debug
-    ? ['graph', 'table', 'settings', 'recipeSettings', 'about', 'graphDebug', 'debug']
-    : ['graph', 'table', 'settings', 'recipeSettings', 'about'];
+    ? ['graph', 'table', 'settings', 'recipeSettings', 'cauldron', 'about', 'graphDebug', 'debug']
+    : ['graph', 'table', 'settings', 'recipeSettings', 'cauldron', 'about'];
 
   function requestGraphSave() {
     window.dispatchEvent(new CustomEvent('alchemyfactory:save-live-graph'));
@@ -638,6 +643,14 @@ export function App() {
           )}
           {state.activeTab === 'settings' && <SettingsTab state={state} setState={setState} safeMode={runtimeFlags.safeMode} onBeginJsonImport={clearActiveUserMessages} onUserMessage={addUserMessage} appVersion={APP_VERSION} gameVersion={GAME_VERSION} />}
           {state.activeTab === 'recipeSettings' && <RecipeSettingsTab state={state} setState={setState} />}
+          {state.activeTab === 'cauldron' && (
+            <CauldronTab
+              lang={lang}
+              state={state.cauldronState}
+              appVersion={APP_VERSION}
+              onChange={(cauldronState) => setState((current) => ({ ...current, cauldronState }))}
+            />
+          )}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}
           {state.activeTab === 'graphDebug' && runtimeFlags.debug && (
             <DebugGraphTab

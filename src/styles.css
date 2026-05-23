@@ -1956,3 +1956,298 @@ a {
   font-weight: 900;
 }
 
+
+/* v0.10.0 cauldron tab */
+.content-pane-cauldron {
+  overflow: auto;
+}
+
+.cauldron-tab {
+  display: grid;
+  gap: var(--page-gap);
+  align-content: start;
+  padding-bottom: 2rem;
+}
+
+.cauldron-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+}
+
+.cauldron-hero p {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-weight: 650;
+}
+
+.cauldron-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(6.2rem, 1fr));
+  gap: 0.7rem;
+}
+
+.cauldron-stat-grid > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  text-align: center;
+}
+
+.cauldron-stat-grid strong {
+  font-size: 1.35rem;
+}
+
+.cauldron-stat-grid span,
+.cauldron-muted {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.cauldron-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--page-gap);
+  align-items: start;
+}
+
+.cauldron-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cauldron-panel h3 {
+  margin: 1rem 0 0.65rem;
+}
+
+.cauldron-three-selects,
+.cauldron-observed-grid,
+.cauldron-candidate-controls,
+.cauldron-plan-controls {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cauldron-observed-grid {
+  grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 0.8fr));
+}
+
+.cauldron-candidate-controls {
+  grid-template-columns: minmax(0, 1.4fr) minmax(6rem, 0.4fr) minmax(12rem, 0.8fr);
+}
+
+.cauldron-plan-controls {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.cauldron-wide-field,
+.cauldron-note-field {
+  grid-column: 1 / -1;
+}
+
+.cauldron-checkbox {
+  align-self: end;
+}
+
+.cauldron-result-box {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0.9rem 0;
+}
+
+.cauldron-result-box > div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cauldron-warning {
+  margin: 0.75rem 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(255, 212, 59, 0.45);
+  border-radius: 12px;
+  background: rgba(255, 212, 59, 0.08);
+  color: #ffe58a;
+  font-weight: 750;
+}
+
+.cauldron-table-wrap {
+  max-height: 23rem;
+  overflow: auto;
+}
+
+.cauldron-table td,
+.cauldron-table th {
+  vertical-align: top;
+}
+
+.cauldron-table tbody tr {
+  cursor: pointer;
+}
+
+.cauldron-table tbody tr:hover {
+  background: rgba(125, 196, 255, 0.06);
+}
+
+.cauldron-plan-panel {
+  grid-column: 1 / -1;
+}
+
+.cauldron-plan-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.cauldron-plan-card {
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.cauldron-plan-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.cauldron-plan-card h3 {
+  margin: 0;
+}
+
+.cauldron-plan-card header span {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 800;
+}
+
+.cauldron-plan-tree {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cauldron-plan-node-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 2.1rem;
+  border-left: 2px solid rgba(125, 196, 255, 0.28);
+}
+
+.cauldron-plan-status {
+  min-width: 5.8rem;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(125, 196, 255, 0.08);
+  color: #d9ecff;
+  font-size: 0.82rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.cauldron-plan-node-missing .cauldron-plan-status {
+  border-color: rgba(255, 107, 107, 0.5);
+  background: rgba(255, 107, 107, 0.11);
+  color: #ffd0d0;
+}
+
+.cauldron-plan-node-cauldronTarget .cauldron-plan-status,
+.cauldron-plan-node-handCauldron .cauldron-plan-status {
+  border-color: rgba(159, 232, 112, 0.45);
+  background: rgba(159, 232, 112, 0.1);
+  color: #dfffcf;
+}
+
+.cauldron-check-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.cauldron-graph-panel {
+  grid-column: 1 / -1;
+}
+
+.cauldron-graph {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(8rem, 1fr)) auto minmax(10rem, 1.1fr) auto minmax(10rem, 1.1fr);
+  gap: 0.75rem;
+  align-items: center;
+  overflow: auto;
+  padding: 0.3rem;
+}
+
+.cauldron-graph-node {
+  display: grid;
+  gap: 0.3rem;
+  min-height: 6rem;
+  padding: 0.8rem;
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: var(--shadow);
+}
+
+.cauldron-graph-node span,
+.cauldron-graph-node small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.cauldron-graph-input {
+  border-color: rgba(125, 196, 255, 0.45);
+}
+
+.cauldron-graph-cauldron {
+  border-color: rgba(255, 212, 59, 0.55);
+}
+
+.cauldron-graph-output {
+  border-color: rgba(159, 232, 112, 0.55);
+}
+
+.cauldron-graph-arrow {
+  color: var(--accent);
+  font-size: 2rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .cauldron-hero,
+  .cauldron-layout,
+  .cauldron-result-box,
+  .cauldron-stat-grid,
+  .cauldron-three-selects,
+  .cauldron-observed-grid,
+  .cauldron-candidate-controls,
+  .cauldron-plan-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .cauldron-graph {
+    grid-template-columns: 1fr;
+  }
+
+  .cauldron-graph-arrow {
+    transform: rotate(90deg);
+  }
+}

@@ -4,7 +4,7 @@ import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
 import { DEFAULT_PARADOX_SETTINGS } from './data/paradox';
 
 export const DEFAULT_STATE: AppState = {
-  version: 27,
+  version: 28,
   language: 'ja',
   activeTab: 'graph',
   tablePreferences: {
@@ -87,4 +87,18 @@ export const DEFAULT_STATE: AppState = {
   surplusPolicies: {},
   completedGraphNodeIds: {},
   nodeNotes: {},
+
+  cauldronState: {
+    inputItemIds: ['charcoal_powder', 'quicklime_powder', 'impure_copper_powder'],
+    candidateTargetItemId: 'perfect_diamond',
+    maxCandidates: 20,
+    allowDuplicateInputs: true,
+    targetItemIdsText: 'sol',
+    startupItemIdsText: 'charcoal_powder quicklime_powder impure_copper_powder copper_powder gold_dust panacea_potion',
+    observedOutputItemId: '',
+    observedTimeSec: '',
+    observedHeatPerSec: '',
+    observedStatus: 'todo',
+    observedNote: '',
+  },
 };
