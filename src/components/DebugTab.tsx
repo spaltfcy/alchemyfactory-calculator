@@ -600,8 +600,11 @@ function shouldIncludeVerificationJsonEntry(path: string): boolean {
   if (!lower.endsWith('.json')) return false;
   if (lower.endsWith('.manual.json')) return false;
   if (lower.includes('__macosx/') || lower.endsWith('/.ds_store')) return false;
+  if (lower.includes('/node_modules/') || lower.includes('node_modules/')) return false;
+  if (lower.includes('/dist/') || lower.includes('dist/')) return false;
   const fileName = lower.split('/').pop() ?? lower;
-  if (fileName.startsWith('.')) return false;
+  if (fileName.startsWith('.') || fileName.startsWith('readme')) return false;
+  if (fileName.startsWith('__') || fileName.includes('__')) return false;
   return true;
 }
 

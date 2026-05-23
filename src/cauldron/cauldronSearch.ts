@@ -92,7 +92,7 @@ function analyzeItem(
       label,
       amount,
       status: 'depthLimit',
-      reason: { ja: '展開深度の上限。v0.10.1では暫定表示。', en: 'Depth limit reached. v0.10.1 shows this provisionally.' },
+      reason: { ja: '展開深度の上限。v0.10.2では暫定表示。', en: 'Depth limit reached. v0.10.2 shows this provisionally.' },
       children: [],
     };
   }

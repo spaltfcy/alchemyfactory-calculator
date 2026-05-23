@@ -1,7 +1,6 @@
 import type { CalculationResult, CalculatedFlow, ItemStat, RecipeStat } from '../engine/calculate';
 import type { Lang } from '../types';
 import { itemById } from '../data/items';
-import { formatNumber, formatRate } from '../utils/format';
 import { text } from '../i18n';
 import { CAULDRON_TARGETS } from './cauldronData';
 import { generateCauldronCandidatesForOutput, normalizeCauldronInputTuple, predictCauldron } from './cauldronMath';
@@ -96,7 +95,7 @@ export function normalizeCauldronGraphRequest(value: unknown, fallback?: Partial
   const fallbackMachineId = fallback?.machineId ?? 'cauldron';
   const machineId: CauldronMachineId = source.machineId === 'advanced_cauldron' ? 'advanced_cauldron' : fallbackMachineId;
   const targetItemId = String(source.targetItemId ?? fallback?.candidateTargetItemId ?? 'perfect_diamond');
-  const rawInputs = Array.isArray(source.inputItemIds) ? source.inputItemIds.map(String) : fallback?.inputItemIds;
+  const rawInputs = Array.isArray(source.inputItemIds) ? source.inputItemIds.map(String) : undefined;
   const inputItemIds = rawInputs ? normalizeCauldronInputTuple(rawInputs) : undefined;
   return {
     enabled: source.enabled !== false,
@@ -135,13 +134,11 @@ function addStat(stats: Record<string, ItemStat>, itemId: string): ItemStat {
 
 function countInputs(inputItemIds: CauldronInputTuple): Record<string, number> {
   const counts: Record<string, number> = {};
-  for (const itemId of inputItemIds) counts[itemId] = (counts[itemId] ?? 0) + 1;
+  for (const itemId of inputItemIds) {
+    if (!itemId) continue;
+    counts[itemId] = (counts[itemId] ?? 0) + 1;
+  }
   return counts;
-}
-
-function rateOrRatioLabel(rate: number | undefined, amount: number): string {
-  if (rate !== undefined && Number.isFinite(rate) && rate > 0) return formatRate(rate) + '/min';
-  return 'x' + formatNumber(amount, 0);
 }
 
 function buildRecipeDisplayName(outputItemId: string | undefined): { ja: string; en: string } {
@@ -168,56 +165,106 @@ function candidateFromRequest(request: NormalizedCauldronGraphRequest): { predic
   return { prediction, candidates };
 }
 
+function cauldronGraphError(code: string, ja: string, en: string): { status: 'invalid'; code: string; messageJa: string; messageEn: string } {
+  return { status: 'invalid', code, messageJa: ja, messageEn: en };
+}
+
+function validateCauldronBuild(
+  request: NormalizedCauldronGraphRequest,
+  prediction: CauldronPrediction,
+  selectedCandidate: CauldronCandidate | undefined,
+  candidates: CauldronCandidate[],
+  outputItemId: string | undefined,
+  outputPerMinute: number | undefined,
+): { status: 'ok' | 'invalid'; code?: string; messageJa?: string; messageEn?: string } {
+  if (prediction.missingInputItemIds.length > 0) {
+    return cauldronGraphError(
+      'CAULDRON_INPUT_VALUE_MISSING',
+      '錬金釜入力値が未登録のアイテムがあります。',
+      'Some cauldron input values are not registered.',
+    );
+  }
+  if (!request.inputItemIds && !selectedCandidate) {
+    return cauldronGraphError(
+      'CAULDRON_NO_CANDIDATE',
+      '指定ターゲットに一致する錬金釜候補がありません。',
+      'No cauldron candidate matches the requested target.',
+    );
+  }
+  if (!outputItemId) {
+    return cauldronGraphError(
+      'CAULDRON_OUTPUT_UNRESOLVED',
+      '錬金釜出力を特定できません。',
+      'The cauldron output could not be resolved.',
+    );
+  }
+  if (request.targetItemId && outputItemId !== request.targetItemId) {
+    return cauldronGraphError(
+      'CAULDRON_TARGET_MISMATCH',
+      '指定ターゲットと錬金釜予測出力が一致していません。',
+      'The requested target does not match the predicted cauldron output.',
+    );
+  }
+  if (outputPerMinute === undefined) {
+    return cauldronGraphError(
+      'CAULDRON_TIME_UNVERIFIED',
+      '錬金釜の処理時間が未確認のため、通常グラフ形式の/min表示を確定できません。',
+      'The cauldron processing time is unverified, so /min graph display cannot be confirmed.',
+    );
+  }
+  return { status: 'ok' };
+}
+
 export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial<CauldronState>): CauldronGraphBuildResult {
   const request = normalizeCauldronGraphRequest(rawRequest, fallback);
   const { prediction, selectedCandidate, candidates } = candidateFromRequest(request);
-  const outputItemId = prediction.outputItemId ?? request.targetItemId;
+  const outputItemId = prediction.outputItemId;
   const target = outputItemId ? CAULDRON_TARGETS[outputItemId] : undefined;
   const timeSec = selectedCandidate?.targetTimeSec ?? target?.timeSec;
   const outputPerMinute = timeSec && timeSec > 0 ? 60 / timeSec : undefined;
+  const validation = validateCauldronBuild(request, prediction, selectedCandidate, candidates, outputItemId, outputPerMinute);
+  const canBuildTimedGraph = validation.status === 'ok' && outputItemId !== undefined && outputPerMinute !== undefined;
   const inputCounts = countInputs(prediction.inputItemIds);
-  const recipeId = `cauldron:auto:${request.machineId}:${outputItemId ?? 'unknown'}:${prediction.inputItemIds.join('+')}`;
+  const recipeId = `cauldron:auto:${request.machineId}:${outputItemId ?? 'unknown'}:${prediction.inputItemIds.filter(Boolean).join('+') || 'unresolved'}`;
   const itemStats: Record<string, ItemStat> = {};
   const flows: CalculatedFlow[] = [];
   const inputRates: Record<string, number> = {};
+  const outputRates: Record<string, number> = {};
 
-  for (const [itemId, amount] of Object.entries(inputCounts)) {
-    const rate = outputPerMinute ? amount * outputPerMinute : amount;
-    inputRates[itemId] = rate;
-    const stat = addStat(itemStats, itemId);
-    stat.consumed += rate;
-    flows.push({
-      id: `cauldron-flow:${recipeId}:in:${itemId}`,
-      from: { type: 'itemSource', itemId, sourceMode: 'external' },
-      to: { type: 'recipe', recipeId },
-      itemId,
-      rate,
-      belts: 0,
-      transportKind: 'belt',
-      transportUnits: 0,
-      role: 'material',
-      displayRateLabel: rateOrRatioLabel(outputPerMinute ? rate : undefined, amount),
-    });
-  }
+  if (canBuildTimedGraph) {
+    for (const [itemId, amount] of Object.entries(inputCounts)) {
+      const rate = amount * outputPerMinute;
+      inputRates[itemId] = rate;
+      const stat = addStat(itemStats, itemId);
+      stat.consumed += rate;
+      flows.push({
+        id: `cauldron-flow:${recipeId}:in:${itemId}`,
+        from: { type: 'itemSource', itemId, sourceMode: 'external' },
+        to: { type: 'recipe', recipeId },
+        itemId,
+        rate,
+        belts: 0,
+        transportKind: 'belt',
+        transportUnits: 0,
+        role: 'material',
+      });
+    }
 
-  const outputRate = outputPerMinute ?? 1;
-  const outputRates: Record<string, number> = outputItemId ? { [outputItemId]: outputRate } : {};
-  const outputStat = outputItemId ? addStat(itemStats, outputItemId) : undefined;
-  if (outputStat) {
-    outputStat.produced += outputRate;
-    outputStat.targetRequested = outputRate;
-    outputStat.targetActual = outputRate;
+    outputRates[outputItemId] = outputPerMinute;
+    const outputStat = addStat(itemStats, outputItemId);
+    outputStat.produced += outputPerMinute;
+    outputStat.targetRequested = outputPerMinute;
+    outputStat.targetActual = outputPerMinute;
     flows.push({
       id: `cauldron-flow:${recipeId}:out:${outputItemId}`,
       from: { type: 'recipe', recipeId },
       to: { type: 'itemSink', itemId: outputItemId, sinkMode: 'final' },
       itemId: outputItemId,
-      rate: outputRate,
+      rate: outputPerMinute,
       belts: 0,
       transportKind: 'belt',
       transportUnits: 0,
       role: 'finalOutput',
-      displayRateLabel: rateOrRatioLabel(outputPerMinute, 1),
     });
   }
 
@@ -225,32 +272,34 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
     recipeId,
     machineId: request.machineId,
     displayName: buildRecipeDisplayName(outputItemId),
-    theoreticalMachines: 1,
-    actualMachines: 1,
-    runsPerMinute: outputPerMinute ?? 0,
-    positiveNetProductionRate: outputPerMinute ?? 0,
-    perMachineProductionRate: outputPerMinute ?? 0,
+    theoreticalMachines: canBuildTimedGraph ? 1 : 0,
+    actualMachines: canBuildTimedGraph ? 1 : 0,
+    runsPerMinute: canBuildTimedGraph ? outputPerMinute : 0,
+    positiveNetProductionRate: canBuildTimedGraph ? outputPerMinute : 0,
+    perMachineProductionRate: canBuildTimedGraph ? outputPerMinute : 0,
     inputRates,
     outputRates,
     netRates: { ...outputRates },
     surplusOutputRates: {},
     discardedOutputRates: {},
-    targetIds: [],
+    targetIds: outputItemId ? [outputItemId] : [],
   };
+
+  const errorSummaries = validation.status === 'ok' ? [] : [{
+    code: validation.code ?? 'CAULDRON_GRAPH_INVALID',
+    messageJa: validation.messageJa ?? '錬金釜グラフを生成できません。',
+    messageEn: validation.messageEn ?? 'The cauldron graph could not be generated.',
+  }];
 
   const result: CalculationResult = {
     itemStats,
-    recipeStats: { [recipeId]: recipeStat },
+    recipeStats: canBuildTimedGraph ? { [recipeId]: recipeStat } : {},
     flows,
     conveyorEdges: [],
     outputEdges: [],
     warnings: [],
-    calculationStatus: outputItemId && prediction.missingInputItemIds.length === 0 ? 'ok' : 'invalid',
-    errorSummaries: outputItemId && prediction.missingInputItemIds.length === 0 ? [] : [{
-      code: 'CAULDRON_GRAPH_INPUT_INCOMPLETE',
-      messageJa: '錬金釜グラフ用の入力値または出力候補が不足しています。',
-      messageEn: 'Cauldron graph input values or output candidate are incomplete.',
-    }],
+    calculationStatus: validation.status,
+    errorSummaries,
     totals: {
       ...EMPTY_TOTALS,
       calculationMs: 0,
@@ -260,23 +309,23 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
   };
 
   const summary: CauldronGraphBuildSummary = {
-    status: result.calculationStatus === 'ok' ? 'ok' : 'invalid',
-    code: result.calculationStatus === 'ok' ? undefined : 'CAULDRON_GRAPH_INPUT_INCOMPLETE',
-    messageJa: result.calculationStatus === 'ok' ? undefined : '錬金釜グラフ用の入力値または出力候補が不足しています。',
-    messageEn: result.calculationStatus === 'ok' ? undefined : 'Cauldron graph input values or output candidate are incomplete.',
+    status: validation.status,
+    code: validation.code,
+    messageJa: validation.messageJa,
+    messageEn: validation.messageEn,
     machineId: request.machineId,
     targetItemId: request.targetItemId,
     selectedInputItemIds: prediction.inputItemIds,
     selectedOutputItemId: outputItemId,
     candidateCount: candidates.length,
-    selectedCandidateIndex: Math.min(request.candidateIndex, Math.max(0, candidates.length - 1)),
+    selectedCandidateIndex: selectedCandidate ? Math.min(request.candidateIndex, Math.max(0, candidates.length - 1)) : -1,
     score: prediction.adjustedScore,
     duplicatePenalty: prediction.duplicatePenalty,
     targetValue: prediction.targetValue,
     distance: prediction.distance,
     timeSec,
     outputPerMinute,
-    graphNodeCount: Object.keys(itemStats).length + 1,
+    graphNodeCount: Object.keys(itemStats).length + (canBuildTimedGraph ? 1 : 0),
     graphEdgeCount: flows.length,
   };
 

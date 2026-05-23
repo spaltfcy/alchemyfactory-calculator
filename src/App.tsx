@@ -21,7 +21,7 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.1';
+const APP_VERSION = '0.10.2';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {

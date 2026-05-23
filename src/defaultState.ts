@@ -92,7 +92,7 @@ export const DEFAULT_STATE: AppState = {
     inputItemIds: ['charcoal_powder', 'quicklime_powder', 'impure_copper_powder'],
     machineId: 'cauldron',
     candidateIndex: 0,
-    candidateTargetItemId: 'perfect_diamond',
+    candidateTargetItemId: 'philosophers_stone',
     maxCandidates: 20,
     allowDuplicateInputs: true,
     targetItemIdsText: 'sol',

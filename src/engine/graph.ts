@@ -1198,6 +1198,11 @@ export type FlowGraphDebugArtifacts = {
       label: string;
       subLabel?: string;
       completed?: boolean;
+      machineLabel?: string;
+      ioLabel?: string;
+      countLabel?: string;
+      sourceHandles?: PlannerNodeData['sourceHandles'];
+      targetHandles?: PlannerNodeData['targetHandles'];
       badges?: PlannerNodeData['badges'];
     }>;
     edges: Array<{
@@ -1343,8 +1348,13 @@ function serializeGraphModel(variant: 'normal' | 'debug', layout: ReturnType<typ
       kind: node.data.kind,
       label: node.data.label,
       subLabel: node.data.subLabel,
+      machineLabel: node.data.machineLabel,
+      ioLabel: node.data.ioLabel,
+      countLabel: node.data.countLabel,
       completed: node.data.completed,
       badges: node.data.badges,
+      sourceHandles: node.data.sourceHandles,
+      targetHandles: node.data.targetHandles,
     })),
     edges: graph.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)).map((edge) => {
       const data = edge.data as { itemName?: string; rateLabel?: string; color?: string; role?: string } | undefined;
