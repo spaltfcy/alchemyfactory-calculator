@@ -64,7 +64,8 @@ function machineName(machineId: string, lang: Lang): string {
   return machine ? text(machine.name, lang) : machineId;
 }
 
-function recipeName(recipeId: string, lang: Lang): string {
+function recipeName(recipeId: string, lang: Lang, stat?: Pick<RecipeStat, 'displayName'>): string {
+  if (stat?.displayName) return text(stat.displayName, lang);
   const steamLabels: Record<string, { ja: string; en: string }> = {
     steam_boiler_low: { ja: '蒸気ボイラー（低）', en: 'Steam Boiler (Low)' },
     steam_boiler_medium: { ja: '蒸気ボイラー（中）', en: 'Steam Boiler (Medium)' },
@@ -149,7 +150,7 @@ function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
     data: {
       itemId: flow.itemId,
       itemName: labelName,
-      rateLabel: flow.role === 'steam' ? formatRate(flow.rate) + '/min' : rateLabel(flow, lang),
+      rateLabel: flow.displayRateLabel ?? (flow.role === 'steam' ? formatRate(flow.rate) + '/min' : rateLabel(flow, lang)),
       color: edgeColor,
       cycleSide: isSelfLoop ? 1 : 0,
       labelShiftY: isSelfLoop ? -42 : 0,
@@ -314,7 +315,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       type: 'plannerNode',
       position: { x: 0, y: 0 },
       data: {
-        label: recipeName(endpoint.recipeId, lang),
+        label: recipeName(endpoint.recipeId, lang, rs),
         kind: 'recipe',
         machineLabel,
         ioLabel,

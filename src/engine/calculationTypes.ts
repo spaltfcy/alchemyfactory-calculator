@@ -1,4 +1,4 @@
-import type { AbilitySettings, AppSettings } from '../types';
+import type { AbilitySettings, AppSettings, LocalizedText } from '../types';
 import type { RecipeDataAudit } from '../data/recipeDataAudit';
 
 export type ItemStat = {
@@ -21,6 +21,7 @@ export type ItemStat = {
 export type RecipeStat = {
   recipeId: string;
   machineId: string;
+  displayName?: LocalizedText;
   theoreticalMachines: number;
   actualMachines: number;
   runsPerMinute: number;
@@ -71,6 +72,7 @@ export type CalculatedFlow = {
   transportKind: FlowTransportKind;
   transportUnits: number;
   role: CalculatedFlowRole;
+  displayRateLabel?: string;
 };
 
 export type ConveyorEdgeStat = {

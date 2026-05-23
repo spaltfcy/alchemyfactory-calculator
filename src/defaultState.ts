@@ -4,7 +4,7 @@ import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
 import { DEFAULT_PARADOX_SETTINGS } from './data/paradox';
 
 export const DEFAULT_STATE: AppState = {
-  version: 28,
+  version: 29,
   language: 'ja',
   activeTab: 'graph',
   tablePreferences: {
@@ -90,6 +90,8 @@ export const DEFAULT_STATE: AppState = {
 
   cauldronState: {
     inputItemIds: ['charcoal_powder', 'quicklime_powder', 'impure_copper_powder'],
+    machineId: 'cauldron',
+    candidateIndex: 0,
     candidateTargetItemId: 'perfect_diamond',
     maxCandidates: 20,
     allowDuplicateInputs: true,

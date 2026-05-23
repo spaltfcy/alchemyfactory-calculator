@@ -40,8 +40,8 @@ export type Item = {
   fertilizerValue?: number; // 肥料値。定義ありなら肥料候補
   fertilizerNutrientsPerSec?: number; // 肥料投入速度。定義ありなら肥料候補
   paradoxTimeSec?: number; // パラドックス坩堝で消滅エッセンス素材にした場合の基準時間秒
-  cauldronValue?: number; // 大釜入力値。v0.10.0では通常計算からは参照しない
-  cauldronTargetValue?: number; // 大釜出力ターゲット値。v0.10.0では通常計算からは参照しない
+  cauldronValue?: number; // 錬金釜入力値。通常計算からは参照しない
+  cauldronTargetValue?: number; // 錬金釜出力ターゲット値。通常計算からは参照しない
   cauldronValueStatus?: 'unverified' | 'verified' | 'conflict';
   cauldronTargetStatus?: 'unverified' | 'verified' | 'conflict';
   internal?: boolean; // 内部用。ターゲット・売却候補には出さない

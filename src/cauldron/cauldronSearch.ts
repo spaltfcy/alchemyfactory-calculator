@@ -78,7 +78,7 @@ function analyzeItem(
       amount,
       status: 'cauldronTarget',
       reason: {
-        ja: `大釜ターゲット値あり。候補${candidateCount}件。速度/熱は${cauldronTarget.timeSec === undefined ? '未確認' : '一部あり'}。`,
+        ja: `錬金釜ターゲット値あり。候補${candidateCount}件。速度/熱は${cauldronTarget.timeSec === undefined ? '未確認' : '一部あり'}。`,
         en: `Has a cauldron target value. ${candidateCount} candidates. Time/heat is ${cauldronTarget.timeSec === undefined ? 'unverified' : 'partially known'}.`,
       },
       candidateCount,
@@ -92,7 +92,7 @@ function analyzeItem(
       label,
       amount,
       status: 'depthLimit',
-      reason: { ja: '展開深度の上限。v0.10.0では暫定表示。', en: 'Depth limit reached. v0.10.0 shows this provisionally.' },
+      reason: { ja: '展開深度の上限。v0.10.1では暫定表示。', en: 'Depth limit reached. v0.10.1 shows this provisionally.' },
       children: [],
     };
   }
@@ -120,7 +120,7 @@ function analyzeItem(
       label,
       amount,
       status: 'handCauldron',
-      reason: { ja: `手書き大釜レシピ ${handCauldronRecipe.id} は存在。大釜値データとの照合は未完了。`, en: `Manual cauldron recipe ${handCauldronRecipe.id} exists. It is not fully reconciled with cauldron values yet.` },
+      reason: { ja: `手書き錬金釜レシピ ${handCauldronRecipe.id} は存在。錬金釜値データとの照合は未完了。`, en: `Manual cauldron recipe ${handCauldronRecipe.id} exists. It is not fully reconciled with cauldron values yet.` },
       recipeId: handCauldronRecipe.id,
       children: itemInputIds(handCauldronRecipe).map((input) => analyzeItem(input.itemId, input.amount * amount, startupItemIds, depth - 1, new Set([...seen, itemId]))),
     };
@@ -131,7 +131,7 @@ function analyzeItem(
     label,
     amount,
     status: 'missing',
-    reason: { ja: '通常レシピ・大釜ターゲット・手書き大釜レシピのいずれも未確認', en: 'No normal recipe, cauldron target, or manual cauldron recipe is known' },
+    reason: { ja: '通常レシピ・錬金釜ターゲット・手書き錬金釜レシピのいずれも未確認', en: 'No normal recipe, cauldron target, or manual cauldron recipe is known' },
     children: [],
   };
 }

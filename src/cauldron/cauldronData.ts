@@ -12,7 +12,7 @@ function knownTarget(itemId: string, targetValue: number, note?: string): Cauldr
   return { itemId, targetValue, status: 'unverified', note };
 }
 
-// v0.10.0: 大釜タブ専用の種データ。
+// v0.10.1: 錬金釜タブ専用の種データ。
 // Steamガイド/過去確認メモ由来の値を通常 items/recipes へ混ぜず、未確認データとして隔離する。
 const RAW_CAULDRON_INPUT_VALUES: CauldronValueEntry[] = [
   knownValue('small_wooden_gear', 0.33, 'Steamガイド由来の未確認入力値'),

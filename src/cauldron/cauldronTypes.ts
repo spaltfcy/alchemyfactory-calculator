@@ -2,6 +2,7 @@ import type { LocalizedText } from '../types';
 
 export type CauldronDataStatus = 'unverified' | 'verified' | 'conflict';
 export type CauldronObservedStatus = 'todo' | 'matched' | 'mismatch' | 'unknown';
+export type CauldronMachineId = 'cauldron' | 'advanced_cauldron';
 
 export type CauldronValueEntry = {
   itemId: string;
@@ -52,7 +53,7 @@ export type CauldronObservedCase = {
   predictedScore: number;
   observedTimeSec?: number;
   observedHeatPerSec?: number;
-  machineId?: 'cauldron' | 'advanced_cauldron';
+  machineId?: CauldronMachineId;
   status: CauldronObservedStatus;
   note?: string;
   createdAt: string;
@@ -83,6 +84,8 @@ export type CauldronTargetPlan = {
 
 export type CauldronState = {
   inputItemIds: CauldronInputTuple;
+  machineId: CauldronMachineId;
+  candidateIndex: number;
   candidateTargetItemId: string;
   maxCandidates: number;
   allowDuplicateInputs: boolean;

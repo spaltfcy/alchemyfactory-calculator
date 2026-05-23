@@ -8,7 +8,7 @@ export const UI = {
   about: { ja: 'About', en: 'About' },
   itemOutputSettings: { ja: '出力', en: 'Output' },
   recipeSettings: { ja: 'レシピ設定', en: 'Recipe settings' },
-  cauldron: { ja: '大釜', en: 'Cauldron' },
+  cauldron: { ja: '錬金釜', en: 'Cauldron' },
   targets: { ja: 'アイテム出力設定', en: 'Item output settings' },
   addTarget: { ja: '追加', en: 'Add' },
   remove: { ja: '削除', en: 'Remove' },
