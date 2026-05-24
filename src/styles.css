@@ -1960,3 +1960,134 @@ a {
 .content-pane-cauldron {
   overflow: hidden;
 }
+
+.cauldron-output-settings .item-output-toolbar,
+.cauldron-output-settings .item-output-enabled-checkbox,
+.cauldron-output-settings .item-output-value-field,
+.cauldron-output-settings .item-output-mode-field {
+  display: none;
+}
+
+.cauldron-output-settings .item-output-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cauldron-output-settings .item-output-item-field {
+  min-width: 0;
+}
+
+.cauldron-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cauldron-plan-panel {
+  max-height: 34%;
+  min-height: 9rem;
+  overflow: auto;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15, 22, 33, 0.94);
+}
+
+.cauldron-plan-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.cauldron-plan-header h2,
+.cauldron-plan-header p {
+  margin: 0;
+}
+
+.cauldron-plan-header span,
+.cauldron-plan-item em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 0.82rem;
+}
+
+.cauldron-candidate-list {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.cauldron-candidate-list h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.cauldron-candidate-row {
+  display: grid;
+  grid-template-columns: 1.8rem minmax(0, 1fr) max-content;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid rgba(44, 58, 80, 0.7);
+  border-radius: 8px;
+  background: rgba(8, 13, 21, 0.48);
+}
+
+.cauldron-candidate-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cauldron-candidate-row em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.cauldron-plan-tree {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.cauldron-plan-root {
+  padding-left: 0;
+}
+
+.cauldron-plan-item {
+  margin: 0.4rem 0;
+  list-style: none;
+}
+
+.cauldron-plan-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.cauldron-plan-recipe,
+.cauldron-plan-reason,
+.cauldron-plan-note {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.cauldron-plan-item-missing > .cauldron-plan-item-head,
+.cauldron-plan-item-depthLimit > .cauldron-plan-item-head {
+  color: #ffb3b3;
+}
+
+.cauldron-plan-item-cauldronTarget > .cauldron-plan-item-head,
+.cauldron-plan-item-handCauldron > .cauldron-plan-item-head {
+  color: #9fe870;
+}
+
+.cauldron-graph-region {
+  flex: 1;
+  min-height: 0;
+}

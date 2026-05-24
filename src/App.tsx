@@ -23,7 +23,7 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.5';
+const APP_VERSION = '0.10.6';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -617,9 +617,9 @@ export function App() {
             {state.activeTab === 'cauldron' ? (
               <CauldronOutputSettings
                 lang={lang}
-                targets={state.cauldronState.targets}
+                targets={state.cauldronState.targets.slice(0, 1)}
                 targetDefaults={state.settings.targetDefaults}
-                onChange={(targets) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, targets } }))}
+                onChange={(targets) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, targets: targets.slice(0, 1) } }))}
                 onFocusGraphNode={focusCauldronGraphNode}
                 getFocusGraphNodeId={cauldronFocusNodeId}
                 onUserMessage={addUserMessage}

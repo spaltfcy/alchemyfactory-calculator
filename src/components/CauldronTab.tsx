@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { CAULDRON_TARGETS } from '../cauldron/cauldronData';
 import { buildCauldronGraphResult, cauldronRequestForTarget } from '../cauldron/cauldronGraph';
-import type { CauldronState } from '../cauldron/cauldronTypes';
+import { generateCauldronCandidatesForOutput } from '../cauldron/cauldronMath';
+import { analyzeCauldronTargets, cauldronItemName, parseItemIdsText } from '../cauldron/cauldronSearch';
+import type { CauldronPlanItem, CauldronTargetPlan, CauldronState } from '../cauldron/cauldronTypes';
 import { calculate } from '../engine/calculate';
 import type { CalculationResult, ItemStat } from '../engine/calculate';
 import type { AbilitySettings, AppSettings, Lang, ProductionTarget } from '../types';
@@ -177,22 +179,128 @@ function buildCauldronTabResult(
   return mergeResults(results, settings);
 }
 
+function formatPlanAmount(value: number): string {
+  if (!Number.isFinite(value)) return '-';
+  if (Math.abs(value - Math.round(value)) < 0.000001) return String(Math.round(value));
+  return value.toFixed(3).replace(/\.?0+$/u, '');
+}
+
+function planStatusText(status: CauldronPlanItem['status'], lang: Lang): string {
+  const labels: Record<CauldronPlanItem['status'], { ja: string; en: string }> = {
+    startup: { ja: '初期投入', en: 'Startup' },
+    normal: { ja: '通常レシピ', en: 'Normal recipe' },
+    cauldronTarget: { ja: '錬金釜候補', en: 'Cauldron candidate' },
+    handCauldron: { ja: '手入力釜', en: 'Manual cauldron' },
+    missing: { ja: '未解決', en: 'Missing' },
+    cycle: { ja: '循環', en: 'Cycle' },
+    depthLimit: { ja: '探索上限', en: 'Depth limit' },
+  };
+  return labels[status][lang];
+}
+
+function planReasonText(item: CauldronPlanItem, lang: Lang): string {
+  if (item.status === 'normal') {
+    return lang === 'ja' ? `通常レシピ ${item.recipeId ?? ''} で展開します。` : `Expanded through normal recipe ${item.recipeId ?? ''}.`;
+  }
+  if (item.status === 'cauldronTarget') {
+    const count = item.candidateCount ?? 0;
+    return lang === 'ja' ? `錬金釜候補があります。候補数: ${count}` : `Has cauldron candidates. Candidate count: ${count}`;
+  }
+  if (item.status === 'handCauldron') {
+    return lang === 'ja' ? `手入力の錬金釜レシピ ${item.recipeId ?? ''} が存在します。` : `Manual cauldron recipe ${item.recipeId ?? ''} exists.`;
+  }
+  if (item.status === 'startup') return lang === 'ja' ? '初期投入として扱います。' : 'Provided as a startup input.';
+  if (item.status === 'cycle') return lang === 'ja' ? '循環を検出しました。初期投入候補として扱います。' : 'Cycle detected; treat as a startup candidate.';
+  if (item.status === 'depthLimit') return lang === 'ja' ? '探索上限に達しました。' : 'Depth limit reached.';
+  return lang === 'ja' ? '内部生産レシピが見つかりません。' : 'No internal production recipe was found.';
+}
+
+function renderPlanItem(item: CauldronPlanItem, lang: Lang): ReactNode {
+  return (
+    <li key={`${item.itemId}:${item.status}:${item.amount}:${item.recipeId ?? ''}`} className={`cauldron-plan-item cauldron-plan-item-${item.status}`}>
+      <div className="cauldron-plan-item-head">
+        <strong>{item.label[lang]}</strong>
+        <span>{formatPlanAmount(item.amount)}</span>
+        <em>{planStatusText(item.status, lang)}</em>
+      </div>
+      {item.recipeId && <p className="cauldron-plan-recipe">{item.recipeId}</p>}
+      <p className="cauldron-plan-reason">{planReasonText(item, lang)}</p>
+      {item.children.length > 0 && <ul className="cauldron-plan-tree">{item.children.map((child) => renderPlanItem(child, lang))}</ul>}
+    </li>
+  );
+}
+
+function planSummaryText(plan: CauldronTargetPlan, lang: Lang): string {
+  const cauldronCount = plan.cauldronCandidateItemIds.length;
+  const missingCount = plan.missingItemIds.length;
+  if (lang === 'ja') {
+    if (plan.status === 'blocked') return `未完結候補: 未解決 ${missingCount} 件`;
+    return `レシピ候補: 錬金釜候補 ${cauldronCount} 件`;
+  }
+  if (plan.status === 'blocked') return `Incomplete candidate: ${missingCount} missing`;
+  return `Recipe candidate: ${cauldronCount} cauldron candidates`;
+}
+
+function CauldronRecipePlanPanel({ lang, plan }: { lang: Lang; plan: CauldronTargetPlan }) {
+  const title = lang === 'ja' ? 'レシピ案' : 'Recipe plan';
+  const note = lang === 'ja'
+    ? 'v0.10.6では、まず通常レシピと錬金釜候補を辿って案を出します。燃料・肥料込みの完全閉鎖スコアは次の段階で詰めます。'
+    : 'v0.10.6 first lists normal recipes and cauldron candidates. Full closed-line scoring with fuel and fertilizer comes next.';
+  const candidates = generateCauldronCandidatesForOutput(plan.targetItemId, { allowDuplicateInputs: true, maxCandidates: 3 });
+  const candidateTitle = lang === 'ja' ? '錬金釜候補入力' : 'Cauldron candidate inputs';
+  return (
+    <section className={`cauldron-plan-panel cauldron-plan-panel-${plan.status}`}>
+      <div className="cauldron-plan-header">
+        <div>
+          <h2>{title}</h2>
+          <p>{plan.targetLabel[lang]}</p>
+        </div>
+        <span>{planSummaryText(plan, lang)}</span>
+      </div>
+      {candidates.length > 0 && (
+        <div className="cauldron-candidate-list">
+          <h3>{candidateTitle}</h3>
+          {candidates.map((candidate, index) => (
+            <div key={candidate.id} className="cauldron-candidate-row">
+              <strong>{index + 1}</strong>
+              <span>{candidate.inputItemIds.map((itemId) => cauldronItemName(itemId, lang)).join(' + ')}</span>
+              <em>{formatPlanAmount(candidate.adjustedScore)}</em>
+            </div>
+          ))}
+        </div>
+      )}
+      <ul className="cauldron-plan-tree cauldron-plan-root">{renderPlanItem(plan.root, lang)}</ul>
+      <p className="cauldron-plan-note">{note}</p>
+    </section>
+  );
+}
+
 export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies, completedGraphNodeIds, onToggleCompleted, focusRequest }: CauldronTabProps) {
   const result = useMemo(
     () => buildCauldronTabResult(state, settings, abilities, recipePreferences, surplusPolicies),
     [state, settings, abilities, recipePreferences, surplusPolicies],
   );
+  const targetItemId = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId)?.outputItemId ?? state.candidateTargetItemId;
+  const plan = useMemo(
+    () => analyzeCauldronTargets([targetItemId], parseItemIdsText(state.startupItemIdsText), 6)[0],
+    [state.startupItemIdsText, targetItemId],
+  );
 
   return (
-    <GraphTab
-      lang={lang}
-      result={result}
-      settings={settings}
-      completedGraphNodeIds={completedGraphNodeIds}
-      onToggleCompleted={onToggleCompleted}
-      focusRequest={focusRequest}
-      captureId="cauldron"
-      debug={false}
-    />
+    <div className="cauldron-tab">
+      {plan && <CauldronRecipePlanPanel lang={lang} plan={plan} />}
+      <div className="cauldron-graph-region">
+        <GraphTab
+          lang={lang}
+          result={result}
+          settings={settings}
+          completedGraphNodeIds={completedGraphNodeIds}
+          onToggleCompleted={onToggleCompleted}
+          focusRequest={focusRequest}
+          captureId="cauldron"
+          debug={false}
+        />
+      </div>
+    </div>
   );
 }

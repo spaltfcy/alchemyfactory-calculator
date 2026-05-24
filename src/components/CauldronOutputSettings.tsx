@@ -25,15 +25,17 @@ function makeTarget(lang: Lang, targetDefaults: TargetDefaults): ProductionTarge
     enabled: true,
     recipeId: '',
     outputItemId,
-    mode: targetDefaults.mode,
-    value: targetDefaults.value,
+    mode: 'rate',
+    value: targetDefaults.value > 0 ? targetDefaults.value : 1,
   };
 }
 
+function normalizeCauldronTarget(target: ProductionTarget, patch: Partial<ProductionTarget> = {}): ProductionTarget {
+  return { ...target, ...patch, enabled: true, recipeId: '', mode: 'rate', value: 1 };
+}
+
 function normalizeCauldronTargetPatch(target: ProductionTarget, patch: Partial<ProductionTarget>): ProductionTarget {
-  const next = { ...target, ...patch, recipeId: '' };
-  if (next.enabled === undefined) next.enabled = true;
-  return next;
+  return normalizeCauldronTarget(target, patch);
 }
 
 export function CauldronOutputSettings({
@@ -49,9 +51,9 @@ export function CauldronOutputSettings({
     <OutputTargetSettings
       lang={lang}
       targets={targets}
-      title={lang === 'ja' ? '出力' : 'Output'}
-      listAriaLabel={lang === 'ja' ? '錬金釜出力' : 'Cauldron outputs'}
-      enabledLabel={lang === 'ja' ? 'この出力を使う' : 'Use this output'}
+      title={lang === 'ja' ? '錬金釜ターゲット' : 'Cauldron target'}
+      listAriaLabel={lang === 'ja' ? '錬金釜ターゲット' : 'Cauldron target'}
+      enabledLabel={lang === 'ja' ? 'このターゲットを使う' : 'Use this target'}
       sectionClassName="cauldron-output-settings"
       selectableItemIds={getSelectableCauldronOutputItems(lang)}
       makeTarget={() => makeTarget(lang, targetDefaults)}
