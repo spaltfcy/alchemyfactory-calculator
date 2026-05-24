@@ -2,6 +2,7 @@ import type { CalculationResult, CalculatedFlow, ItemStat, RecipeStat } from '..
 import type { Lang, ProductionTarget } from '../types';
 import { itemById } from '../data/items';
 import { text } from '../i18n';
+import { chooseRecipeForItem } from '../engine/itemSourceResolver';
 import { CAULDRON_TARGETS } from './cauldronData';
 import { flowTransportForItem } from '../engine/flowTransport';
 import { generateCauldronCandidatesForOutput, normalizeCauldronInputTuple, predictCauldron } from './cauldronMath';
@@ -345,6 +346,35 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
   };
 
   return { request, prediction, selectedCandidate, candidates, result, summary };
+}
+
+export function cauldronRequestForTarget(target: ProductionTarget, state: CauldronState): CauldronGraphRequest {
+  return {
+    enabled: true,
+    machineId: state.machineId,
+    targetItemId: target.outputItemId,
+    candidateIndex: state.candidateIndex,
+    maxCandidates: state.maxCandidates,
+    allowDuplicateInputs: state.allowDuplicateInputs,
+    ...(target.mode === 'machines'
+      ? { machineCount: Math.max(0, Number(target.value) || 0) }
+      : { targetRatePerMinute: Math.max(0, Number(target.value) || 0) }),
+  };
+}
+
+export function cauldronGraphNodeIdForTarget(
+  target: ProductionTarget,
+  state: CauldronState,
+  recipePreferences: Record<string, string> = {},
+): string | undefined {
+  if (!CAULDRON_TARGETS[target.outputItemId]) {
+    const recipeId = target.recipeId || chooseRecipeForItem(target.outputItemId, recipePreferences)?.id;
+    return recipeId ? 'recipe:' + recipeId : undefined;
+  }
+
+  const build = buildCauldronGraphResult(cauldronRequestForTarget(target, state), state);
+  const recipeId = Object.keys(build.result.recipeStats)[0];
+  return recipeId ? 'recipe:' + recipeId : undefined;
 }
 
 export function cauldronRequestFromState(state: CauldronState): CauldronGraphRequest {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
-import type { AbilityId, AppSettings, AppState, TablePreferences } from './types';
+import type { AbilityId, AppSettings, AppState, ProductionTarget, TablePreferences } from './types';
 import { filterPositiveTargets, sanitizeNegativeTargets } from './engine/targetValidation';
 import { calculationInvalidPersistentError, createUserMessage, messageText, type UserMessageInput, type UserMessageLog } from './utils/userMessages';
 import { DEFAULT_STATE } from './defaultState';
@@ -17,12 +17,13 @@ import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { CauldronTab } from './components/CauldronTab';
 import { CauldronOutputSettings } from './components/CauldronOutputSettings';
+import { cauldronGraphNodeIdForTarget } from './cauldron/cauldronGraph';
 import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.4';
+const APP_VERSION = '0.10.5';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -233,6 +234,7 @@ export function App() {
   const [userMessageHistory, setUserMessageHistory] = useState<UserMessageLog[]>([]);
   const calculationErrorMessageRef = useRef<{ id: string; key: string } | null>(null);
   const [focusGraphRequest, setFocusGraphRequest] = useState<GraphFocusRequest | undefined>(undefined);
+  const [cauldronFocusGraphRequest, setCauldronFocusGraphRequest] = useState<GraphFocusRequest | undefined>(undefined);
   const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
   const calculationSettingsCacheRef = useRef<{ key: string; settings: AppSettings } | null>(null);
   const lang = state.language;
@@ -468,12 +470,22 @@ export function App() {
     : ['graph', 'table', 'settings', 'recipeSettings', 'cauldron', 'about'];
 
   function requestGraphSave() {
-    window.dispatchEvent(new CustomEvent('alchemyfactory:save-live-graph'));
+    const captureId = state.activeTab === 'cauldron' ? 'cauldron' : state.activeTab === 'graphDebug' ? 'debug' : 'graph';
+    window.dispatchEvent(new CustomEvent('alchemyfactory:save-live-graph', { detail: { captureId } }));
   }
 
   function focusGraphNode(nodeId: string): void {
     setFocusGraphRequest({ nodeId, requestId: Date.now() });
     setState((current) => ({ ...current, activeTab: 'graph' }));
+  }
+
+  function focusCauldronGraphNode(nodeId: string): void {
+    setCauldronFocusGraphRequest({ nodeId, requestId: Date.now() });
+    setState((current) => ({ ...current, activeTab: 'cauldron' }));
+  }
+
+  function cauldronFocusNodeId(target: ProductionTarget): string | undefined {
+    return cauldronGraphNodeIdForTarget(target, state.cauldronState, state.recipePreferences);
   }
 
   return (
@@ -571,7 +583,7 @@ export function App() {
               <option value="en">English</option>
             </select>
           </div>
-          {(state.activeTab === 'graph' || state.activeTab === 'graphDebug') && (
+          {(state.activeTab === 'graph' || state.activeTab === 'graphDebug' || state.activeTab === 'cauldron') && (
             <button type="button" className="header-graph-save-button" onClick={requestGraphSave}>
               {lang === 'ja' ? 'グラフ保存' : 'Save graph'}
             </button>
@@ -608,6 +620,9 @@ export function App() {
                 targets={state.cauldronState.targets}
                 targetDefaults={state.settings.targetDefaults}
                 onChange={(targets) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, targets } }))}
+                onFocusGraphNode={focusCauldronGraphNode}
+                getFocusGraphNodeId={cauldronFocusNodeId}
+                onUserMessage={addUserMessage}
               />
             ) : (
               <ItemOutputSettings
@@ -635,6 +650,7 @@ export function App() {
               completedGraphNodeIds={state.completedGraphNodeIds}
               onToggleCompleted={toggleCompleted}
               focusRequest={focusGraphRequest}
+              captureId="graph"
               debug={runtimeFlags.debug}
             />
           </div>
@@ -661,6 +677,9 @@ export function App() {
               abilities={state.abilities}
               recipePreferences={state.recipePreferences}
               surplusPolicies={state.surplusPolicies}
+              completedGraphNodeIds={state.completedGraphNodeIds}
+              onToggleCompleted={toggleCompleted}
+              focusRequest={cauldronFocusGraphRequest}
             />
           )}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}

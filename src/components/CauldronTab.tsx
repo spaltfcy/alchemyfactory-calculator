@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { CAULDRON_TARGETS } from '../cauldron/cauldronData';
-import { buildCauldronGraphResult } from '../cauldron/cauldronGraph';
+import { buildCauldronGraphResult, cauldronRequestForTarget } from '../cauldron/cauldronGraph';
 import type { CauldronState } from '../cauldron/cauldronTypes';
 import { calculate } from '../engine/calculate';
 import type { CalculationResult, ItemStat } from '../engine/calculate';
 import type { AbilitySettings, AppSettings, Lang, ProductionTarget } from '../types';
-import { GraphTab } from './GraphTab';
+import { chooseRecipeForItem } from '../engine/itemSourceResolver';
+import { GraphTab, type GraphFocusRequest } from './GraphTab';
 
 type CauldronTabProps = {
   lang: Lang;
@@ -14,6 +15,9 @@ type CauldronTabProps = {
   abilities: AbilitySettings;
   recipePreferences: Record<string, string>;
   surplusPolicies: Record<string, string>;
+  completedGraphNodeIds: Record<string, boolean>;
+  onToggleCompleted: (nodeId: string) => void;
+  focusRequest?: GraphFocusRequest;
 };
 
 const EMPTY_TOTALS: CalculationResult['totals'] = {
@@ -127,11 +131,6 @@ function mergeResults(results: CalculationResult[], settings: AppSettings): Calc
   return merged;
 }
 
-function targetRate(target: ProductionTarget): { targetRatePerMinute?: number; machineCount?: number } {
-  if (target.mode === 'machines') return { machineCount: Math.max(0, Number(target.value) || 0) };
-  return { targetRatePerMinute: Math.max(0, Number(target.value) || 0) };
-}
-
 function buildCauldronTabResult(
   state: CauldronState,
   settings: AppSettings,
@@ -141,6 +140,7 @@ function buildCauldronTabResult(
 ): CalculationResult {
   const enabledTargets = state.targets.filter((target) => (target.enabled ?? true) !== false && target.outputItemId);
   const normalTargets: ProductionTarget[] = [];
+  const normalFallbackWarnings: CalculationResult['warnings'] = [];
   const results: CalculationResult[] = [];
 
   enabledTargets.forEach((target) => {
@@ -149,26 +149,35 @@ function buildCauldronTabResult(
       return;
     }
 
-    const built = buildCauldronGraphResult({
-      enabled: true,
-      machineId: state.machineId,
-      targetItemId: target.outputItemId,
-      candidateIndex: state.candidateIndex,
-      maxCandidates: state.maxCandidates,
-      allowDuplicateInputs: state.allowDuplicateInputs,
-      ...targetRate(target),
-    }, state);
+    const built = buildCauldronGraphResult(cauldronRequestForTarget(target, state), state);
+    if (built.summary.status === 'ok') {
+      results.push(built.result);
+      return;
+    }
+
+    const normalRecipe = target.recipeId || chooseRecipeForItem(target.outputItemId, recipePreferences)?.id;
+    if (normalRecipe) {
+      normalTargets.push({ ...target, recipeId: target.recipeId || '' });
+      normalFallbackWarnings.push({
+        messageJa: '錬金釜の' + target.outputItemId + 'は' + (built.summary.code ?? '未検証') + 'のため、通常レシピ経路で表示しています。',
+        messageEn: 'Cauldron ' + target.outputItemId + ' is ' + (built.summary.code ?? 'unverified') + ', so the normal recipe route is shown.',
+      });
+      return;
+    }
+
     results.push(built.result);
   });
 
   if (normalTargets.length > 0) {
-    results.unshift(calculate({ targets: normalTargets, settings, abilities, recipePreferences, surplusPolicies }));
+    const normalResult = calculate({ targets: normalTargets, settings, abilities, recipePreferences, surplusPolicies });
+    normalResult.warnings = [...normalFallbackWarnings, ...normalResult.warnings];
+    results.unshift(normalResult);
   }
 
   return mergeResults(results, settings);
 }
 
-export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies }: CauldronTabProps) {
+export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies, completedGraphNodeIds, onToggleCompleted, focusRequest }: CauldronTabProps) {
   const result = useMemo(
     () => buildCauldronTabResult(state, settings, abilities, recipePreferences, surplusPolicies),
     [state, settings, abilities, recipePreferences, surplusPolicies],
@@ -179,8 +188,10 @@ export function CauldronTab({ lang, state, settings, abilities, recipePreference
       lang={lang}
       result={result}
       settings={settings}
-      completedGraphNodeIds={{}}
-      onToggleCompleted={() => undefined}
+      completedGraphNodeIds={completedGraphNodeIds}
+      onToggleCompleted={onToggleCompleted}
+      focusRequest={focusRequest}
+      captureId="cauldron"
       debug={false}
     />
   );

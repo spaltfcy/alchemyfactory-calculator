@@ -56,6 +56,7 @@ type GraphTabProps = {
   completedGraphNodeIds: Record<string, boolean>;
   onToggleCompleted: (nodeId: string) => void;
   focusRequest?: GraphFocusRequest;
+  captureId?: string;
   debug?: boolean;
 };
 
@@ -452,8 +453,7 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function buildGraphElementFile(lang: Lang): Promise<{ extension: 'png' | 'svg'; blob: Blob }> {
-  const element = document.querySelector('.flow-wrap') as HTMLElement | null;
+async function buildGraphElementFile(element: HTMLElement | null, lang: Lang): Promise<{ extension: 'png' | 'svg'; blob: Blob }> {
   if (!element) throw new Error('Graph element was not found.');
 
   if (document.fonts?.ready) {
@@ -537,9 +537,9 @@ async function buildGraphElementFile(lang: Lang): Promise<{ extension: 'png' | '
   }
 }
 
-async function saveGraphElementAsPng(lang: Lang) {
+async function saveGraphElementAsPng(element: HTMLElement | null, lang: Lang) {
   const timestamp = graphPngTimestamp();
-  const file = await buildGraphElementFile(lang);
+  const file = await buildGraphElementFile(element, lang);
   downloadBlob(file.blob, 'alchemy-factory-calculator-graph-live-' + timestamp + '.' + file.extension);
 }
 
@@ -562,8 +562,9 @@ function GraphControls({ lang, isInteractive, onToggleInteractive }: GraphContro
   );
 }
 
-export function GraphTab({ lang, result, settings, completedGraphNodeIds, onToggleCompleted, focusRequest, debug = false }: GraphTabProps) {
+export function GraphTab({ lang, result, settings, completedGraphNodeIds, onToggleCompleted, focusRequest, captureId = 'graph', debug = false }: GraphTabProps) {
   const flowRef = useRef<ReactFlowInstance | null>(null);
+  const graphElementRef = useRef<HTMLDivElement | null>(null);
   const latestLayoutId = useRef(0);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -579,12 +580,14 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
     [result],
   );
   useEffect(() => {
-    const onSaveGraph = () => {
-      void saveGraphElementAsPng(lang);
+    const onSaveGraph = (event: Event) => {
+      const requestedCaptureId = (event as CustomEvent<{ captureId?: string }>).detail?.captureId;
+      if (requestedCaptureId && requestedCaptureId !== captureId) return;
+      void saveGraphElementAsPng(graphElementRef.current, lang);
     };
     window.addEventListener('alchemyfactory:save-live-graph', onSaveGraph);
     return () => window.removeEventListener('alchemyfactory:save-live-graph', onSaveGraph);
-  }, [lang]);
+  }, [captureId, lang]);
 
   useEffect(() => {
     const onCaptureGraph = (event: Event) => {
@@ -592,12 +595,14 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
         resolve?: (file: { extension: 'png' | 'svg'; blob: Blob }) => void;
         reject?: (error: unknown) => void;
       }>).detail;
+      const requestedCaptureId = (event as CustomEvent<{ captureId?: string }>).detail?.captureId;
+      if (requestedCaptureId && requestedCaptureId !== captureId) return;
       if (!detail?.resolve) return;
-      void buildGraphElementFile(lang).then(detail.resolve, detail.reject);
+      void buildGraphElementFile(graphElementRef.current, lang).then(detail.resolve, detail.reject);
     };
     window.addEventListener('alchemyfactory:capture-live-graph', onCaptureGraph);
     return () => window.removeEventListener('alchemyfactory:capture-live-graph', onCaptureGraph);
-  }, [lang]);
+  }, [captureId, lang]);
   const raw = useMemo(() => buildFlowGraph(graphResult, lang, settings, {}), [graphResult, lang, settings]);
 
   useEffect(() => {
@@ -678,7 +683,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
 
   return (
     <div className="graph-tab">
-      <div className="flow-wrap">
+      <div className="flow-wrap" ref={graphElementRef}>
         <ReactFlow
           nodes={nodes}
           edges={edges}

@@ -68,6 +68,7 @@ export function DebugGraphTab({ lang, result, settings, completedGraphNodeIds, o
           completedGraphNodeIds={completedGraphNodeIds}
           onToggleCompleted={onToggleCompleted}
           focusRequest={focusRequest}
+          captureId="debug"
           debug
         />
       </div>
