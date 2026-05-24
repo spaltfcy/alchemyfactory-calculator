@@ -1,4 +1,4 @@
-import type { LocalizedText } from '../types';
+import type { LocalizedText, ProductionTarget } from '../types';
 
 export type CauldronDataStatus = 'unverified' | 'verified' | 'conflict';
 export type CauldronObservedStatus = 'todo' | 'matched' | 'mismatch' | 'unknown';
@@ -83,6 +83,7 @@ export type CauldronTargetPlan = {
 };
 
 export type CauldronState = {
+  targets: ProductionTarget[];
   inputItemIds: CauldronInputTuple;
   machineId: CauldronMachineId;
   candidateIndex: number;

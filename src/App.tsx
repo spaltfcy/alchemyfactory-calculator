@@ -16,12 +16,13 @@ import { RecipeSettingsTab } from './components/RecipeSettingsTab';
 import { AboutTab } from './components/AboutTab';
 import { DebugTab } from './components/DebugTab';
 import { CauldronTab } from './components/CauldronTab';
+import { CauldronOutputSettings } from './components/CauldronOutputSettings';
 import { formatCopper, formatNumber } from './utils/format';
 import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.3';
+const APP_VERSION = '0.10.4';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -235,7 +236,7 @@ export function App() {
   const safeTransitionRef = useRef({ previousSafeMode: runtimeFlags.safeMode, reloading: false });
   const calculationSettingsCacheRef = useRef<{ key: string; settings: AppSettings } | null>(null);
   const lang = state.language;
-  const showSidebar = state.activeTab === 'graph' || state.activeTab === 'graphDebug' || state.activeTab === 'table';
+  const showSidebar = state.activeTab === 'graph' || state.activeTab === 'graphDebug' || state.activeTab === 'table' || state.activeTab === 'cauldron';
 
   function addUserMessage(input: UserMessageInput): UserMessageLog {
     const message = createUserMessage(input);
@@ -601,14 +602,23 @@ export function App() {
       <main className={showSidebar ? 'main-layout' : 'main-layout main-layout-full'}>
         {showSidebar && (
           <aside className="side-pane">
-            <ItemOutputSettings
-              lang={lang}
-              targets={state.targets}
-              targetDefaults={state.settings.targetDefaults}
-              onChange={(targets) => setState((current) => ({ ...current, targets }))}
-              onFocusGraphNode={focusGraphNode}
-              onUserMessage={addUserMessage}
-            />
+            {state.activeTab === 'cauldron' ? (
+              <CauldronOutputSettings
+                lang={lang}
+                targets={state.cauldronState.targets}
+                targetDefaults={state.settings.targetDefaults}
+                onChange={(targets) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, targets } }))}
+              />
+            ) : (
+              <ItemOutputSettings
+                lang={lang}
+                targets={state.targets}
+                targetDefaults={state.settings.targetDefaults}
+                onChange={(targets) => setState((current) => ({ ...current, targets }))}
+                onFocusGraphNode={focusGraphNode}
+                onUserMessage={addUserMessage}
+              />
+            )}
           </aside>
         )}
 
@@ -647,8 +657,10 @@ export function App() {
             <CauldronTab
               lang={lang}
               state={state.cauldronState}
-              appVersion={APP_VERSION}
-              onChange={(cauldronState) => setState((current) => ({ ...current, cauldronState }))}
+              settings={calculationSettings}
+              abilities={state.abilities}
+              recipePreferences={state.recipePreferences}
+              surplusPolicies={state.surplusPolicies}
             />
           )}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}

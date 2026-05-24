@@ -4,7 +4,7 @@ import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
 import { DEFAULT_PARADOX_SETTINGS } from './data/paradox';
 
 export const DEFAULT_STATE: AppState = {
-  version: 29,
+  version: 30,
   language: 'ja',
   activeTab: 'graph',
   tablePreferences: {
@@ -89,6 +89,16 @@ export const DEFAULT_STATE: AppState = {
   nodeNotes: {},
 
   cauldronState: {
+    targets: [
+      {
+        id: 'cauldron-target-1',
+        enabled: true,
+        recipeId: '',
+        outputItemId: 'philosophers_stone',
+        mode: 'rate',
+        value: 1,
+      },
+    ],
     inputItemIds: ['charcoal_powder', 'quicklime_powder', 'impure_copper_powder'],
     machineId: 'cauldron',
     candidateIndex: 0,

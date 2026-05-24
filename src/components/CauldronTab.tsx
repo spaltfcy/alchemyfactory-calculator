@@ -1,131 +1,187 @@
-import type { ChangeEvent } from 'react';
 import { useMemo } from 'react';
-import { CAULDRON_TARGET_ITEM_IDS, CAULDRON_TARGETS } from '../cauldron/cauldronData';
-import { buildCauldronGraphResult, cauldronGraphSummaryText, cauldronRequestFromState } from '../cauldron/cauldronGraph';
-import { generateCauldronCandidatesForOutput } from '../cauldron/cauldronMath';
-import type { CauldronMachineId, CauldronState } from '../cauldron/cauldronTypes';
-import { itemById } from '../data/items';
-import { DEFAULT_STATE } from '../defaultState';
-import type { Lang } from '../types';
-import { text } from '../i18n';
-import { formatNumber } from '../utils/format';
+import { CAULDRON_TARGETS } from '../cauldron/cauldronData';
+import { buildCauldronGraphResult } from '../cauldron/cauldronGraph';
+import type { CauldronState } from '../cauldron/cauldronTypes';
+import { calculate } from '../engine/calculate';
+import type { CalculationResult, ItemStat } from '../engine/calculate';
+import type { AbilitySettings, AppSettings, Lang, ProductionTarget } from '../types';
 import { GraphTab } from './GraphTab';
 
 type CauldronTabProps = {
   lang: Lang;
   state: CauldronState;
-  onChange: (nextState: CauldronState) => void;
-  appVersion: string;
+  settings: AppSettings;
+  abilities: AbilitySettings;
+  recipePreferences: Record<string, string>;
+  surplusPolicies: Record<string, string>;
 };
 
-function labelForItem(itemId: string, lang: Lang): string {
-  return itemById[itemId] ? text(itemById[itemId].name, lang) : itemId;
+const EMPTY_TOTALS: CalculationResult['totals'] = {
+  initialCostCopper: 0,
+  runningCostCopperPerMin: 0,
+  purchaseCostCopperPerMin: 0,
+  revenueCopperPerMin: 0,
+  profitCopperPerMin: 0,
+  conveyorItemsPerMinute: 60,
+  productionSpeedMultiplier: 1,
+  heatConsumptionMultiplier: 1,
+  sellPriceMultiplier: 1,
+  fuelHeatValueMultiplier: 1,
+  fertilizerNutritionMultiplier: 1,
+  heatRequiredPerMin: 0,
+  fuelRequiredPerMin: 0,
+  fuelItemId: 'charcoal_powder',
+  fertilizerNutrientsRequiredPerMin: 0,
+  fertilizerRequiredPerMin: 0,
+  fertilizerItemId: 'basic_fertilizer',
+};
+
+const NUMERIC_ITEM_STAT_KEYS: Array<keyof Omit<ItemStat, 'itemId'>> = [
+  'requested',
+  'consumed',
+  'produced',
+  'purchased',
+  'initialPurchased',
+  'reused',
+  'surplus',
+  'discarded',
+  'targetRequested',
+  'targetActual',
+  'purchaseCostCopperPerMin',
+  'initialCostCopper',
+  'revenueCopperPerMin',
+];
+
+function emptyResult(settings: AppSettings): CalculationResult {
+  return {
+    itemStats: {},
+    recipeStats: {},
+    flows: [],
+    conveyorEdges: [],
+    outputEdges: [],
+    warnings: [],
+    calculationStatus: 'ok',
+    errorSummaries: [],
+    totals: {
+      ...EMPTY_TOTALS,
+      conveyorItemsPerMinute: settings.targetDefaults ? EMPTY_TOTALS.conveyorItemsPerMinute : EMPTY_TOTALS.conveyorItemsPerMinute,
+      calculationMs: 0,
+      queueSteps: 0,
+      queueMax: 0,
+    },
+  };
 }
 
-function numberText(value: number | undefined, digits = 3): string {
-  if (value === undefined || !Number.isFinite(value)) return '-';
-  return formatNumber(value, digits);
+function addItemStats(target: Record<string, ItemStat>, source: Record<string, ItemStat>): void {
+  for (const [itemId, stat] of Object.entries(source)) {
+    if (!target[itemId]) target[itemId] = { ...stat, itemId };
+    else {
+      for (const key of NUMERIC_ITEM_STAT_KEYS) target[itemId][key] += stat[key];
+    }
+  }
 }
 
-function machineLabel(machineId: CauldronMachineId, lang: Lang): string {
-  if (machineId === 'advanced_cauldron') return lang === 'ja' ? '高性能錬金釜' : 'Advanced Cauldron';
-  return lang === 'ja' ? '錬金釜' : 'Cauldron';
+function uniqueRecipeStats(recipeStats: CalculationResult['recipeStats'], index: number): CalculationResult['recipeStats'] {
+  const next: CalculationResult['recipeStats'] = {};
+  for (const [recipeId, stat] of Object.entries(recipeStats)) {
+    const id = index === 0 ? recipeId : `${recipeId}:target${index + 1}`;
+    next[id] = { ...stat, recipeId: id };
+  }
+  return next;
 }
 
-export function CauldronTab({ lang, state, onChange, appVersion }: CauldronTabProps) {
-  const build = useMemo(() => buildCauldronGraphResult(cauldronRequestFromState(state), state), [state]);
-  const candidates = useMemo(
-    () => generateCauldronCandidatesForOutput(state.candidateTargetItemId, {
-      allowDuplicateInputs: state.allowDuplicateInputs,
+function uniqueFlows(flows: CalculationResult['flows'], index: number): CalculationResult['flows'] {
+  if (index === 0) return flows;
+  return flows.map((flow) => ({
+    ...flow,
+    id: `${flow.id}:target${index + 1}`,
+    from: flow.from.type === 'recipe' ? { ...flow.from, recipeId: `${flow.from.recipeId}:target${index + 1}` } : flow.from,
+    to: flow.to.type === 'recipe' ? { ...flow.to, recipeId: `${flow.to.recipeId}:target${index + 1}` } : flow.to,
+  }));
+}
+
+function mergeResults(results: CalculationResult[], settings: AppSettings): CalculationResult {
+  if (results.length === 0) return emptyResult(settings);
+  const merged = emptyResult(settings);
+  merged.calculationStatus = results.some((result) => result.calculationStatus === 'invalid') ? 'invalid' : 'ok';
+
+  results.forEach((result, index) => {
+    addItemStats(merged.itemStats, result.itemStats);
+    Object.assign(merged.recipeStats, uniqueRecipeStats(result.recipeStats, index));
+    merged.flows.push(...uniqueFlows(result.flows, index));
+    merged.conveyorEdges.push(...result.conveyorEdges);
+    merged.outputEdges.push(...result.outputEdges);
+    merged.warnings.push(...result.warnings);
+    merged.errorSummaries?.push(...(result.errorSummaries ?? []));
+    merged.totals.initialCostCopper += result.totals.initialCostCopper ?? 0;
+    merged.totals.runningCostCopperPerMin += result.totals.runningCostCopperPerMin ?? 0;
+    merged.totals.purchaseCostCopperPerMin += result.totals.purchaseCostCopperPerMin ?? 0;
+    merged.totals.revenueCopperPerMin += result.totals.revenueCopperPerMin ?? 0;
+    merged.totals.profitCopperPerMin += result.totals.profitCopperPerMin ?? 0;
+    merged.totals.heatRequiredPerMin += result.totals.heatRequiredPerMin ?? 0;
+    merged.totals.fuelRequiredPerMin += result.totals.fuelRequiredPerMin ?? 0;
+    merged.totals.fertilizerNutrientsRequiredPerMin += result.totals.fertilizerNutrientsRequiredPerMin ?? 0;
+    merged.totals.fertilizerRequiredPerMin += result.totals.fertilizerRequiredPerMin ?? 0;
+  });
+
+  return merged;
+}
+
+function targetRate(target: ProductionTarget): { targetRatePerMinute?: number; machineCount?: number } {
+  if (target.mode === 'machines') return { machineCount: Math.max(0, Number(target.value) || 0) };
+  return { targetRatePerMinute: Math.max(0, Number(target.value) || 0) };
+}
+
+function buildCauldronTabResult(
+  state: CauldronState,
+  settings: AppSettings,
+  abilities: AbilitySettings,
+  recipePreferences: Record<string, string>,
+  surplusPolicies: Record<string, string>,
+): CalculationResult {
+  const enabledTargets = state.targets.filter((target) => (target.enabled ?? true) !== false && target.outputItemId);
+  const normalTargets: ProductionTarget[] = [];
+  const results: CalculationResult[] = [];
+
+  enabledTargets.forEach((target) => {
+    if (!CAULDRON_TARGETS[target.outputItemId]) {
+      normalTargets.push({ ...target, recipeId: target.recipeId || '' });
+      return;
+    }
+
+    const built = buildCauldronGraphResult({
+      enabled: true,
+      machineId: state.machineId,
+      targetItemId: target.outputItemId,
+      candidateIndex: state.candidateIndex,
       maxCandidates: state.maxCandidates,
-    }),
-    [state.candidateTargetItemId, state.allowDuplicateInputs, state.maxCandidates],
+      allowDuplicateInputs: state.allowDuplicateInputs,
+      ...targetRate(target),
+    }, state);
+    results.push(built.result);
+  });
+
+  if (normalTargets.length > 0) {
+    results.unshift(calculate({ targets: normalTargets, settings, abilities, recipePreferences, surplusPolicies }));
+  }
+
+  return mergeResults(results, settings);
+}
+
+export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies }: CauldronTabProps) {
+  const result = useMemo(
+    () => buildCauldronTabResult(state, settings, abilities, recipePreferences, surplusPolicies),
+    [state, settings, abilities, recipePreferences, surplusPolicies],
   );
-  const selectedIndex = Math.min(state.candidateIndex, Math.max(0, candidates.length - 1));
-  function patch(next: Partial<CauldronState>): void {
-    onChange({ ...state, ...next });
-  }
-
-  function onTargetChange(event: ChangeEvent<HTMLSelectElement>): void {
-    patch({ candidateTargetItemId: event.target.value, candidateIndex: 0 });
-  }
-
-  function onMachineChange(event: ChangeEvent<HTMLSelectElement>): void {
-    patch({ machineId: event.target.value as CauldronMachineId });
-  }
 
   return (
-    <div className="cauldron-tab cauldron-graph-tab">
-      <section className="settings-panel cauldron-toolbar">
-        <div className="cauldron-toolbar-main">
-          <div>
-            <h2>{lang === 'ja' ? '錬金釜' : 'Cauldron'}</h2>
-            <p>
-              {lang === 'ja'
-                ? '通常グラフと同じ描画経路で、錬金釜候補だけを独立表示します。通常solver・通常グラフには接続していません。'
-                : 'Shows cauldron candidates through the same graph renderer while keeping them isolated from the normal solver and graph.'}
-            </p>
-          </div>
-          <div className="cauldron-version">v{appVersion}</div>
-        </div>
-
-        <div className="settings-form-grid cauldron-toolbar-grid">
-          <label className="form-field">
-            <span>{lang === 'ja' ? '出力' : 'Output'}</span>
-            <select value={state.candidateTargetItemId} onChange={onTargetChange}>
-              {CAULDRON_TARGET_ITEM_IDS.map((itemId) => (
-                <option key={itemId} value={itemId}>
-                  {labelForItem(itemId, lang)} / {numberText(CAULDRON_TARGETS[itemId].targetValue, 3)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="form-field">
-            <span>{lang === 'ja' ? '機械' : 'Machine'}</span>
-            <select value={state.machineId} onChange={onMachineChange}>
-              <option value="cauldron">{machineLabel('cauldron', lang)}</option>
-              <option value="advanced_cauldron">{machineLabel('advanced_cauldron', lang)}</option>
-            </select>
-          </label>
-
-          <label className="form-field">
-            <span>{lang === 'ja' ? '候補' : 'Candidate'}</span>
-            <select value={selectedIndex} onChange={(event) => patch({ candidateIndex: Number(event.target.value) || 0 })}>
-              {candidates.map((candidate, index) => (
-                <option key={candidate.id} value={index}>
-                  #{index + 1} {candidate.inputItemIds.map((itemId) => labelForItem(itemId, lang)).join(' + ')}
-                </option>
-              ))}
-              {candidates.length === 0 && <option value={0}>{lang === 'ja' ? '候補なし' : 'No candidate'}</option>}
-            </select>
-          </label>
-
-          <label className="form-field cauldron-small-field">
-            <span>{lang === 'ja' ? '最大件数' : 'Max'}</span>
-            <input type="number" min={1} max={500} value={state.maxCandidates} onChange={(event) => patch({ maxCandidates: Number(event.target.value) || 1, candidateIndex: 0 })} />
-          </label>
-
-          <label className="checkbox-control cauldron-checkbox">
-            <input type="checkbox" checked={state.allowDuplicateInputs} onChange={(event) => patch({ allowDuplicateInputs: event.target.checked, candidateIndex: 0 })} />
-            <span>{lang === 'ja' ? '重複入力' : 'Duplicate inputs'}</span>
-          </label>
-        </div>
-
-        <div className="cauldron-toolbar-summary">
-          <span>{cauldronGraphSummaryText(build, lang)}</span>
-          <span>{lang === 'ja' ? '候補' : 'Candidate'} {selectedIndex + 1}/{Math.max(1, candidates.length)}</span>
-        </div>
-      </section>
-
-      <GraphTab
-        lang={lang}
-        result={build.result}
-        settings={DEFAULT_STATE.settings}
-        completedGraphNodeIds={{}}
-        onToggleCompleted={() => undefined}
-        debug={false}
-      />
-    </div>
+    <GraphTab
+      lang={lang}
+      result={result}
+      settings={settings}
+      completedGraphNodeIds={{}}
+      onToggleCompleted={() => undefined}
+      debug={false}
+    />
   );
 }

@@ -1,5 +1,5 @@
 import type { CalculationResult, CalculatedFlow, ItemStat, RecipeStat } from '../engine/calculate';
-import type { Lang } from '../types';
+import type { Lang, ProductionTarget } from '../types';
 import { itemById } from '../data/items';
 import { text } from '../i18n';
 import { CAULDRON_TARGETS } from './cauldronData';
@@ -15,6 +15,8 @@ export type CauldronGraphRequest = {
   candidateIndex?: number;
   maxCandidates?: number;
   allowDuplicateInputs?: boolean;
+  targetRatePerMinute?: number;
+  machineCount?: number;
 };
 
 export type NormalizedCauldronGraphRequest = {
@@ -25,6 +27,8 @@ export type NormalizedCauldronGraphRequest = {
   candidateIndex: number;
   maxCandidates: number;
   allowDuplicateInputs: boolean;
+  targetRatePerMinute?: number;
+  machineCount?: number;
 };
 
 export type CauldronGraphBuildSummary = {
@@ -106,6 +110,8 @@ export function normalizeCauldronGraphRequest(value: unknown, fallback?: Partial
     candidateIndex: clampInteger(source.candidateIndex ?? fallback?.candidateIndex, 0, 0, 9999),
     maxCandidates: clampInteger(source.maxCandidates ?? fallback?.maxCandidates, 20, 1, 500),
     allowDuplicateInputs: source.allowDuplicateInputs ?? fallback?.allowDuplicateInputs ?? true,
+    targetRatePerMinute: typeof source.targetRatePerMinute === 'number' && Number.isFinite(source.targetRatePerMinute) && source.targetRatePerMinute > 0 ? source.targetRatePerMinute : undefined,
+    machineCount: typeof source.machineCount === 'number' && Number.isFinite(source.machineCount) && source.machineCount > 0 ? source.machineCount : undefined,
   };
 }
 
@@ -226,7 +232,9 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
   const outputItemId = prediction.outputItemId;
   const target = outputItemId ? CAULDRON_TARGETS[outputItemId] : undefined;
   const timeSec = selectedCandidate?.targetTimeSec ?? target?.timeSec;
-  const outputPerMinute = timeSec && timeSec > 0 ? 60 / timeSec : undefined;
+  const outputPerMachinePerMinute = timeSec && timeSec > 0 ? 60 / timeSec : undefined;
+  const targetMachines = request.machineCount ?? (request.targetRatePerMinute !== undefined && outputPerMachinePerMinute !== undefined ? request.targetRatePerMinute / outputPerMachinePerMinute : 1);
+  const outputPerMinute = outputPerMachinePerMinute !== undefined ? outputPerMachinePerMinute * targetMachines : undefined;
   const validation = validateCauldronBuild(request, prediction, selectedCandidate, candidates, outputItemId, outputPerMinute);
   const canBuildTimedGraph = validation.status === 'ok' && outputItemId !== undefined && outputPerMinute !== undefined;
   const inputCounts = countInputs(prediction.inputItemIds);
@@ -238,7 +246,7 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
 
   if (canBuildTimedGraph) {
     for (const [itemId, amount] of Object.entries(inputCounts)) {
-      const rate = amount * outputPerMinute;
+        const rate = amount * outputPerMinute;
       inputRates[itemId] = rate;
       const stat = addStat(itemStats, itemId);
       stat.consumed += rate;
@@ -279,11 +287,11 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
     recipeId,
     machineId: request.machineId,
     displayName: buildRecipeDisplayName(outputItemId),
-    theoreticalMachines: canBuildTimedGraph ? 1 : 0,
-    actualMachines: canBuildTimedGraph ? 1 : 0,
+    theoreticalMachines: canBuildTimedGraph ? targetMachines : 0,
+    actualMachines: canBuildTimedGraph ? targetMachines : 0,
     runsPerMinute: canBuildTimedGraph ? outputPerMinute : 0,
     positiveNetProductionRate: canBuildTimedGraph ? outputPerMinute : 0,
-    perMachineProductionRate: canBuildTimedGraph ? outputPerMinute : 0,
+    perMachineProductionRate: canBuildTimedGraph ? outputPerMachinePerMinute ?? 0 : 0,
     inputRates,
     outputRates,
     netRates: { ...outputRates },
