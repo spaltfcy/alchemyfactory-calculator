@@ -2,11 +2,12 @@ import { useMemo, type ReactNode } from 'react';
 import { CAULDRON_TARGETS } from '../cauldron/cauldronData';
 import { buildCauldronGraphResult, cauldronRequestForTarget } from '../cauldron/cauldronGraph';
 import { generateCauldronCandidatesForOutput } from '../cauldron/cauldronMath';
-import { analyzeCauldronTargets, cauldronItemName, parseItemIdsText } from '../cauldron/cauldronSearch';
-import type { CauldronPlanItem, CauldronTargetPlan, CauldronState } from '../cauldron/cauldronTypes';
+import { optimizeCauldronTarget } from '../cauldron/cauldronOptimizer';
+import { cauldronItemName, parseItemIdsText } from '../cauldron/cauldronSearch';
+import type { CauldronOptimizationResult, CauldronOptimizedPlan, CauldronPlanItem, CauldronTargetPlan, CauldronState } from '../cauldron/cauldronTypes';
 import { calculate } from '../engine/calculate';
 import type { CalculationResult, ItemStat } from '../engine/calculate';
-import type { AbilitySettings, AppSettings, Lang, ProductionTarget } from '../types';
+import type { AbilitySettings, AppSettings, Lang, ProductionTarget, SurplusPolicy } from '../types';
 import { chooseRecipeForItem } from '../engine/itemSourceResolver';
 import { GraphTab, type GraphFocusRequest } from './GraphTab';
 
@@ -16,7 +17,7 @@ type CauldronTabProps = {
   settings: AppSettings;
   abilities: AbilitySettings;
   recipePreferences: Record<string, string>;
-  surplusPolicies: Record<string, string>;
+  surplusPolicies: Record<string, SurplusPolicy>;
   completedGraphNodeIds: Record<string, boolean>;
   onToggleCompleted: (nodeId: string) => void;
   focusRequest?: GraphFocusRequest;
@@ -275,20 +276,135 @@ function CauldronRecipePlanPanel({ lang, plan }: { lang: Lang; plan: CauldronTar
   );
 }
 
+function optimizedStatusText(status: CauldronOptimizedPlan['status'], lang: Lang): string {
+  const labels: Record<CauldronOptimizedPlan['status'], { ja: string; en: string }> = {
+    perfect: { ja: '完全閉鎖', en: 'Perfect closed' },
+    closed: { ja: '閉鎖候補', en: 'Closed candidate' },
+    warning: { ja: '警告あり', en: 'Warnings' },
+    blocked: { ja: '未完結', en: 'Blocked' },
+  };
+  return labels[status][lang];
+}
+
+function formatCopperValue(value: number, lang: Lang): string {
+  if (!Number.isFinite(value) || Math.abs(value) <= 0.000001) return lang === 'ja' ? '0 銅' : '0 copper';
+  const rounded = Math.round(value * 100) / 100;
+  return lang === 'ja' ? `${formatPlanAmount(rounded)} 銅` : `${formatPlanAmount(rounded)} copper`;
+}
+
+function formatCount(value: number, lang: Lang): string {
+  return lang === 'ja' ? `${value} 件` : `${value}`;
+}
+
+function metricValue(ok: boolean, lang: Lang): string {
+  return ok ? (lang === 'ja' ? 'OK' : 'OK') : (lang === 'ja' ? '要確認' : 'Check');
+}
+
+function planInputText(plan: CauldronOptimizedPlan, lang: Lang): string {
+  if (!plan.selectedInputItemIds) return plan.source === 'normal' ? (lang === 'ja' ? '通常レシピ' : 'Normal recipe') : '-';
+  return plan.selectedInputItemIds.map((itemId) => cauldronItemName(itemId, lang)).join(' + ');
+}
+
+function CauldronOptimizedPlanPanel({ lang, optimization }: { lang: Lang; optimization: CauldronOptimizationResult }) {
+  const bestPlan = optimization.bestPlan;
+  if (!bestPlan) {
+    return (
+      <section className="cauldron-plan-panel cauldron-plan-panel-blocked">
+        <div className="cauldron-plan-header">
+          <div>
+            <h2>{lang === 'ja' ? '最適レシピ' : 'Best recipe'}</h2>
+            <p>{optimization.targetLabel[lang]}</p>
+          </div>
+          <span>{lang === 'ja' ? '候補なし' : 'No candidate'}</span>
+        </div>
+        <p className="cauldron-plan-note">{lang === 'ja' ? '錬金釜候補または通常レシピが見つかりません。' : 'No cauldron candidate or normal recipe was found.'}</p>
+      </section>
+    );
+  }
+
+  const metrics = bestPlan.metrics;
+  const metricRows = [
+    [lang === 'ja' ? '閉鎖' : 'Closed', metricValue(metrics.selfContained, lang)],
+    [lang === 'ja' ? '余剰' : 'Surplus', metrics.noSurplus ? (lang === 'ja' ? 'なし' : 'None') : formatCount(metrics.surplusItemIds.length, lang)],
+    [lang === 'ja' ? '初期費用' : 'Startup cost', formatCopperValue(metrics.startupCostCopper, lang)],
+    [lang === 'ja' ? '常時供給' : 'Constant supply', metrics.hasConstantSupply ? formatCount(metrics.purchasedItemIds.length + metrics.externalItemIds.length, lang) : (lang === 'ja' ? 'なし' : 'None')],
+    [lang === 'ja' ? '工程' : 'Recipes', String(metrics.recipeCount)],
+    [lang === 'ja' ? 'エッジ' : 'Edges', String(metrics.edgeCount)],
+    [lang === 'ja' ? '段数' : 'Depth', String(metrics.depth)],
+    [lang === 'ja' ? '燃料/肥料' : 'Fuel/Fertilizer', `${formatPlanAmount(metrics.fuelRequiredPerMin)} / ${formatPlanAmount(metrics.fertilizerRequiredPerMin)}`],
+  ];
+
+  return (
+    <section className={`cauldron-plan-panel cauldron-plan-panel-${bestPlan.status}`}>
+      <div className="cauldron-plan-header">
+        <div>
+          <h2>{lang === 'ja' ? '最適レシピ' : 'Best recipe'}</h2>
+          <p>{bestPlan.title[lang]}</p>
+        </div>
+        <span>{optimizedStatusText(bestPlan.status, lang)}</span>
+      </div>
+      <p className="cauldron-plan-summary">{bestPlan.summary[lang]}</p>
+      <div className="cauldron-plan-metrics">
+        {metricRows.map(([label, value]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+      {bestPlan.issues.length > 0 && (
+        <ul className="cauldron-plan-issues">
+          {bestPlan.issues.map((issue) => (
+            <li key={`${issue.code}:${issue.itemIds?.join('|') ?? issue.message.en}`} className={`cauldron-plan-issue-${issue.severity}`}>
+              {issue.message[lang]}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="cauldron-candidate-list cauldron-ranked-list">
+        <h3>{lang === 'ja' ? '候補ランキング' : 'Candidate ranking'}</h3>
+        {optimization.plans.slice(0, 5).map((plan) => (
+          <div key={plan.id} className={`cauldron-candidate-row cauldron-ranked-row cauldron-ranked-row-${plan.status}`}>
+            <strong>{plan.rank}</strong>
+            <span>
+              <b>{optimizedStatusText(plan.status, lang)}</b>
+              {' / '}
+              {planInputText(plan, lang)}
+            </span>
+            <em>{lang === 'ja' ? `工程 ${plan.metrics.recipeCount}` : `${plan.metrics.recipeCount} recipes`}</em>
+          </div>
+        ))}
+      </div>
+      <ul className="cauldron-plan-tree cauldron-plan-root">{renderPlanItem(bestPlan.root, lang)}</ul>
+    </section>
+  );
+}
+
 export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies, completedGraphNodeIds, onToggleCompleted, focusRequest }: CauldronTabProps) {
   const result = useMemo(
     () => buildCauldronTabResult(state, settings, abilities, recipePreferences, surplusPolicies),
     [state, settings, abilities, recipePreferences, surplusPolicies],
   );
   const targetItemId = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId)?.outputItemId ?? state.candidateTargetItemId;
-  const plan = useMemo(
-    () => analyzeCauldronTargets([targetItemId], parseItemIdsText(state.startupItemIdsText), 6)[0],
-    [state.startupItemIdsText, targetItemId],
+  const targetRatePerMinute = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId === targetItemId)?.value ?? 1;
+  const optimization = useMemo(
+    () => optimizeCauldronTarget({
+      targetItemId,
+      targetRatePerMinute: Math.max(0.000001, Number(targetRatePerMinute) || 1),
+      state,
+      settings,
+      abilities,
+      recipePreferences,
+      surplusPolicies,
+      startupItemIds: parseItemIdsText(state.startupItemIdsText),
+      maxCandidates: Math.max(30, state.maxCandidates),
+    }),
+    [abilities, recipePreferences, settings, state, surplusPolicies, targetItemId, targetRatePerMinute],
   );
 
   return (
     <div className="cauldron-tab">
-      {plan && <CauldronRecipePlanPanel lang={lang} plan={plan} />}
+      <CauldronOptimizedPlanPanel lang={lang} optimization={optimization} />
       <div className="cauldron-graph-region">
         <GraphTab
           lang={lang}

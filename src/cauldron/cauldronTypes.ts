@@ -82,6 +82,76 @@ export type CauldronTargetPlan = {
   cauldronCandidateItemIds: string[];
 };
 
+export type CauldronOptimizedPlanStatus = 'perfect' | 'closed' | 'warning' | 'blocked';
+
+export type CauldronOptimizedPlanSource = 'cauldron' | 'normal';
+
+export type CauldronOptimizedPlanIssue = {
+  code:
+    | 'COMPLETE_CLOSED'
+    | 'MISSING'
+    | 'CONSTANT_SUPPLY'
+    | 'SURPLUS'
+    | 'SELLABLE_SURPLUS'
+    | 'COIN_SURPLUS'
+    | 'INITIAL_INPUT'
+    | 'TIME_UNVERIFIED';
+  severity: 'info' | 'warning' | 'error';
+  message: LocalizedText;
+  itemIds?: string[];
+};
+
+export type CauldronOptimizedPlanMetrics = {
+  selfContained: boolean;
+  noSurplus: boolean;
+  hasConstantSupply: boolean;
+  hasMissing: boolean;
+  hasBlockingSurplus: boolean;
+  startupCostCopper: number;
+  purchaseCostCopperPerMin: number;
+  initialItemIds: string[];
+  purchasedItemIds: string[];
+  externalItemIds: string[];
+  unresolvedItemIds: string[];
+  surplusItemIds: string[];
+  coinSurplusItemIds: string[];
+  sellableSurplusItemIds: string[];
+  blockingSurplusItemIds: string[];
+  recipeCount: number;
+  edgeCount: number;
+  depth: number;
+  machineCount: number;
+  heatRequiredPerMin: number;
+  fuelRequiredPerMin: number;
+  fertilizerRequiredPerMin: number;
+};
+
+export type CauldronOptimizedPlan = {
+  id: string;
+  rank: number;
+  source: CauldronOptimizedPlanSource;
+  status: CauldronOptimizedPlanStatus;
+  score: number;
+  targetItemId: string;
+  targetLabel: LocalizedText;
+  title: LocalizedText;
+  summary: LocalizedText;
+  targetRatePerMinute: number;
+  selectedInputItemIds?: CauldronInputTuple;
+  cauldronCandidateId?: string;
+  cauldronDistanceRatio?: number;
+  root: CauldronPlanItem;
+  metrics: CauldronOptimizedPlanMetrics;
+  issues: CauldronOptimizedPlanIssue[];
+};
+
+export type CauldronOptimizationResult = {
+  targetItemId: string;
+  targetLabel: LocalizedText;
+  bestPlan?: CauldronOptimizedPlan;
+  plans: CauldronOptimizedPlan[];
+};
+
 export type CauldronState = {
   targets: ProductionTarget[];
   inputItemIds: CauldronInputTuple;

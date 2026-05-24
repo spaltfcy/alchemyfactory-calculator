@@ -2071,10 +2071,85 @@ a {
 
 .cauldron-plan-recipe,
 .cauldron-plan-reason,
+.cauldron-plan-summary,
 .cauldron-plan-note {
   margin: 0.2rem 0 0;
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+.cauldron-plan-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.45rem;
+  margin: 0.7rem 0;
+}
+
+.cauldron-plan-metrics div {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(44, 58, 80, 0.7);
+  border-radius: 8px;
+  background: rgba(8, 13, 21, 0.42);
+}
+
+.cauldron-plan-metrics span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.cauldron-plan-metrics strong {
+  font-size: 0.92rem;
+}
+
+.cauldron-plan-issues {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.65rem 0;
+  padding: 0;
+}
+
+.cauldron-plan-issues li {
+  list-style: none;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  background: rgba(8, 13, 21, 0.42);
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.cauldron-plan-issue-error {
+  border-left: 3px solid #ff8a8a;
+}
+
+.cauldron-plan-issue-warning {
+  border-left: 3px solid #f6c177;
+}
+
+.cauldron-plan-issue-info {
+  border-left: 3px solid #9fe870;
+}
+
+.cauldron-ranked-list {
+  margin-top: 0.7rem;
+}
+
+.cauldron-ranked-row span b {
+  color: var(--text);
+}
+
+.cauldron-ranked-row-perfect,
+.cauldron-ranked-row-closed {
+  border-color: rgba(159, 232, 112, 0.55);
+}
+
+.cauldron-ranked-row-warning {
+  border-color: rgba(246, 193, 119, 0.55);
+}
+
+.cauldron-ranked-row-blocked {
+  border-color: rgba(255, 138, 138, 0.55);
 }
 
 .cauldron-plan-item-missing > .cauldron-plan-item-head,
