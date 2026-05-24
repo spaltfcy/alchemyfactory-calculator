@@ -18,6 +18,7 @@ import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID, FERTILIZER_NUTRIENTS_PER_SEC_BY_ITEM_ID } from '../data/fertilizer';
 import { getEffectiveRecipeForCalculation, getEffectiveRecipeMachineId, getEffectiveRecipeTimeSec } from '../data/effectiveRecipes';
 import { safeCeil } from '../utils/format';
+import { flowTransportForItem } from './flowTransport';
 import { chooseRecipeForItem, isBuyableItem } from './itemSourceResolver';
 import type {
   CalculatedEndpoint,
@@ -27,7 +28,6 @@ import type {
   CalculationErrorSummary,
   CalculationResult,
   ConveyorEdgeStat,
-  FlowTransportKind,
   ItemStat,
   OutputEdgeStat,
   PlanWarning,
@@ -293,17 +293,6 @@ function recipeItemIds(recipe: Recipe): string[] {
   for (const input of recipe.inputs) if (input.kind !== 'paradoxableItem') ids.add(input.itemId);
   for (const output of recipe.outputs) ids.add(output.itemId);
   return [...ids];
-}
-
-function isPipelineItem(itemId: string): boolean {
-  if (itemId === 'steam') return true;
-  return (itemById[itemId]?.physicalState ?? 'solid') === 'liquid';
-}
-
-function flowTransportForItem(itemId: string, rate: number, conveyorItemsPerMinute: number): { belts: number; transportKind: FlowTransportKind; transportUnits: number } {
-  if (isPipelineItem(itemId)) return { belts: 1, transportKind: 'pipeline', transportUnits: 1 };
-  const belts = rate > EPS ? Math.max(1, safeCeil(rate / conveyorItemsPerMinute)) : 0;
-  return { belts, transportKind: 'belt', transportUnits: belts };
 }
 
 function endpointKey(endpoint: CalculatedEndpoint): string {

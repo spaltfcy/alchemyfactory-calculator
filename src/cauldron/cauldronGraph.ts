@@ -3,6 +3,7 @@ import type { Lang } from '../types';
 import { itemById } from '../data/items';
 import { text } from '../i18n';
 import { CAULDRON_TARGETS } from './cauldronData';
+import { flowTransportForItem } from '../engine/flowTransport';
 import { generateCauldronCandidatesForOutput, normalizeCauldronInputTuple, predictCauldron } from './cauldronMath';
 import type { CauldronCandidate, CauldronInputTuple, CauldronMachineId, CauldronPrediction, CauldronState } from './cauldronTypes';
 
@@ -141,6 +142,10 @@ function countInputs(inputItemIds: CauldronInputTuple): Record<string, number> {
   return counts;
 }
 
+function cauldronFlowTransport(itemId: string, rate: number): ReturnType<typeof flowTransportForItem> {
+  return flowTransportForItem(itemId, rate, EMPTY_TOTALS.conveyorItemsPerMinute);
+}
+
 function buildRecipeDisplayName(outputItemId: string | undefined): { ja: string; en: string } {
   if (!outputItemId) return { ja: '錬金釜候補', en: 'Cauldron candidate' };
   const label = itemLabel(outputItemId);
@@ -237,15 +242,16 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
       inputRates[itemId] = rate;
       const stat = addStat(itemStats, itemId);
       stat.consumed += rate;
+      const transport = cauldronFlowTransport(itemId, rate);
       flows.push({
         id: `cauldron-flow:${recipeId}:in:${itemId}`,
         from: { type: 'itemSource', itemId, sourceMode: 'external' },
         to: { type: 'recipe', recipeId },
         itemId,
         rate,
-        belts: 0,
-        transportKind: 'belt',
-        transportUnits: 0,
+        belts: transport.belts,
+        transportKind: transport.transportKind,
+        transportUnits: transport.transportUnits,
         role: 'material',
       });
     }
@@ -255,15 +261,16 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
     outputStat.produced += outputPerMinute;
     outputStat.targetRequested = outputPerMinute;
     outputStat.targetActual = outputPerMinute;
+    const transport = cauldronFlowTransport(outputItemId, outputPerMinute);
     flows.push({
       id: `cauldron-flow:${recipeId}:out:${outputItemId}`,
       from: { type: 'recipe', recipeId },
       to: { type: 'itemSink', itemId: outputItemId, sinkMode: 'final' },
       itemId: outputItemId,
       rate: outputPerMinute,
-      belts: 0,
-      transportKind: 'belt',
-      transportUnits: 0,
+      belts: transport.belts,
+      transportKind: transport.transportKind,
+      transportUnits: transport.transportUnits,
       role: 'finalOutput',
     });
   }
