@@ -1120,6 +1120,27 @@ a {
 }
 
 /* v0.3.16: graph readability polish. */
+
+.planner-node.is-cauldron-recipe {
+  border-color: #ff3ea5;
+  background: linear-gradient(180deg, rgba(68, 13, 50, 0.98), rgba(32, 8, 30, 0.98));
+  box-shadow:
+    0 0 0 1px rgba(255, 62, 165, 0.38),
+    0 0 22px rgba(255, 62, 165, 0.24),
+    var(--shadow-card);
+}
+
+.planner-node.is-cauldron-recipe .planner-node-title,
+.planner-node.is-cauldron-recipe .planner-node-title-line {
+  color: #ffd7ef;
+}
+
+.planner-node-badge-cauldron {
+  background: rgba(255, 62, 165, 0.22);
+  border: 1px solid rgba(255, 62, 165, 0.72);
+  color: #ffd7ef;
+}
+
 .planner-node.is-fuel-source {
  border-color: rgba(255, 159, 67, 0.98);
  box-shadow:

@@ -36,6 +36,7 @@ export function PlannerNode({ data }: NodeProps) {
     kind +
     (nodeData.completed ? ' is-completed' : '') +
     (nodeData.isFuelSource ? ' is-fuel-source' : '') +
+    (nodeData.isCauldronRecipe ? ' is-cauldron-recipe' : '') +
     (nodeData.isPurchasedSource ? ' is-purchased-source' : '') +
     (nodeData.isSurplusReuseAdded ? ' is-surplus-reuse-added' : '') +
     (nodeData.focused ? ' is-focused' : '') +

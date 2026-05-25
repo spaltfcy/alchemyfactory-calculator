@@ -27,7 +27,8 @@ export type PlannerNodeData = {
   tooltip?: string;
   sourceHandles?: PlannerHandleData[];
   targetHandles?: PlannerHandleData[];
-  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' | 'buy' | 'surplusReuse' }>;
+  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' | 'buy' | 'surplusReuse' | 'cauldron' }>;
+  isCauldronRecipe?: boolean;
   isSurplusReuseAdded?: boolean;
   isInitialInvestment?: boolean;
   hasStartupWarning?: boolean;
@@ -300,8 +301,10 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const countLabel = recipeMachineCountLabel(endpoint.recipeId, rs, lang);
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
+    const isCauldronRecipe = rs?.machineId === 'cauldron' || rs?.machineId === 'advanced_cauldron' || endpoint.recipeId.startsWith('cauldron:');
     const requiredStartupItemIds = result.initialInvestment?.requiredByRecipe?.[endpoint.recipeId] ?? [];
     const badges: PlannerNodeData['badges'] = [];
+    if (isCauldronRecipe) badges.push({ text: rs?.machineId === 'advanced_cauldron' ? (lang === 'ja' ? '高性能錬金釜' : 'Advanced cauldron') : (lang === 'ja' ? '錬金釜' : 'Cauldron'), kind: 'cauldron' });
     if (rs?.surplusReuseAdded) badges.push({ text: lang === 'ja' ? '♻ 余剰再利用' : '♻ Surplus reuse', kind: 'surplusReuse' });
     if (hasHeat) badges.push({ text: lang === 'ja' ? '要:熱源' : 'Heat', kind: 'heat' });
     for (const itemId of requiredStartupItemIds) badges.push({ text: (lang === 'ja' ? '⚠ 要:' : '⚠ Need:') + itemName(itemId, lang), kind: 'warning' });
@@ -323,6 +326,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
         badges: badges.length ? badges : undefined,
         hasStartupWarning: requiredStartupItemIds.length > 0,
         isFuelSource,
+        isCauldronRecipe,
         isSurplusReuseAdded: rs?.surplusReuseAdded ?? false,
         tooltip: surplusReuseTooltip,
       } satisfies PlannerNodeData,
@@ -607,6 +611,7 @@ function nodeTheme(kind: PlannerNodeData['kind'], completed?: boolean, data: Pla
   title: string;
   sub: string;
 } {
+  if (data.isCauldronRecipe) return { fill: '#330621', stroke: '#ff3ea5', title: '#ffd7ef', sub: '#ffc1e3' };
   const theme =
     kind === 'recipe'
       ? { fill: '#2a1f12', stroke: '#c77dff', title: '#f8f0ff', sub: '#dccff5' }
@@ -984,11 +989,12 @@ function renderSvgNodeHandles(node: SvgGraphNode, handles: PlannerHandleData[] |
     .join('\n');
 }
 
-function svgBadgeColors(kind: 'heat' | 'info' | 'warning' | 'buy' | 'surplusReuse'): { fill: string; stroke: string; text: string } {
+function svgBadgeColors(kind: NonNullable<PlannerNodeData['badges']>[number]['kind']): { fill: string; stroke: string; text: string } {
   if (kind === 'heat') return { fill: '#4a2a0a', stroke: '#ff922b', text: '#ffe8cc' };
   if (kind === 'warning') return { fill: '#4a3b0a', stroke: '#ffd43b', text: '#fff3bf' };
   if (kind === 'buy') return { fill: '#09343a', stroke: '#43d9d5', text: '#c5fffc' };
   if (kind === 'surplusReuse') return { fill: '#083b3d', stroke: '#4dd0c8', text: '#c5fffc' };
+  if (kind === 'cauldron') return { fill: '#4b0732', stroke: '#ff3ea5', text: '#ffd7ef' };
   return { fill: '#14314a', stroke: '#4dabf7', text: '#d0ebff' };
 }
 

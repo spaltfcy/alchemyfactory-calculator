@@ -97,7 +97,9 @@ export type CauldronOptimizedPlanIssue = {
     | 'SELLABLE_SURPLUS'
     | 'COIN_SURPLUS'
     | 'INITIAL_INPUT'
-    | 'TIME_UNVERIFIED';
+    | 'TIME_UNVERIFIED'
+    | 'CYCLE_UNPROVEN'
+    | 'CAULDRON_DATA_MISSING';
   severity: 'info' | 'warning' | 'error';
   message: LocalizedText;
   itemIds?: string[];

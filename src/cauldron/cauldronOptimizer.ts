@@ -531,7 +531,7 @@ export function optimizeCauldronTarget(options: PlanBuildOptions): CauldronOptim
 }
 
 
-// v0.10.8: strict closed-line planner for the Cauldron tab.
+// v0.10.9: strict closed-line planner for the Cauldron tab.
 // This planner is intentionally isolated from the normal Graph tab calculation path.
 // It has two stages:
 // 1. resolve the requested production item by trying cauldron routes before normal recipes.
@@ -539,6 +539,7 @@ export function optimizeCauldronTarget(options: PlanBuildOptions): CauldronOptim
 const CLOSED_LINE_MAX_DEPTH = 10;
 const CLOSED_LINE_MAX_PER_TIER = 36;
 const CLOSED_LINE_EPS = 0.000001;
+const CLOSED_LINE_REQUIRED_CAULDRON_ITEM_IDS = new Set(['clay', 'salt', 'coke']);
 
 type ClosedLinePlanBundle = {
   optimization: CauldronOptimizationResult;
@@ -549,6 +550,9 @@ type ClosedTreeMetrics = {
   missingItemIds: string[];
   initialItemIds: string[];
   purchasedItemIds: string[];
+  cycleItemIds: string[];
+  depthLimitItemIds: string[];
+  cauldronDataMissingItemIds: string[];
   cauldronItemIds: string[];
   recipeIds: string[];
   depth: number;
@@ -683,6 +687,9 @@ function analyzeClosedTree(root: CauldronPlanItem): ClosedTreeMetrics {
     missingItemIds: [],
     initialItemIds: [],
     purchasedItemIds: [],
+    cycleItemIds: [],
+    depthLimitItemIds: [],
+    cauldronDataMissingItemIds: [],
     cauldronItemIds: [],
     recipeIds: [],
     depth: 1,
@@ -696,8 +703,17 @@ function analyzeClosedTree(root: CauldronPlanItem): ClosedTreeMetrics {
     if (node.status === 'missing') {
       metrics.missingItemIds.push(node.itemId);
       if (itemById[node.itemId]?.buyPriceCopper !== undefined) metrics.purchasedItemIds.push(node.itemId);
+      if (CLOSED_LINE_REQUIRED_CAULDRON_ITEM_IDS.has(node.itemId) && !CAULDRON_TARGETS[node.itemId]) metrics.cauldronDataMissingItemIds.push(node.itemId);
     }
-    if (node.status === 'startup' || node.status === 'cycle') metrics.initialItemIds.push(node.itemId);
+    if (node.status === 'depthLimit') {
+      metrics.depthLimitItemIds.push(node.itemId);
+      metrics.missingItemIds.push(node.itemId);
+    }
+    if (node.status === 'startup') metrics.initialItemIds.push(node.itemId);
+    if (node.status === 'cycle') {
+      metrics.cycleItemIds.push(node.itemId);
+      metrics.missingItemIds.push(node.itemId);
+    }
     if (node.status === 'cauldronTarget') {
       metrics.cauldronItemIds.push(node.itemId);
       metrics.cauldronNodeCount += 1;
@@ -717,6 +733,9 @@ function analyzeClosedTree(root: CauldronPlanItem): ClosedTreeMetrics {
   metrics.missingItemIds = closedUnique(metrics.missingItemIds);
   metrics.initialItemIds = closedUnique(metrics.initialItemIds);
   metrics.purchasedItemIds = closedUnique(metrics.purchasedItemIds);
+  metrics.cycleItemIds = closedUnique(metrics.cycleItemIds);
+  metrics.depthLimitItemIds = closedUnique(metrics.depthLimitItemIds);
+  metrics.cauldronDataMissingItemIds = closedUnique(metrics.cauldronDataMissingItemIds);
   metrics.cauldronItemIds = closedUnique(metrics.cauldronItemIds);
   metrics.recipeIds = closedUnique(metrics.recipeIds);
   return metrics;
@@ -727,6 +746,9 @@ function closedTreeScore(root: CauldronPlanItem): number {
   return (
     metrics.missingItemIds.length * 1_000_000 +
     metrics.purchasedItemIds.length * 250_000 +
+    metrics.cycleItemIds.length * 750_000 +
+    metrics.cauldronDataMissingItemIds.length * 900_000 +
+    metrics.depthLimitItemIds.length * 500_000 +
     metrics.sourceTierPenalty +
     metrics.depth * 100 +
     metrics.normalNodeCount * 25 +
@@ -745,18 +767,25 @@ function closedDepthLimitItem(itemId: string, amount: number): CauldronPlanItem 
   };
 }
 
-function closedMissingItem(itemId: string, amount: number): CauldronPlanItem {
+function closedMissingItem(itemId: string, amount: number, reason?: LocalizedText): CauldronPlanItem {
   const buyable = itemById[itemId]?.buyPriceCopper !== undefined;
   return {
     itemId,
     label: labelForItem(itemId),
     amount,
     status: 'missing',
-    reason: buyable
+    reason: reason ?? (buyable
       ? { ja: '購入はできますが、閉鎖ラインでは常時購入扱いになるため未完結です。', en: 'Buyable, but constant purchase is not a closed line.' }
-      : { ja: '錬金釜候補・通常レシピ・初期投入のいずれでも解決できません。', en: 'Could not resolve through cauldron, normal recipes, or startup input.' },
+      : { ja: '錬金釜候補・通常レシピ・初期投入のいずれでも解決できません。', en: 'Could not resolve through cauldron, normal recipes, or startup input.' }),
     children: [],
   };
+}
+
+function closedCauldronDataMissingItem(itemId: string, amount: number): CauldronPlanItem {
+  return closedMissingItem(itemId, amount, {
+    ja: '錬金釜で作る前提の材料ですが、錬金釜ターゲット値が未登録です。通常レシピへ自動フォールバックしません。',
+    en: 'This material is expected to be made by cauldron, but its cauldron target value is not registered. It will not silently fall back to a normal recipe.',
+  });
 }
 
 function closedStartupItem(itemId: string, amount: number, reason?: LocalizedText): CauldronPlanItem {
@@ -776,7 +805,7 @@ function closedCycleItem(itemId: string, amount: number): CauldronPlanItem {
     label: labelForItem(itemId),
     amount,
     status: 'cycle',
-    reason: { ja: '循環を検出しました。初期投入で起動し、定常状態では自己循環する前提です。', en: 'Cycle detected; startup input starts the loop, then the line self-cycles.' },
+    reason: { ja: '循環を検出しました。収支計算で余剰が証明できないため未完結です。', en: 'Cycle detected. It is incomplete unless the final balance proves surplus production.' },
     children: [],
   };
 }
@@ -856,6 +885,9 @@ function closedResolveItem(itemId: string, amount: number, options: PlanBuildOpt
   }
   if (seen.has(itemId)) return closedCycleItem(itemId, amount);
   if (depth <= 0) return closedDepthLimitItem(itemId, amount);
+  if (CLOSED_LINE_REQUIRED_CAULDRON_ITEM_IDS.has(itemId) && !CAULDRON_TARGETS[itemId]) {
+    return closedCauldronDataMissingItem(itemId, amount);
+  }
 
   const cauldronNode = closedFindCauldronNode(itemId, amount, options, startupSet, depth, seen, plannedItemIds);
   const cauldronScore = cauldronNode ? closedTreeScore(cauldronNode) : Number.POSITIVE_INFINITY;
@@ -872,22 +904,9 @@ function closedResolveItem(itemId: string, amount: number, options: PlanBuildOpt
   return closedMissingItem(itemId, amount);
 }
 
-function addUtilityChildren(root: CauldronPlanItem, options: PlanBuildOptions, startupSet: Set<string>): CauldronPlanItem {
-  const children = [...root.children];
-  const planned = new Set([root.itemId]);
-  if (options.settings.fuel.enabled && options.settings.fuel.sourceMode === 'internal' && options.settings.fuel.fuelItemId) {
-    children.push(closedResolveItem(options.settings.fuel.fuelItemId, 1, options, startupSet, 4, new Set([root.itemId]), planned));
-  }
-  if (options.settings.fertilizer.enabled && options.settings.fertilizer.sourceMode === 'internal' && options.settings.fertilizer.fertilizerItemId) {
-    children.push(closedResolveItem(options.settings.fertilizer.fertilizerItemId, 1, options, startupSet, 4, new Set([root.itemId]), planned));
-  }
-  return { ...root, children };
-}
-
 function buildClosedRoot(options: PlanBuildOptions): CauldronPlanItem {
   const startupSet = new Set(options.startupItemIds);
-  const root = closedResolveItem(options.targetItemId, options.targetRatePerMinute, options, startupSet, CLOSED_LINE_MAX_DEPTH, new Set(), new Set());
-  return addUtilityChildren(root, options, startupSet);
+  return closedResolveItem(options.targetItemId, options.targetRatePerMinute, options, startupSet, CLOSED_LINE_MAX_DEPTH, new Set(), new Set());
 }
 
 function metricsFromClosedTree(root: CauldronPlanItem, result: CalculationResult): CauldronOptimizedPlanMetrics {
@@ -898,7 +917,7 @@ function metricsFromClosedTree(root: CauldronPlanItem, result: CalculationResult
   const blockingSurplusItemIds = surplusItemIds.filter((itemId) => !COIN_ITEM_IDS.has(itemId) && economyByItemId[itemId]?.sellPriceCopper === undefined);
   const recipeStats = Object.values(result.recipeStats);
   const machineCount = recipeStats.reduce((sum, stat) => sum + Math.max(0, stat.actualMachines || stat.theoreticalMachines || 0), 0);
-  const hasMissing = tree.missingItemIds.length > 0 || tree.purchasedItemIds.length > 0 || root.status === 'depthLimit';
+  const hasMissing = tree.missingItemIds.length > 0 || tree.purchasedItemIds.length > 0 || tree.cycleItemIds.length > 0 || tree.depthLimitItemIds.length > 0 || tree.cauldronDataMissingItemIds.length > 0 || root.status === 'depthLimit';
   const hasConstantSupply = tree.purchasedItemIds.length > 0;
   return {
     selfContained: !hasMissing && !hasConstantSupply,
@@ -911,7 +930,7 @@ function metricsFromClosedTree(root: CauldronPlanItem, result: CalculationResult
     initialItemIds: tree.initialItemIds,
     purchasedItemIds: tree.purchasedItemIds,
     externalItemIds: [],
-    unresolvedItemIds: tree.missingItemIds,
+    unresolvedItemIds: closedUnique([...tree.missingItemIds, ...tree.cycleItemIds, ...tree.depthLimitItemIds, ...tree.cauldronDataMissingItemIds]),
     surplusItemIds,
     coinSurplusItemIds,
     sellableSurplusItemIds,
@@ -942,6 +961,15 @@ function closedPlanIssues(metrics: CauldronOptimizedPlanMetrics, root: CauldronP
   if (metrics.hasMissing) {
     const names = itemNames(closedUnique([...metrics.unresolvedItemIds, ...metrics.purchasedItemIds]));
     issues.push({ code: 'MISSING', severity: 'error', itemIds: closedUnique([...metrics.unresolvedItemIds, ...metrics.purchasedItemIds]), message: { ja: `閉鎖できない材料があります: ${names.ja || root.itemId}`, en: `Unresolved closed-line materials: ${names.en || root.itemId}` } });
+  }
+  const treeMetrics = analyzeClosedTree(root);
+  if (treeMetrics.cycleItemIds.length > 0) {
+    const names = itemNames(treeMetrics.cycleItemIds);
+    issues.push({ code: 'CYCLE_UNPROVEN', severity: 'error', itemIds: treeMetrics.cycleItemIds, message: { ja: `循環補填ではなく収支証明が必要です: ${names.ja}`, en: `Cycle requires balance proof, not a placeholder source: ${names.en}` } });
+  }
+  if (treeMetrics.cauldronDataMissingItemIds.length > 0) {
+    const names = itemNames(treeMetrics.cauldronDataMissingItemIds);
+    issues.push({ code: 'CAULDRON_DATA_MISSING', severity: 'error', itemIds: treeMetrics.cauldronDataMissingItemIds, message: { ja: `錬金釜ターゲット値が未登録です: ${names.ja}`, en: `Missing cauldron target values: ${names.en}` } });
   }
   if (options.settings.fuel.enabled && options.settings.fuel.sourceMode === 'internal') {
     issues.push({ code: 'INITIAL_INPUT', severity: 'info', itemIds: [options.settings.fuel.fuelItemId], message: { ja: `燃料は設定値を内製対象にしています: ${labelForItem(options.settings.fuel.fuelItemId).ja}`, en: `Fuel follows settings as internal: ${labelForItem(options.settings.fuel.fuelItemId).en}` } });
@@ -1011,7 +1039,78 @@ function closedFlowTransport(itemId: string, rate: number): ReturnType<typeof fl
   return flowTransportForItem(itemId, rate, 60);
 }
 
+
+function closedResultTotals(options: PlanBuildOptions): CalculationResult['totals'] {
+  return {
+    initialCostCopper: 0,
+    runningCostCopperPerMin: 0,
+    purchaseCostCopperPerMin: 0,
+    revenueCopperPerMin: 0,
+    profitCopperPerMin: 0,
+    conveyorItemsPerMinute: 60,
+    productionSpeedMultiplier: 1,
+    heatConsumptionMultiplier: 1,
+    sellPriceMultiplier: 1,
+    fuelHeatValueMultiplier: 1,
+    fertilizerNutritionMultiplier: 1,
+    heatRequiredPerMin: 0,
+    fuelRequiredPerMin: 0,
+    fuelItemId: options.settings.fuel.fuelItemId,
+    fertilizerNutrientsRequiredPerMin: 0,
+    fertilizerRequiredPerMin: 0,
+    fertilizerItemId: options.settings.fertilizer.fertilizerItemId,
+    calculationMs: 0,
+    queueSteps: 0,
+    queueMax: 0,
+  };
+}
+
+function closedBlockedResult(root: CauldronPlanItem, analysis: ClosedTreeMetrics, options: PlanBuildOptions): CalculationResult {
+  const itemStats: Record<string, ItemStat> = {};
+  const rootStat = closedEmptyItemStat(root.itemId);
+  rootStat.targetRequested = root.amount;
+  itemStats[root.itemId] = rootStat;
+  const unresolved = closedUnique([
+    ...analysis.missingItemIds,
+    ...analysis.purchasedItemIds,
+    ...analysis.cycleItemIds,
+    ...analysis.depthLimitItemIds,
+    ...analysis.cauldronDataMissingItemIds,
+  ]);
+  return {
+    itemStats,
+    recipeStats: {},
+    flows: [],
+    conveyorEdges: [],
+    outputEdges: [],
+    warnings: [
+      {
+        messageJa: '閉鎖ラインとして未完結のため、誤ったグラフは表示しません。上のレシピ案とエラー理由を確認してください。',
+        messageEn: 'The closed-line plan is incomplete, so an incorrect graph is not rendered. Check the recipe plan and error reasons above.',
+      },
+    ],
+    calculationStatus: 'invalid',
+    errorSummaries: [
+      {
+        code: 'CAULDRON_CLOSED_LINE_BLOCKED',
+        messageJa: '閉鎖ラインとして解決できません。循環補填や未登録の錬金釜ターゲットは材料供給として扱いません。',
+        messageEn: 'The closed line could not be resolved. Cycle placeholders and missing cauldron target values are not treated as material supply.',
+        itemIds: unresolved,
+      },
+    ],
+    totals: closedResultTotals(options),
+  };
+}
+
 function buildClosedResultFromTree(root: CauldronPlanItem, options: PlanBuildOptions): CalculationResult {
+  const initialAnalysis = analyzeClosedTree(root);
+  const blocked = initialAnalysis.missingItemIds.length > 0
+    || initialAnalysis.purchasedItemIds.length > 0
+    || initialAnalysis.cycleItemIds.length > 0
+    || initialAnalysis.depthLimitItemIds.length > 0
+    || initialAnalysis.cauldronDataMissingItemIds.length > 0;
+  if (blocked) return closedBlockedResult(root, initialAnalysis, options);
+
   const itemStats: Record<string, ItemStat> = {};
   const recipeStats: Record<string, RecipeStat> = {};
   const flows: CalculatedFlow[] = [];
@@ -1054,11 +1153,11 @@ function buildClosedResultFromTree(root: CauldronPlanItem, options: PlanBuildOpt
     const recipeId = recipeIdForNode(node);
     if (!recipeId) {
       const stat = closedAddItemStat(itemStats, node.itemId);
-      if (node.status === 'startup' || node.status === 'cycle') stat.initialPurchased += node.amount;
+      if (node.status === 'startup') stat.initialPurchased += node.amount;
       if (node.status === 'missing' || node.status === 'depthLimit') stat.purchased += node.amount;
       if (parentRecipeId) {
         addFlow(
-          { type: 'itemSource', itemId: node.itemId, sourceMode: node.status === 'missing' ? 'unresolved' : 'cycleInput' },
+          { type: 'itemSource', itemId: node.itemId, sourceMode: node.status === 'startup' ? 'cycleInput' : 'unresolved' },
           { type: 'recipe', recipeId: parentRecipeId },
           node.itemId,
           node.amount,
@@ -1115,7 +1214,7 @@ function buildClosedResultFromTree(root: CauldronPlanItem, options: PlanBuildOpt
 
   visit(root, undefined, true);
   const analysis = analyzeClosedTree(root);
-  const hasMissing = analysis.missingItemIds.length > 0 || analysis.purchasedItemIds.length > 0;
+  const hasMissing = analysis.missingItemIds.length > 0 || analysis.purchasedItemIds.length > 0 || analysis.cycleItemIds.length > 0 || analysis.depthLimitItemIds.length > 0 || analysis.cauldronDataMissingItemIds.length > 0;
   return {
     itemStats,
     recipeStats,
@@ -1128,26 +1227,8 @@ function buildClosedResultFromTree(root: CauldronPlanItem, options: PlanBuildOpt
       ? [{ code: 'CAULDRON_CLOSED_LINE_UNRESOLVED', messageJa: '閉鎖ラインとして解決できない材料があります。', messageEn: 'Some materials could not be resolved as a closed line.', itemIds: closedUnique([...analysis.missingItemIds, ...analysis.purchasedItemIds]) }]
       : [],
     totals: {
+      ...closedResultTotals(options),
       initialCostCopper: analysis.initialItemIds.reduce((sum, itemId) => sum + startupCostCopper(itemId, 1), 0),
-      runningCostCopperPerMin: 0,
-      purchaseCostCopperPerMin: 0,
-      revenueCopperPerMin: 0,
-      profitCopperPerMin: 0,
-      conveyorItemsPerMinute: 60,
-      productionSpeedMultiplier: 1,
-      heatConsumptionMultiplier: 1,
-      sellPriceMultiplier: 1,
-      fuelHeatValueMultiplier: 1,
-      fertilizerNutritionMultiplier: 1,
-      heatRequiredPerMin: 0,
-      fuelRequiredPerMin: 0,
-      fuelItemId: options.settings.fuel.fuelItemId,
-      fertilizerNutrientsRequiredPerMin: 0,
-      fertilizerRequiredPerMin: 0,
-      fertilizerItemId: options.settings.fertilizer.fertilizerItemId,
-      calculationMs: 0,
-      queueSteps: 0,
-      queueMax: 0,
     },
   };
 }
