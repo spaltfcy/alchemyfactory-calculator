@@ -69,6 +69,8 @@ export type CauldronPlanItem = {
   reason: LocalizedText;
   recipeId?: string;
   candidateCount?: number;
+  selectedInputItemIds?: CauldronInputTuple;
+  sourceTier?: 'cauldron-planned' | 'plant-derived' | 'purchasable-derived' | 'mixed' | 'all-values';
   children: CauldronPlanItem[];
 };
 

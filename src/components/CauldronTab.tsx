@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { CAULDRON_TARGETS } from '../cauldron/cauldronData';
 import { buildCauldronGraphResult, cauldronRequestForTarget } from '../cauldron/cauldronGraph';
 import { generateCauldronCandidatesForOutput } from '../cauldron/cauldronMath';
-import { optimizeCauldronTarget } from '../cauldron/cauldronOptimizer';
+import { optimizeCauldronTargetWithResult } from '../cauldron/cauldronOptimizer';
 import { cauldronItemName, parseItemIdsText } from '../cauldron/cauldronSearch';
 import type { CauldronOptimizationResult, CauldronOptimizedPlan, CauldronPlanItem, CauldronTargetPlan, CauldronState } from '../cauldron/cauldronTypes';
 import { calculate } from '../engine/calculate';
@@ -381,14 +381,10 @@ function CauldronOptimizedPlanPanel({ lang, optimization }: { lang: Lang; optimi
 }
 
 export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies, completedGraphNodeIds, onToggleCompleted, focusRequest }: CauldronTabProps) {
-  const result = useMemo(
-    () => buildCauldronTabResult(state, settings, abilities, recipePreferences, surplusPolicies),
-    [state, settings, abilities, recipePreferences, surplusPolicies],
-  );
   const targetItemId = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId)?.outputItemId ?? state.candidateTargetItemId;
   const targetRatePerMinute = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId === targetItemId)?.value ?? 1;
-  const optimization = useMemo(
-    () => optimizeCauldronTarget({
+  const planned = useMemo(
+    () => optimizeCauldronTargetWithResult({
       targetItemId,
       targetRatePerMinute: Math.max(0.000001, Number(targetRatePerMinute) || 1),
       state,
@@ -401,6 +397,8 @@ export function CauldronTab({ lang, state, settings, abilities, recipePreference
     }),
     [abilities, recipePreferences, settings, state, surplusPolicies, targetItemId, targetRatePerMinute],
   );
+  const optimization = planned.optimization;
+  const result = planned.result;
 
   return (
     <div className="cauldron-tab">

@@ -27,6 +27,7 @@ const RAW_CAULDRON_INPUT_VALUES: CauldronValueEntry[] = [
 
 const RAW_CAULDRON_TARGETS: CauldronTargetEntry[] = [
   knownTarget('charcoal', 2, 'Steamガイド由来の未確認ターゲット値'),
+  knownTarget('clay', 20, 'Steamガイド例由来の未確認ターゲット値'),
   knownTarget('coke', 30, 'Steamガイド由来の未確認ターゲット値'),
   knownTarget('impure_copper_powder', 180, 'Steamガイド由来の未確認ターゲット値'),
   knownTarget('copper_powder', 350, 'Steamガイド由来の未確認ターゲット値'),
