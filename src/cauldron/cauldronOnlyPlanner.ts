@@ -1,5 +1,5 @@
 import { CAULDRON_TARGETS } from './cauldronData';
-import { findCauldronCandidatesForOutput, type CauldronRuntimeCandidate } from './cauldronCandidateSearch';
+import { findPlantDerivedCauldronCandidatesForOutput, plantDerivedCauldronInputCount, type CauldronRuntimeCandidate } from './cauldronCandidateSearch';
 import type { CauldronMachineId, CauldronOptimizationResult, CauldronOptimizedPlan, CauldronOptimizedPlanIssue, CauldronPlanItem } from './cauldronTypes';
 import type { CalculationResult, CalculatedFlow, ItemStat, RecipeStat } from '../engine/calculate';
 import type { AppSettings, LocalizedText, Recipe } from '../types';
@@ -9,7 +9,7 @@ import { chooseRecipeForItem } from '../engine/itemSourceResolver';
 import { flowTransportForItem } from '../engine/flowTransport';
 
 const MAX_DEPTH = 9;
-const MAX_CANDIDATES_PER_TARGET = 8;
+const MAX_DISPLAY_FAILURES_PER_TARGET = 24;
 
 export type CauldronResolveMode = 'cauldronOnly' | 'normalBridge';
 
@@ -113,9 +113,9 @@ function failureMessage(code: CauldronOnlyFailureCode, itemId: string): Localize
     case 'NOT_CAULDRON_TARGET':
       return { ja: `${name.ja} は錬金釜の出力ターゲットではありません。`, en: `${name.en} is not a cauldron output target.` };
     case 'NO_CAULDRON_CANDIDATE':
-      return { ja: `${name.ja} になる3入力候補が見つかりません。`, en: `No three-input cauldron candidate was found for ${name.en}.` };
+      return { ja: `${name.ja} は植物系・植物加工品の錬金値候補だけでは3入力候補が見つかりません。候補プール: ${plantDerivedCauldronInputCount()}件`, en: `No three-input plant-derived cauldron candidate was found for ${name.en}. Pool: ${plantDerivedCauldronInputCount()} items.` };
     case 'NO_CLOSED_CAULDRON_CANDIDATE':
-      return { ja: `${name.ja} は錬金釜候補の3入力を閉じられませんでした。`, en: `${name.en} had no cauldron candidate whose three inputs could be expanded.` };
+      return { ja: `${name.ja} は植物系・植物加工品から作った錬金釜候補の3入力を閉じられませんでした。`, en: `${name.en} had no plant-derived cauldron candidate whose three inputs could be expanded.` };
     case 'CYCLE':
       return { ja: `${name.ja} の探索中に循環しました。`, en: `A cycle was detected while expanding ${name.en}.` };
     case 'DEPTH_LIMIT':
@@ -204,7 +204,7 @@ function resolveCauldronItem(
   path: Set<string>,
   memo: ResolveMemo,
 ): ResolveResult {
-  const candidates = findCauldronCandidatesForOutput(itemId, { maxCandidates: MAX_CANDIDATES_PER_TARGET });
+  const candidates = findPlantDerivedCauldronCandidatesForOutput(itemId);
   if (candidates.length === 0) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
 
   const candidateFailures: CauldronOnlyFailure[] = [];
@@ -223,13 +223,13 @@ function resolveCauldronItem(
     const node: CauldronPlanNode = { kind: 'cauldron', itemId, amount, candidate, children };
     if (failures.length === 0) return { ok: true, node, failures: candidateFailures };
     if (!firstPartial) firstPartial = node;
-    candidateFailures.push(makeFailure('NO_CLOSED_CAULDRON_CANDIDATE', itemId, candidate.inputItemIds, failures.slice(0, 8)));
+    candidateFailures.push(makeFailure('NO_CLOSED_CAULDRON_CANDIDATE', itemId, candidate.inputItemIds, failures.slice(0, 6)));
   }
 
   if (policy.allowPartialGraph && firstPartial) {
     return { ok: false, node: firstPartial, failures: candidateFailures };
   }
-  return { ok: false, failures: [makeFailure('NO_CLOSED_CAULDRON_CANDIDATE', itemId, undefined, candidateFailures.slice(0, 8))] };
+  return { ok: false, failures: [makeFailure('NO_CLOSED_CAULDRON_CANDIDATE', itemId, undefined, candidateFailures.slice(0, MAX_DISPLAY_FAILURES_PER_TARGET))] };
 }
 
 function resolveItem(
@@ -357,10 +357,10 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
   };
 }
 
-function makeFlow(id: string, fromRecipeId: string | undefined, toRecipeId: string, itemId: string, rate: number, slotIndex?: number): CalculatedFlow {
+function makeFlow(id: string, fromRecipeId: string | undefined, toRecipeId: string, itemId: string, rate: number, slotIndex?: number, sourceMode: 'cycleInput' | 'unresolved' = 'unresolved'): CalculatedFlow {
   const from = fromRecipeId
     ? { type: 'recipe' as const, recipeId: fromRecipeId }
-    : { type: 'itemSource' as const, itemId, sourceMode: 'cycleInput' as const };
+    : { type: 'itemSource' as const, itemId, sourceMode };
   const transport = flowTransportForItem(itemId, rate, 60);
   return {
     id,
@@ -388,7 +388,7 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
       if (node.sourceKind === 'startup') stat.initialPurchased += node.amount;
       else stat.purchased += 0;
       if (parentRecipeId) {
-        flows.push(makeFlow(`cauldron-planner:${parentRecipeId}:source:${node.itemId}:${flows.length}`, undefined, parentRecipeId, node.itemId, node.amount, parentSlotIndex));
+        flows.push(makeFlow(`cauldron-planner:${parentRecipeId}:source:${node.itemId}:${flows.length}`, undefined, parentRecipeId, node.itemId, node.amount, parentSlotIndex, node.sourceKind === 'startup' ? 'cycleInput' : 'unresolved'));
       }
       return undefined;
     }
@@ -406,7 +406,9 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
       const consumed = addItemStat(itemStats, child.itemId);
       consumed.consumed += child.amount;
       const childRecipeId = visit(child.node, recipeId, child.slotIndex, `${pathKey}.${childIndex}`);
-      flows.push(makeFlow(`cauldron-planner:${recipeId}:slot${child.slotIndex ?? childIndex}:${child.itemId}:${flows.length}`, childRecipeId, recipeId, child.itemId, child.amount, child.slotIndex));
+      if (child.node.kind !== 'source') {
+        flows.push(makeFlow(`cauldron-planner:${recipeId}:slot${child.slotIndex ?? childIndex}:${child.itemId}:${flows.length}`, childRecipeId, recipeId, child.itemId, child.amount, child.slotIndex));
+      }
     });
 
     if (parentRecipeId && parentSlotIndex !== undefined) return recipeId;
@@ -496,14 +498,43 @@ function planItemFromNode(node: CauldronPlanNode): CauldronPlanItem {
       ? { ja: '実行時候補検索で選択した錬金釜3入力です。', en: 'Selected by runtime cauldron candidate search.' }
       : { ja: '非錬金釜ターゲットを通常レシピで通過展開しています。', en: 'Non-cauldron target bridged through a normal recipe.' },
     recipeId: node.kind === 'normal' ? node.recipeId : undefined,
-    candidateCount: node.kind === 'cauldron' ? findCauldronCandidatesForOutput(node.itemId, { maxCandidates: MAX_CANDIDATES_PER_TARGET }).length : undefined,
+    candidateCount: node.kind === 'cauldron' ? findPlantDerivedCauldronCandidatesForOutput(node.itemId).length : undefined,
     selectedInputItemIds: node.kind === 'cauldron' ? [...node.candidate.inputItemIds] as [string, string, string] : undefined,
     children: node.children.map((child) => planItemFromNode(child.node)),
   };
 }
 
+function formatFailureCandidate(candidate: readonly [string, string, string] | undefined, lang: 'ja' | 'en'): string {
+  if (!candidate) return '';
+  const items = candidate.map((itemId) => itemName(itemId)[lang]).join(' + ');
+  return lang === 'ja' ? `候補: ${items}` : `Candidate: ${items}`;
+}
+
+function failureDetailText(failure: CauldronOnlyFailure, lang: 'ja' | 'en', depth = 0): string {
+  const indent = '  '.repeat(depth);
+  const lines = [`${indent}${failure.message[lang]}`];
+  const candidateLine = formatFailureCandidate(failure.candidate, lang);
+  if (candidateLine) lines.push(`${indent}${candidateLine}`);
+  for (const child of (failure.children ?? []).slice(0, 12)) {
+    lines.push(failureDetailText(child, lang, depth + 1));
+  }
+  return lines.join('\n');
+}
+
+function collectFailureItemIds(failure: CauldronOnlyFailure, output = new Set<string>()): string[] {
+  output.add(failure.itemId);
+  for (const candidateItemId of failure.candidate ?? []) output.add(candidateItemId);
+  for (const child of failure.children ?? []) collectFailureItemIds(child, output);
+  return [...output];
+}
+
 function issueFromFailure(failure: CauldronOnlyFailure): CauldronOptimizedPlanIssue {
-  return { code: 'MISSING', severity: 'error', message: failure.message, itemIds: [failure.itemId] };
+  return {
+    code: 'MISSING',
+    severity: 'error',
+    message: { ja: failureDetailText(failure, 'ja'), en: failureDetailText(failure, 'en') },
+    itemIds: collectFailureItemIds(failure),
+  };
 }
 
 function countNodes(node: CauldronPlanNode): { recipes: number; edges: number; depth: number; missing: string[]; initial: string[] } {

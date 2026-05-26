@@ -2138,6 +2138,8 @@ a {
   background: rgba(8, 13, 21, 0.42);
   color: var(--muted);
   font-size: 0.84rem;
+  white-space: pre-wrap;
+  line-height: 1.45;
 }
 
 .cauldron-plan-issue-error {

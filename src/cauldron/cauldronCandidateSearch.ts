@@ -1,5 +1,7 @@
 import { CAULDRON_INPUT_ITEM_IDS, CAULDRON_INPUT_VALUES, CAULDRON_TARGETS } from './cauldronData';
 import type { CauldronInputTuple } from './cauldronTypes';
+import { ITEMS } from '../data/items';
+import { RECIPES } from '../data/recipes';
 
 const EPS = 1e-9;
 
@@ -59,12 +61,56 @@ export function predictCauldronOutput(inputItemIds: CauldronInputTuple): { outpu
   return best ? { outputItemId: best.outputItemId, weightedDistance: best.weightedDistance, adjustedScore, rawScore, duplicatePenalty } : undefined;
 }
 
+function recipeHasOnlyKnownItemInputs(recipeId: string, known: Set<string>): boolean {
+  const recipe = RECIPES.find((candidate) => candidate.id === recipeId);
+  if (!recipe || recipe.internal) return false;
+  if (recipe.inputs.length === 0) return false;
+  return recipe.inputs.every((input) => input.kind !== 'paradoxableItem' && known.has(input.itemId));
+}
+
+function buildPlantDerivedItemIds(): string[] {
+  const known = new Set<string>();
+  for (const item of ITEMS) {
+    if (item.category === 'seed') known.add(item.id);
+  }
+
+  for (let pass = 0; pass < 16; pass += 1) {
+    let changed = false;
+    for (const recipe of RECIPES) {
+      if (recipe.internal) continue;
+      if (recipe.inputs.length === 0) continue;
+      if (!recipe.inputs.every((input) => input.kind !== 'paradoxableItem' && known.has(input.itemId))) continue;
+      for (const output of recipe.outputs) {
+        if (output.amount <= 0) continue;
+        if (!known.has(output.itemId)) {
+          known.add(output.itemId);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  // Keep the list human-oriented but deterministic. Cauldron values are filtered by callers.
+  return [...known].sort((a, b) => a.localeCompare(b));
+}
+
+const plantDerivedItemIds = buildPlantDerivedItemIds();
+
+export const PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS = plantDerivedItemIds
+  .filter((itemId) => CAULDRON_INPUT_VALUES[itemId])
+  .sort((a, b) => CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b));
+
+export function isPlantDerivedCauldronInputItem(itemId: string): boolean {
+  return PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS.includes(itemId);
+}
+
 function candidatePriority(inputItemIds: CauldronInputTuple): number {
-  // Lower is better. Prefer candidates whose inputs can themselves be cauldron targets;
-  // this is only a search order hint. The planner still validates each slot recursively.
+  // Lower is better. In Phase 1 the input pool is already plant-derived, so prefer
+  // candidates whose inputs can be recursively handled by the cauldron planner.
   const targetCount = inputItemIds.filter((itemId) => CAULDRON_TARGETS[itemId]).length;
-  const uniqueCount = new Set(inputItemIds).size;
-  return (3 - targetCount) * 100 + (3 - uniqueCount);
+  const selfReferenceCount = new Set(inputItemIds).size;
+  return (3 - targetCount) * 100 + (3 - selfReferenceCount);
 }
 
 function sortRuntimeCandidates(candidates: CauldronRuntimeCandidate[]): CauldronRuntimeCandidate[] {
@@ -83,18 +129,27 @@ function sortRuntimeCandidates(candidates: CauldronRuntimeCandidate[]): Cauldron
 
 const candidateCache = new Map<string, CauldronRuntimeCandidate[]>();
 
-export function findCauldronCandidatesForOutput(outputItemId: string, options: { maxCandidates?: number } = {}): CauldronRuntimeCandidate[] {
+type FindCandidateOptions = {
+  maxCandidates?: number;
+  inputItemIds?: readonly string[];
+};
+
+function normalizeInputPool(inputItemIds?: readonly string[]): string[] {
+  const source = inputItemIds && inputItemIds.length > 0 ? inputItemIds : CAULDRON_INPUT_ITEM_IDS;
+  return [...new Set(source)]
+    .filter((itemId) => CAULDRON_INPUT_VALUES[itemId])
+    .sort((a, b) => CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b));
+}
+
+export function findCauldronCandidatesForOutput(outputItemId: string, options: FindCandidateOptions = {}): CauldronRuntimeCandidate[] {
   if (!CAULDRON_TARGETS[outputItemId]) return [];
-  const maxCandidates = Math.max(1, Math.floor(options.maxCandidates ?? 200));
-  const cacheKey = `${outputItemId}:${maxCandidates}`;
+  const itemIds = normalizeInputPool(options.inputItemIds);
+  const maxCandidates = options.maxCandidates === undefined ? undefined : Math.max(1, Math.floor(options.maxCandidates));
+  const cacheKey = `${outputItemId}:${maxCandidates ?? 'all'}:${itemIds.join('|')}`;
   const cached = candidateCache.get(cacheKey);
   if (cached) return cached;
 
-  const itemIds = CAULDRON_INPUT_ITEM_IDS;
   const candidates: CauldronRuntimeCandidate[] = [];
-  const searchLimit = Math.max(maxCandidates * 8, maxCandidates);
-
-  outer:
   for (let i = 0; i < itemIds.length; i += 1) {
     for (let j = i; j < itemIds.length; j += 1) {
       for (let k = j; k < itemIds.length; k += 1) {
@@ -109,12 +164,23 @@ export function findCauldronCandidatesForOutput(outputItemId: string, options: {
           adjustedScore: prediction.adjustedScore,
           weightedDistance: prediction.weightedDistance,
         });
-        if (candidates.length >= searchLimit) break outer;
       }
     }
   }
 
-  const sorted = sortRuntimeCandidates(candidates).slice(0, maxCandidates);
-  candidateCache.set(cacheKey, sorted);
-  return sorted;
+  const sorted = sortRuntimeCandidates(candidates);
+  const result = maxCandidates === undefined ? sorted : sorted.slice(0, maxCandidates);
+  candidateCache.set(cacheKey, result);
+  return result;
+}
+
+export function findPlantDerivedCauldronCandidatesForOutput(outputItemId: string, options: { maxCandidates?: number } = {}): CauldronRuntimeCandidate[] {
+  return findCauldronCandidatesForOutput(outputItemId, {
+    maxCandidates: options.maxCandidates,
+    inputItemIds: PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS,
+  });
+}
+
+export function plantDerivedCauldronInputCount(): number {
+  return PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS.length;
 }
