@@ -378,9 +378,11 @@ function debugEndpointJa(endpoint: CalculatedFlow['from'] | CalculatedFlow['to']
       ? '外部生産:'
       : endpoint.sourceMode === 'cycleInput'
         ? '循環補填:'
-        : endpoint.sourceMode === 'buy'
-          ? '購入:'
-          : '未解決:';
+        : endpoint.sourceMode === 'plantDerivedInput'
+          ? '植物由来入力:'
+          : endpoint.sourceMode === 'buy'
+            ? '購入:'
+            : '未解決:';
     return sourceLabel + debugItemNameJa(endpoint.itemId);
   }
   if (endpoint.type === 'itemSink') {

@@ -23,7 +23,7 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.11';
+const APP_VERSION = '0.10.12';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {

@@ -47,7 +47,7 @@ export type RecipeStat = {
 
 export type CalculatedEndpoint =
   | { type: 'recipe'; recipeId: string }
-  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'external' | 'cycleInput' | 'unresolved' }
+  | { type: 'itemSource'; itemId: string; sourceMode: 'buy' | 'external' | 'cycleInput' | 'unresolved' | 'plantDerivedInput' }
   | { type: 'itemSink'; itemId: string; sinkMode: 'final' | 'discard' | 'surplus' };
 
 export type FlowTransportKind = 'belt' | 'pipeline';

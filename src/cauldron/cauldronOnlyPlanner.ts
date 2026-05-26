@@ -1,15 +1,18 @@
 import { CAULDRON_TARGETS } from './cauldronData';
-import { findPlantDerivedCauldronCandidatesForOutput, plantDerivedCauldronInputCount, type CauldronRuntimeCandidate } from './cauldronCandidateSearch';
+import {
+  findPlantDerivedCauldronCandidatesForOutput,
+  isPlantDerivedCauldronInputItem,
+  plantDerivedCauldronInputCount,
+  type CauldronRuntimeCandidate,
+} from './cauldronCandidateSearch';
 import type { CauldronMachineId, CauldronOptimizationResult, CauldronOptimizedPlan, CauldronOptimizedPlanIssue, CauldronPlanItem } from './cauldronTypes';
 import type { CalculationResult, CalculatedFlow, ItemStat, RecipeStat } from '../engine/calculate';
 import type { AppSettings, LocalizedText, Recipe } from '../types';
 import { itemById } from '../data/items';
-import { recipeById } from '../data/recipes';
 import { chooseRecipeForItem } from '../engine/itemSourceResolver';
 import { flowTransportForItem } from '../engine/flowTransport';
 
 const MAX_DEPTH = 9;
-const MAX_DISPLAY_FAILURES_PER_TARGET = 24;
 
 export type CauldronResolveMode = 'cauldronOnly' | 'normalBridge';
 
@@ -40,7 +43,7 @@ export const NORMAL_BRIDGE_POLICY: CauldronPlannerPolicy = {
 export type CauldronOnlyFailureCode =
   | 'NOT_CAULDRON_TARGET'
   | 'NO_CAULDRON_CANDIDATE'
-  | 'NO_CLOSED_CAULDRON_CANDIDATE'
+  | 'INPUT_NOT_PLANT_DERIVED'
   | 'CYCLE'
   | 'DEPTH_LIMIT'
   | 'NO_NORMAL_RECIPE'
@@ -75,7 +78,7 @@ type CauldronPlanNode =
       kind: 'source';
       itemId: string;
       amount: number;
-      sourceKind: 'startup' | 'unresolved';
+      sourceKind: 'startup' | 'plantDerivedInput' | 'unresolved';
       reason: LocalizedText;
     };
 
@@ -113,9 +116,12 @@ function failureMessage(code: CauldronOnlyFailureCode, itemId: string): Localize
     case 'NOT_CAULDRON_TARGET':
       return { ja: `${name.ja} は錬金釜の出力ターゲットではありません。`, en: `${name.en} is not a cauldron output target.` };
     case 'NO_CAULDRON_CANDIDATE':
-      return { ja: `${name.ja} は植物系・植物加工品の錬金値候補だけでは3入力候補が見つかりません。候補プール: ${plantDerivedCauldronInputCount()}件`, en: `No three-input plant-derived cauldron candidate was found for ${name.en}. Pool: ${plantDerivedCauldronInputCount()} items.` };
-    case 'NO_CLOSED_CAULDRON_CANDIDATE':
-      return { ja: `${name.ja} は植物系・植物加工品から作った錬金釜候補の3入力を閉じられませんでした。`, en: `${name.en} had no plant-derived cauldron candidate whose three inputs could be expanded.` };
+      return {
+        ja: `${name.ja} は植物系・植物加工品だけでは3入力候補が見つかりませんでした。候補プール: ${plantDerivedCauldronInputCount()}件`,
+        en: `No three-input plant-derived cauldron candidate was found for ${name.en}. Pool: ${plantDerivedCauldronInputCount()} items.`,
+      };
+    case 'INPUT_NOT_PLANT_DERIVED':
+      return { ja: `${name.ja} は植物由来の錬金釜入力候補ではありません。`, en: `${name.en} is not a plant-derived cauldron input candidate.` };
     case 'CYCLE':
       return { ja: `${name.ja} の探索中に循環しました。`, en: `A cycle was detected while expanding ${name.en}.` };
     case 'DEPTH_LIMIT':
@@ -131,15 +137,23 @@ function makeFailure(code: CauldronOnlyFailureCode, itemId: string, candidate?: 
   return { code, itemId, message: failureMessage(code, itemId), candidate, children };
 }
 
-function sourceNode(itemId: string, amount: number, sourceKind: 'startup' | 'unresolved', reason?: LocalizedText): CauldronPlanNode {
+function sourceNode(
+  itemId: string,
+  amount: number,
+  sourceKind: 'startup' | 'plantDerivedInput' | 'unresolved',
+  reason?: LocalizedText,
+): CauldronPlanNode {
+  const name = itemName(itemId);
   return {
     kind: 'source',
     itemId,
     amount,
     sourceKind,
     reason: reason ?? (sourceKind === 'startup'
-      ? { ja: `${itemName(itemId).ja} は起動入力として扱います。`, en: `${itemName(itemId).en} is treated as a startup input.` }
-      : { ja: `${itemName(itemId).ja} は未解決です。`, en: `${itemName(itemId).en} is unresolved.` }),
+      ? { ja: `${name.ja} は起動入力として扱います。`, en: `${name.en} is treated as a startup input.` }
+      : sourceKind === 'plantDerivedInput'
+        ? { ja: `${name.ja} は植物系・植物加工品の錬金釜入力として採用します。`, en: `${name.en} is accepted as a plant-derived cauldron input.` }
+        : { ja: `${name.ja} は未解決です。`, en: `${name.en} is unresolved.` }),
   };
 }
 
@@ -157,12 +171,46 @@ function recipeOutputAmount(recipe: Recipe, itemId: string): number {
 }
 
 function selectRecipe(itemId: string, recipePreferences: Record<string, string>): Recipe | undefined {
-  const preferred = chooseRecipeForItem(itemId, recipePreferences);
-  if (preferred) return preferred;
-  return undefined;
+  return chooseRecipeForItem(itemId, recipePreferences);
 }
 
-function resolveNormalItem(
+function resolveCauldronInput(itemId: string, amount: number): ResolveResult {
+  if (!isPlantDerivedCauldronInputItem(itemId)) {
+    const failure = makeFailure('INPUT_NOT_PLANT_DERIVED', itemId);
+    return { ok: false, node: sourceNode(itemId, amount, 'unresolved', failure.message), failures: [failure] };
+  }
+  return { ok: true, node: sourceNode(itemId, amount, 'plantDerivedInput'), failures: [] };
+}
+
+function resolveCauldronOutput(
+  itemId: string,
+  amount: number,
+  policy: CauldronPlannerPolicy,
+): ResolveResult {
+  if (!CAULDRON_TARGETS[itemId]) return failedResult('NOT_CAULDRON_TARGET', itemId, policy, amount);
+  const candidates = findPlantDerivedCauldronCandidatesForOutput(itemId);
+  if (candidates.length === 0) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
+
+  const candidateFailures: CauldronOnlyFailure[] = [];
+  for (const candidate of candidates) {
+    const children: CauldronPlanChild[] = [];
+    const failures: CauldronOnlyFailure[] = [];
+    candidate.inputItemIds.forEach((childItemId, index) => {
+      const slotIndex = index as 0 | 1 | 2;
+      const child = resolveCauldronInput(childItemId, amount);
+      if (!child.ok) failures.push(...child.failures);
+      children.push({ slotIndex, itemId: childItemId, amount, node: child.node ?? sourceNode(childItemId, amount, 'unresolved') });
+    });
+
+    const node: CauldronPlanNode = { kind: 'cauldron', itemId, amount, candidate, children };
+    if (failures.length === 0) return { ok: true, node, failures: [] };
+    candidateFailures.push(makeFailure('INPUT_NOT_PLANT_DERIVED', itemId, candidate.inputItemIds, failures));
+  }
+
+  return { ok: false, failures: [makeFailure('NO_CAULDRON_CANDIDATE', itemId, undefined, candidateFailures.slice(0, 12))] };
+}
+
+function resolveNormalOutput(
   itemId: string,
   amount: number,
   policy: CauldronPlannerPolicy,
@@ -175,18 +223,18 @@ function resolveNormalItem(
   if (!recipe) return failedResult('NO_NORMAL_RECIPE', itemId, policy, amount);
   const outputAmount = recipeOutputAmount(recipe, itemId);
   if (outputAmount <= 0) return failedResult('NO_NORMAL_RECIPE', itemId, policy, amount);
+
   const runsPerMinute = amount / outputAmount;
   const children: CauldronPlanChild[] = [];
   const failures: CauldronOnlyFailure[] = [];
 
   for (const input of recipe.inputs) {
     if (input.kind === 'paradoxableItem') {
-      const failure = makeFailure('UNSUPPORTED_RECIPE_INPUT', itemId);
-      failures.push(failure);
+      failures.push(makeFailure('UNSUPPORTED_RECIPE_INPUT', itemId));
       continue;
     }
     const childAmount = input.amount * runsPerMinute;
-    const child = resolveItem(input.itemId, childAmount, policy, recipePreferences, depth - 1, path, memo);
+    const child = resolveOutputItem(input.itemId, childAmount, policy, recipePreferences, depth - 1, path, memo);
     if (!child.ok) failures.push(...child.failures);
     children.push({ itemId: input.itemId, amount: childAmount, node: child.node ?? sourceNode(input.itemId, childAmount, 'unresolved') });
   }
@@ -195,44 +243,7 @@ function resolveNormalItem(
   return { ok: failures.length === 0, node, failures };
 }
 
-function resolveCauldronItem(
-  itemId: string,
-  amount: number,
-  policy: CauldronPlannerPolicy,
-  recipePreferences: Record<string, string>,
-  depth: number,
-  path: Set<string>,
-  memo: ResolveMemo,
-): ResolveResult {
-  const candidates = findPlantDerivedCauldronCandidatesForOutput(itemId);
-  if (candidates.length === 0) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
-
-  const candidateFailures: CauldronOnlyFailure[] = [];
-  let firstPartial: CauldronPlanNode | undefined;
-
-  for (const candidate of candidates) {
-    const children: CauldronPlanChild[] = [];
-    const failures: CauldronOnlyFailure[] = [];
-    candidate.inputItemIds.forEach((childItemId, index) => {
-      const slotIndex = index as 0 | 1 | 2;
-      const child = resolveItem(childItemId, amount, policy, recipePreferences, depth - 1, path, memo);
-      if (!child.ok) failures.push(...child.failures);
-      children.push({ slotIndex, itemId: childItemId, amount, node: child.ok && child.node ? child.node : sourceNode(childItemId, amount, 'unresolved', child.failures[0]?.message) });
-    });
-
-    const node: CauldronPlanNode = { kind: 'cauldron', itemId, amount, candidate, children };
-    if (failures.length === 0) return { ok: true, node, failures: candidateFailures };
-    if (!firstPartial) firstPartial = node;
-    candidateFailures.push(makeFailure('NO_CLOSED_CAULDRON_CANDIDATE', itemId, candidate.inputItemIds, failures.slice(0, 6)));
-  }
-
-  if (policy.allowPartialGraph && firstPartial) {
-    return { ok: false, node: firstPartial, failures: candidateFailures };
-  }
-  return { ok: false, failures: [makeFailure('NO_CLOSED_CAULDRON_CANDIDATE', itemId, undefined, candidateFailures.slice(0, MAX_DISPLAY_FAILURES_PER_TARGET))] };
-}
-
-function resolveItem(
+function resolveOutputItem(
   itemId: string,
   amount: number,
   policy: CauldronPlannerPolicy,
@@ -254,16 +265,11 @@ function resolveItem(
   let result: ResolveResult;
 
   if (CAULDRON_TARGETS[itemId]) {
-    const cauldron = resolveCauldronItem(itemId, amount, policy, recipePreferences, depth, nextPath, memo);
-    if (cauldron.ok) result = cauldron;
-    else if (policy.allowNormalFallbackAfterCauldronFailure) {
-      const normal = resolveNormalItem(itemId, amount, policy, recipePreferences, depth, nextPath, memo);
-      result = normal.ok ? normal : { ok: false, node: normal.node ?? cauldron.node, failures: [...cauldron.failures, ...normal.failures] };
-    } else {
-      result = cauldron;
-    }
+    const cauldron = resolveCauldronOutput(itemId, amount, policy);
+    if (cauldron.ok || !policy.allowNormalFallbackAfterCauldronFailure) result = cauldron;
+    else result = resolveNormalOutput(itemId, amount, policy, recipePreferences, depth, nextPath, memo);
   } else if (policy.allowNormalForNonCauldronTarget) {
-    result = resolveNormalItem(itemId, amount, policy, recipePreferences, depth, nextPath, memo);
+    result = resolveNormalOutput(itemId, amount, policy, recipePreferences, depth, nextPath, memo);
   } else {
     result = failedResult('NOT_CAULDRON_TARGET', itemId, policy, amount);
   }
@@ -330,7 +336,7 @@ function recipeOutputRate(recipe: Recipe, itemId: string): number {
 function recipeIdForNode(node: CauldronPlanNode, pathKey: string, machineId: CauldronMachineId): string {
   if (node.kind === 'normal') return `${node.recipeId}:phase15:${pathKey}`;
   if (node.kind === 'cauldron') return `cauldron:phase1:${machineId}:${node.itemId}:${pathKey}:${node.candidate.inputItemIds.join('+')}`;
-  return `source:${node.itemId}:${pathKey}`;
+  return `source:${node.sourceKind}:${node.itemId}:${pathKey}`;
 }
 
 function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'cauldron' }>, recipeId: string, machineId: CauldronMachineId): RecipeStat {
@@ -357,7 +363,21 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
   };
 }
 
-function makeFlow(id: string, fromRecipeId: string | undefined, toRecipeId: string, itemId: string, rate: number, slotIndex?: number, sourceMode: 'cycleInput' | 'unresolved' = 'unresolved'): CalculatedFlow {
+function sourceModeForSourceKind(sourceKind: 'startup' | 'plantDerivedInput' | 'unresolved'): 'cycleInput' | 'plantDerivedInput' | 'unresolved' {
+  if (sourceKind === 'startup') return 'cycleInput';
+  if (sourceKind === 'plantDerivedInput') return 'plantDerivedInput';
+  return 'unresolved';
+}
+
+function makeFlow(
+  id: string,
+  fromRecipeId: string | undefined,
+  toRecipeId: string,
+  itemId: string,
+  rate: number,
+  slotIndex?: number,
+  sourceMode: 'cycleInput' | 'plantDerivedInput' | 'unresolved' = 'unresolved',
+): CalculatedFlow {
   const from = fromRecipeId
     ? { type: 'recipe' as const, recipeId: fromRecipeId }
     : { type: 'itemSource' as const, itemId, sourceMode };
@@ -386,9 +406,16 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
     if (node.kind === 'source') {
       const stat = addItemStat(itemStats, node.itemId);
       if (node.sourceKind === 'startup') stat.initialPurchased += node.amount;
-      else stat.purchased += 0;
       if (parentRecipeId) {
-        flows.push(makeFlow(`cauldron-planner:${parentRecipeId}:source:${node.itemId}:${flows.length}`, undefined, parentRecipeId, node.itemId, node.amount, parentSlotIndex, node.sourceKind === 'startup' ? 'cycleInput' : 'unresolved'));
+        flows.push(makeFlow(
+          `cauldron-planner:${parentRecipeId}:source:${node.sourceKind}:${node.itemId}:slot${parentSlotIndex ?? 'x'}:${flows.length}`,
+          undefined,
+          parentRecipeId,
+          node.itemId,
+          node.amount,
+          parentSlotIndex,
+          sourceModeForSourceKind(node.sourceKind),
+        ));
       }
       return undefined;
     }
@@ -437,11 +464,11 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
     warnings: [
       {
         messageJa: mode === 'normalBridge'
-          ? 'Debug: 非錬金釜ターゲットだけ通常レシピで通過し、錬金釜ターゲットは錬金釜のみで解いています。通常fallback・速度・熱・燃料・肥料は未計算です。'
-          : 'Phase 1: 錬金釜だけの単体探索です。通常レシピ・速度・熱・燃料・肥料は未計算です。',
+          ? 'Debug: 非錬金釜ターゲットは通常レシピで通過し、錬金釜ターゲットは植物由来3入力の錬金釜候補だけを使っています。通常fallback・速度・熱・燃料・肥料は未計算です。'
+          : 'Phase 1: 植物由来3入力による錬金釜単体探索です。通常レシピ・速度・熱・燃料・肥料は未計算です。',
         messageEn: mode === 'normalBridge'
-          ? 'Debug: non-cauldron targets are bridged through normal recipes; cauldron targets are solved only by cauldron. Normal fallback, speed, heat, fuel, and fertilizer are not calculated.'
-          : 'Phase 1: cauldron-only search. Normal recipes, speed, heat, fuel, and fertilizer are not calculated.',
+          ? 'Debug: non-cauldron targets are bridged through normal recipes; cauldron targets use only plant-derived three-input cauldron candidates. Normal fallback, speed, heat, fuel, and fertilizer are not calculated.'
+          : 'Phase 1: cauldron-only search using plant-derived three-input candidates. Normal recipes, speed, heat, fuel, and fertilizer are not calculated.',
       },
     ],
     calculationStatus: ok ? 'ok' : 'invalid',
@@ -484,7 +511,7 @@ function planItemFromNode(node: CauldronPlanNode): CauldronPlanItem {
       itemId: node.itemId,
       label: itemName(node.itemId),
       amount: node.amount,
-      status: node.sourceKind === 'startup' ? 'startup' : 'missing',
+      status: node.sourceKind === 'startup' ? 'startup' : node.sourceKind === 'plantDerivedInput' ? 'plantDerivedInput' : 'missing',
       reason: node.reason,
       children: [],
     };
@@ -495,7 +522,7 @@ function planItemFromNode(node: CauldronPlanNode): CauldronPlanItem {
     amount: node.amount,
     status: node.kind === 'cauldron' ? 'cauldronTarget' : 'normal',
     reason: node.kind === 'cauldron'
-      ? { ja: '実行時候補検索で選択した錬金釜3入力です。', en: 'Selected by runtime cauldron candidate search.' }
+      ? { ja: '植物系・植物加工品から選んだ3入力の錬金釜候補です。', en: 'A cauldron candidate selected from plant-derived inputs.' }
       : { ja: '非錬金釜ターゲットを通常レシピで通過展開しています。', en: 'Non-cauldron target bridged through a normal recipe.' },
     recipeId: node.kind === 'normal' ? node.recipeId : undefined,
     candidateCount: node.kind === 'cauldron' ? findPlantDerivedCauldronCandidatesForOutput(node.itemId).length : undefined,
@@ -568,7 +595,7 @@ export function planCauldronOnlyTarget(options: {
   const amount = Math.max(1, Number(options.amount) || 1);
   const policy = options.mode === 'normalBridge' ? NORMAL_BRIDGE_POLICY : CAULDRON_ONLY_POLICY;
   const recipePreferences = options.recipePreferences ?? {};
-  const resolved = resolveItem(options.targetItemId, amount, policy, recipePreferences);
+  const resolved = resolveOutputItem(options.targetItemId, amount, policy, recipePreferences);
   const targetLabel = itemName(options.targetItemId);
 
   if (!resolved.node) {
@@ -626,7 +653,7 @@ export function planCauldronOnlyTarget(options: {
   const counts = countNodes(resolved.node);
   const rootPlan = planItemFromNode(resolved.node);
   const issues: CauldronOptimizedPlanIssue[] = resolved.ok
-    ? [{ code: 'COMPLETE_CLOSED', severity: 'info', message: { ja: policy.mode === 'normalBridge' ? 'Debug bridge 候補です。錬金釜ターゲットは通常fallbackしていません。' : '錬金釜Phase 1候補です。', en: policy.mode === 'normalBridge' ? 'Debug bridge candidate. Cauldron targets did not fall back to normal recipes.' : 'Cauldron Phase 1 candidate.' } }]
+    ? [{ code: 'COMPLETE_CLOSED', severity: 'info', message: { ja: policy.mode === 'normalBridge' ? 'Debug bridge 候補です。錬金釜ターゲットは植物由来3入力だけで処理しています。' : '錬金釜Phase 1候補です。植物由来3入力だけで処理しています。', en: policy.mode === 'normalBridge' ? 'Debug bridge candidate. Cauldron targets use plant-derived three-input candidates only.' : 'Cauldron Phase 1 candidate. It uses plant-derived three-input candidates only.' } }]
     : resolved.failures.slice(0, 10).map(issueFromFailure);
 
   const bestPlan: CauldronOptimizedPlan = {

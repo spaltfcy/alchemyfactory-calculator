@@ -2185,6 +2185,10 @@ a {
   color: #9fe870;
 }
 
+.cauldron-plan-item-plantDerivedInput > .cauldron-plan-item-head {
+  color: #74c0fc;
+}
+
 .cauldron-graph-region {
   flex: 1;
   min-height: 0;

@@ -105,18 +105,8 @@ export function isPlantDerivedCauldronInputItem(itemId: string): boolean {
   return PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS.includes(itemId);
 }
 
-function candidatePriority(inputItemIds: CauldronInputTuple): number {
-  // Lower is better. In Phase 1 the input pool is already plant-derived, so prefer
-  // candidates whose inputs can be recursively handled by the cauldron planner.
-  const targetCount = inputItemIds.filter((itemId) => CAULDRON_TARGETS[itemId]).length;
-  const selfReferenceCount = new Set(inputItemIds).size;
-  return (3 - targetCount) * 100 + (3 - selfReferenceCount);
-}
-
 function sortRuntimeCandidates(candidates: CauldronRuntimeCandidate[]): CauldronRuntimeCandidate[] {
   return candidates.sort((a, b) => {
-    const priority = candidatePriority(a.inputItemIds) - candidatePriority(b.inputItemIds);
-    if (priority !== 0) return priority;
     const distance = a.weightedDistance - b.weightedDistance;
     if (Math.abs(distance) > EPS) return distance;
     const duplicate = b.duplicatePenalty - a.duplicatePenalty;

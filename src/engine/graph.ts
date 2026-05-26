@@ -343,12 +343,16 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       ? (lang === 'ja' ? '外部生産' : 'External')
       : endpoint.sourceMode === 'cycleInput'
         ? (lang === 'ja' ? '初期投入' : 'Startup input')
-        : endpoint.sourceMode === 'buy'
-          ? (lang === 'ja' ? '購入' : 'Buy')
-          : (lang === 'ja' ? '未解決' : 'Unresolved');
+        : endpoint.sourceMode === 'plantDerivedInput'
+          ? (lang === 'ja' ? '植物由来入力' : 'Plant-derived input')
+          : endpoint.sourceMode === 'buy'
+            ? (lang === 'ja' ? '購入' : 'Buy')
+            : (lang === 'ja' ? '未解決' : 'Unresolved');
     const badges: PlannerNodeData['badges'] = endpoint.sourceMode === 'buy'
       ? [{ text: lang === 'ja' ? '購入' : 'Buy', kind: 'buy' }]
-      : [];
+      : endpoint.sourceMode === 'plantDerivedInput'
+        ? [{ text: lang === 'ja' ? '植物由来' : 'Plant', kind: 'info' }]
+        : [];
     return {
       id,
       type: 'plannerNode',

@@ -194,6 +194,7 @@ function planStatusText(status: CauldronPlanItem['status'], lang: Lang): string 
     normal: { ja: '通常レシピ', en: 'Normal recipe' },
     cauldronTarget: { ja: '錬金釜候補', en: 'Cauldron candidate' },
     handCauldron: { ja: '手入力釜', en: 'Manual cauldron' },
+    plantDerivedInput: { ja: '植物由来入力', en: 'Plant-derived input' },
     missing: { ja: '未解決', en: 'Missing' },
     cycle: { ja: '循環', en: 'Cycle' },
     depthLimit: { ja: '探索上限', en: 'Depth limit' },
@@ -213,6 +214,7 @@ function planReasonText(item: CauldronPlanItem, lang: Lang): string {
     return lang === 'ja' ? `手入力の錬金釜レシピ ${item.recipeId ?? ''} が存在します。` : `Manual cauldron recipe ${item.recipeId ?? ''} exists.`;
   }
   if (item.status === 'startup') return lang === 'ja' ? '初期投入として扱います。' : 'Provided as a startup input.';
+  if (item.status === 'plantDerivedInput') return lang === 'ja' ? '錬金釜の植物由来3入力として採用します。' : 'Accepted as a plant-derived cauldron input.';
   if (item.status === 'cycle') return lang === 'ja' ? '循環を検出しました。初期投入候補として扱います。' : 'Cycle detected; treat as a startup candidate.';
   if (item.status === 'depthLimit') return lang === 'ja' ? '探索上限に達しました。' : 'Depth limit reached.';
   return lang === 'ja' ? '内部生産レシピが見つかりません。' : 'No internal production recipe was found.';
