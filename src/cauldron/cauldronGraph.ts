@@ -246,14 +246,15 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
   const outputRates: Record<string, number> = {};
 
   if (canBuildTimedGraph) {
-    for (const [itemId, amount] of Object.entries(inputCounts)) {
-        const rate = amount * outputPerMinute;
-      inputRates[itemId] = rate;
+    prediction.inputItemIds.forEach((itemId, slotIndex) => {
+      if (!itemId) return;
+      const rate = outputPerMinute;
+      inputRates[itemId] = (inputRates[itemId] ?? 0) + rate;
       const stat = addStat(itemStats, itemId);
       stat.consumed += rate;
       const transport = cauldronFlowTransport(itemId, rate);
       flows.push({
-        id: `cauldron-flow:${recipeId}:in:${itemId}`,
+        id: `cauldron-flow:${recipeId}:in:${slotIndex + 1}:${itemId}`,
         from: { type: 'itemSource', itemId, sourceMode: 'external' },
         to: { type: 'recipe', recipeId },
         itemId,
@@ -263,7 +264,7 @@ export function buildCauldronGraphResult(rawRequest: unknown, fallback?: Partial
         transportUnits: transport.transportUnits,
         role: 'material',
       });
-    }
+    });
 
     outputRates[outputItemId] = outputPerMinute;
     const outputStat = addStat(itemStats, outputItemId);

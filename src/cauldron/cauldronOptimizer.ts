@@ -844,11 +844,11 @@ function closedFindCauldronNode(itemId: string, amount: number, options: PlanBui
     for (const candidate of candidates) {
       if (tried.has(candidate.id)) continue;
       tried.add(candidate.id);
-      const inputCounts = countInputs(candidate.inputItemIds);
       const nextSeen = new Set(seen);
       nextSeen.add(itemId);
-      const children = Object.entries(inputCounts).map(([childItemId, count]) =>
-        closedResolveItem(childItemId, amount * count, options, startupSet, depth - 1, nextSeen, nextPlanned),
+      // 錬金釜は必ず3スロット入力です。同じアイテムが重複しても1本に集約しません。
+      const children = candidate.inputItemIds.map((childItemId) =>
+        closedResolveItem(childItemId, amount, options, startupSet, depth - 1, nextSeen, nextPlanned),
       );
       const tierId = tier.id === 'purchasable-derived'
         ? sourceTierForInputPool(candidate.inputItemIds, plantDerivedItemIds(), purchaseDerivedItemIds())
@@ -879,7 +879,6 @@ function closedFindCauldronNode(itemId: string, amount: number, options: PlanBui
 }
 
 function closedResolveItem(itemId: string, amount: number, options: PlanBuildOptions, startupSet: Set<string>, depth: number, seen: Set<string>, plannedItemIds: Set<string>): CauldronPlanItem {
-  if (startupSet.has(itemId)) return closedStartupItem(itemId, amount);
   if (isSeedItem(itemId)) {
     return closedStartupItem(itemId, amount, { ja: '種は初期投入として扱います。', en: 'Seeds are treated as startup input.' });
   }
@@ -972,16 +971,23 @@ function closedPlanIssues(metrics: CauldronOptimizedPlanMetrics, root: CauldronP
     issues.push({ code: 'CAULDRON_DATA_MISSING', severity: 'error', itemIds: treeMetrics.cauldronDataMissingItemIds, message: { ja: `錬金釜ターゲット値が未登録です: ${names.ja}`, en: `Missing cauldron target values: ${names.en}` } });
   }
   if (options.settings.fuel.enabled && options.settings.fuel.sourceMode === 'internal') {
-    issues.push({ code: 'INITIAL_INPUT', severity: 'info', itemIds: [options.settings.fuel.fuelItemId], message: { ja: `燃料は設定値を内製対象にしています: ${labelForItem(options.settings.fuel.fuelItemId).ja}`, en: `Fuel follows settings as internal: ${labelForItem(options.settings.fuel.fuelItemId).en}` } });
+    issues.push({ code: 'CONSTANT_SUPPLY', severity: 'warning', itemIds: [options.settings.fuel.fuelItemId], message: { ja: `燃料の必要量計算は未実装です。閉鎖OKには含めません: ${labelForItem(options.settings.fuel.fuelItemId).ja}`, en: `Fuel demand is not calculated yet and is not counted as closed: ${labelForItem(options.settings.fuel.fuelItemId).en}` } });
   }
   if (options.settings.fertilizer.enabled && options.settings.fertilizer.sourceMode === 'internal') {
-    issues.push({ code: 'INITIAL_INPUT', severity: 'info', itemIds: [options.settings.fertilizer.fertilizerItemId], message: { ja: `肥料は設定値を内製対象にしています: ${labelForItem(options.settings.fertilizer.fertilizerItemId).ja}`, en: `Fertilizer follows settings as internal: ${labelForItem(options.settings.fertilizer.fertilizerItemId).en}` } });
+    issues.push({ code: 'CONSTANT_SUPPLY', severity: 'warning', itemIds: [options.settings.fertilizer.fertilizerItemId], message: { ja: `肥料の必要量計算は未実装です。閉鎖OKには含めません: ${labelForItem(options.settings.fertilizer.fertilizerItemId).ja}`, en: `Fertilizer demand is not calculated yet and is not counted as closed: ${labelForItem(options.settings.fertilizer.fertilizerItemId).en}` } });
   }
   return issues;
 }
 
-function closedPlanStatus(metrics: CauldronOptimizedPlanMetrics): CauldronOptimizedPlan['status'] {
+function closedPlanStatus(metrics: CauldronOptimizedPlanMetrics, options?: PlanBuildOptions): CauldronOptimizedPlan['status'] {
   if (metrics.hasMissing) return 'blocked';
+  const utilityUncalculated = Boolean(
+    options && (
+      (options.settings.fuel.enabled && options.settings.fuel.sourceMode === 'internal') ||
+      (options.settings.fertilizer.enabled && options.settings.fertilizer.sourceMode === 'internal')
+    ),
+  );
+  if (utilityUncalculated) return 'warning';
   if (metrics.selfContained && metrics.noSurplus) return metrics.initialItemIds.length > 0 ? 'closed' : 'perfect';
   return 'warning';
 }
@@ -1238,7 +1244,7 @@ export function optimizeCauldronTargetWithResult(options: PlanBuildOptions): Clo
   const root = buildClosedRoot(options);
   const result = buildClosedResultFromTree(root, options);
   const metrics = metricsFromClosedTree(root, result);
-  const status = closedPlanStatus(metrics);
+  const status = closedPlanStatus(metrics, options);
   const plan: CauldronOptimizedPlan = {
     id: `closed-line:${options.targetItemId}`,
     rank: 1,
@@ -1250,7 +1256,9 @@ export function optimizeCauldronTargetWithResult(options: PlanBuildOptions): Clo
     title: { ja: `${targetLabel.ja} 閉鎖ライン`, en: `${targetLabel.en} closed line` },
     summary: metrics.hasMissing
       ? { ja: '錬金釜候補を優先して通常レシピへフォールバックしましたが、未解決材料があります。', en: 'Tried cauldron candidates first and then normal recipes, but some materials remain unresolved.' }
-      : { ja: '錬金釜候補を優先し、3入力も含めて通常レシピ/初期投入まで再帰的に解決しました。', en: 'Resolved recursively from cauldron candidates through their three inputs, normal recipes, and startup inputs.' },
+      : status === 'warning'
+        ? { ja: '材料ラインは構成しましたが、燃料/肥料または余剰の確認が残っています。閉鎖OKではありません。', en: 'The material line was built, but fuel/fertilizer or surplus checks remain. This is not a closed OK.' }
+        : { ja: '錬金釜候補を優先し、3入力も含めて通常レシピ/初期投入まで再帰的に解決しました。', en: 'Resolved recursively from cauldron candidates through their three inputs, normal recipes, and startup inputs.' },
     targetRatePerMinute: options.targetRatePerMinute,
     selectedInputItemIds: root.selectedInputItemIds,
     cauldronCandidateId: root.status === 'cauldronTarget' ? `closed-line:${options.targetItemId}:${root.selectedInputItemIds?.join('+') ?? 'auto'}` : undefined,

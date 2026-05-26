@@ -39,7 +39,7 @@ export function resolveCauldronOutputItemId(score: number): string | undefined {
   let best: CauldronTargetEntry | undefined;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const target of sortedCauldronTargets()) {
-    const distance = Math.abs(target.targetValue - score);
+    const distance = Math.abs(target.targetValue - score) * (target.multiplier ?? 1);
     if (
       distance + EPS < bestDistance ||
       (Math.abs(distance - bestDistance) <= EPS && best && target.targetValue < best.targetValue)

@@ -184,7 +184,7 @@ function endpointLabel(endpoint: InitialInvestmentEndpoint, lang: Lang): { label
     return {
       label: itemName(endpoint.itemId, lang),
       kind: 'item',
-      subLabel: (lang === 'ja' ? '初期投資用 ' : 'Startup ') + (endpoint.sourceMode === 'cycleInput' ? (lang === 'ja' ? '循環補填' : 'Cycle input') : endpoint.sourceMode === 'buy' ? (lang === 'ja' ? '購入' : 'Buy') : (lang === 'ja' ? '未解決' : 'Unresolved')),
+      subLabel: (lang === 'ja' ? '初期投資用 ' : 'Startup ') + (endpoint.sourceMode === 'cycleInput' ? (lang === 'ja' ? '初期投入' : 'Startup input') : endpoint.sourceMode === 'buy' ? (lang === 'ja' ? '購入' : 'Buy') : (lang === 'ja' ? '未解決' : 'Unresolved')),
     };
   }
   return {
@@ -342,7 +342,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const modeLabel = endpoint.sourceMode === 'external'
       ? (lang === 'ja' ? '外部生産' : 'External')
       : endpoint.sourceMode === 'cycleInput'
-        ? (lang === 'ja' ? '循環補填' : 'Cycle input')
+        ? (lang === 'ja' ? '初期投入' : 'Startup input')
         : endpoint.sourceMode === 'buy'
           ? (lang === 'ja' ? '購入' : 'Buy')
           : (lang === 'ja' ? '未解決' : 'Unresolved');

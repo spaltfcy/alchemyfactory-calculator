@@ -14,6 +14,7 @@ export type CauldronValueEntry = {
 export type CauldronTargetEntry = {
   itemId: string;
   targetValue: number;
+  multiplier?: number;
   status: CauldronDataStatus;
   timeSec?: number;
   heatPerSec?: number;

@@ -42,6 +42,7 @@ export type Item = {
   paradoxTimeSec?: number; // パラドックス坩堝で消滅エッセンス素材にした場合の基準時間秒
   cauldronValue?: number; // 錬金釜入力値。通常計算からは参照しない
   cauldronTargetValue?: number; // 錬金釜出力ターゲット値。通常計算からは参照しない
+  cauldronTargetMultiplier?: number; // 錬金釜出力選択時の距離倍率。未定義なら1
   cauldronValueStatus?: 'unverified' | 'verified' | 'conflict';
   cauldronTargetStatus?: 'unverified' | 'verified' | 'conflict';
   internal?: boolean; // 内部用。ターゲット・売却候補には出さない

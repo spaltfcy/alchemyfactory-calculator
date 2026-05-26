@@ -12,6 +12,7 @@ import { buildFlowGraphDebugArtifacts, buildFlowGraphSvg, compareFlowGraphLayout
 import { itemById } from '../data/items';
 import { buildTableViewModel } from '../engine/tableViewModel';
 import { buildCauldronGraphResult, cauldronStateFromRequest, type CauldronGraphRequest } from '../cauldron/cauldronGraph';
+import { planCauldronOnlyTarget, type CauldronResolveMode } from '../cauldron/cauldronOnlyPlanner';
 
 type DebugTabProps = {
   lang: Lang;
@@ -1189,7 +1190,39 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
   }
 
   function buildCauldronDebugArtifact(rawRequest: unknown) {
-    const build = buildCauldronGraphResult(rawRequest, state.cauldronState);
+    const requestRecord = isObjectRecord(rawRequest) ? rawRequest : {};
+    const plannerMode = requestRecord.plannerMode === 'normalBridge' ? 'normalBridge' : requestRecord.plannerMode === 'cauldronOnly' ? 'cauldronOnly' : undefined;
+    const targetItemId = typeof requestRecord.targetItemId === 'string' ? requestRecord.targetItemId : state.cauldronState.candidateTargetItemId;
+    const targetRatePerMinute = typeof requestRecord.targetRatePerMinute === 'number' ? requestRecord.targetRatePerMinute : 1;
+    const machineId = requestRecord.machineId === 'advanced_cauldron' ? 'advanced_cauldron' : state.cauldronState.machineId;
+    const planned = plannerMode
+      ? planCauldronOnlyTarget({
+          targetItemId,
+          amount: targetRatePerMinute,
+          machineId,
+          settings: state.settings,
+          recipePreferences: state.recipePreferences,
+          mode: plannerMode as CauldronResolveMode,
+        })
+      : undefined;
+    const build = planned
+      ? {
+          request: { ...requestRecord, targetItemId, targetRatePerMinute, machineId, plannerMode },
+          result: planned.result,
+          summary: {
+            status: planned.result.calculationStatus === 'ok' ? 'ok' as const : 'invalid' as const,
+            code: planned.result.errorSummaries?.[0]?.code,
+            messageJa: planned.result.errorSummaries?.[0]?.messageJa ?? '錬金釜Planner検証結果です。',
+            messageEn: planned.result.errorSummaries?.[0]?.messageEn ?? 'Cauldron planner verification result.',
+            graphNodeCount: Object.keys(planned.result.recipeStats).length,
+            graphEdgeCount: planned.result.flows.length,
+          },
+          prediction: null,
+          selectedCandidate: planned.optimization.bestPlan?.selectedInputItemIds ?? null,
+          candidates: planned.optimization.plans,
+          optimization: planned.optimization,
+        }
+      : buildCauldronGraphResult(rawRequest, state.cauldronState);
     const resultForSvg = build.result;
     const normalGraphArtifact = buildFlowGraphDebugArtifacts(
       resultForSvg,
@@ -1226,6 +1259,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       prediction: build.prediction,
       selectedCandidate: build.selectedCandidate ?? null,
       candidates: build.candidates,
+      optimization: 'optimization' in build ? build.optimization : undefined,
       graphArtifacts: {
         normal: { metrics: normalGraphArtifact.metrics },
         debug: { metrics: debugGraphArtifact.metrics },

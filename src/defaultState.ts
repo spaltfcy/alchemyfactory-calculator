@@ -4,7 +4,7 @@ import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
 import { DEFAULT_PARADOX_SETTINGS } from './data/paradox';
 
 export const DEFAULT_STATE: AppState = {
-  version: 30,
+  version: 31,
   language: 'ja',
   activeTab: 'graph',
   tablePreferences: {
@@ -106,7 +106,7 @@ export const DEFAULT_STATE: AppState = {
     maxCandidates: 20,
     allowDuplicateInputs: true,
     targetItemIdsText: 'sol',
-    startupItemIdsText: 'charcoal_powder quicklime_powder impure_copper_powder copper_powder gold_dust panacea_potion',
+    startupItemIdsText: '',
     observedOutputItemId: '',
     observedTimeSec: '',
     observedHeatPerSec: '',
