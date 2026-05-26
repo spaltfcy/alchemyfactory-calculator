@@ -1,4 +1,4 @@
-import { CAULDRON_TARGETS } from './cauldronData';
+import { CAULDRON_INPUT_VALUES, CAULDRON_TARGETS } from './cauldronData';
 import {
   findPlantDerivedCauldronCandidatesForOutput,
   isPlantDerivedCauldronInputItem,
@@ -369,6 +369,12 @@ function sourceModeForSourceKind(sourceKind: 'startup' | 'plantDerivedInput' | '
   return 'unresolved';
 }
 
+function cauldronInputValueLabel(itemId: string): string {
+  const value = CAULDRON_INPUT_VALUES[itemId]?.value;
+  if (!Number.isFinite(value)) return '錬金値 ?';
+  return '錬金値 ' + String(value);
+}
+
 function makeFlow(
   id: string,
   fromRecipeId: string | undefined,
@@ -392,7 +398,7 @@ function makeFlow(
     transportKind: transport.transportKind,
     transportUnits: transport.transportUnits,
     role: 'material',
-    displayRateLabel: slotIndex === undefined ? undefined : `slot ${slotIndex + 1} ・ ${rate}/min`,
+    displayRateLabel: slotIndex === undefined ? undefined : `slot ${slotIndex + 1} ・ ${cauldronInputValueLabel(itemId)} ・ ${rate}/min`,
   };
 }
 

@@ -96,9 +96,10 @@ function buildPlantDerivedItemIds(): string[] {
 }
 
 const plantDerivedItemIds = buildPlantDerivedItemIds();
+const seedItemIds = new Set(ITEMS.filter((item) => item.category === 'seed').map((item) => item.id));
 
 export const PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS = plantDerivedItemIds
-  .filter((itemId) => CAULDRON_INPUT_VALUES[itemId])
+  .filter((itemId) => !seedItemIds.has(itemId) && CAULDRON_INPUT_VALUES[itemId])
   .sort((a, b) => CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b));
 
 export function isPlantDerivedCauldronInputItem(itemId: string): boolean {
