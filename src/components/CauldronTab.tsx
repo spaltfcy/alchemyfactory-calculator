@@ -192,9 +192,9 @@ function planStatusText(status: CauldronPlanItem['status'], lang: Lang): string 
   const labels: Record<CauldronPlanItem['status'], { ja: string; en: string }> = {
     startup: { ja: '初期投入', en: 'Startup' },
     normal: { ja: '通常レシピ', en: 'Normal recipe' },
-    cauldronTarget: { ja: '錬金釜候補', en: 'Cauldron candidate' },
+    cauldronTarget: { ja: '錬金釜', en: 'Cauldron' },
     handCauldron: { ja: '手入力釜', en: 'Manual cauldron' },
-    plantDerivedInput: { ja: '植物由来入力', en: 'Plant-derived input' },
+    plantDerivedInput: { ja: '入力素材', en: 'Input' },
     missing: { ja: '未解決', en: 'Missing' },
     cycle: { ja: '循環', en: 'Cycle' },
     depthLimit: { ja: '探索上限', en: 'Depth limit' },
@@ -208,13 +208,13 @@ function planReasonText(item: CauldronPlanItem, lang: Lang): string {
   }
   if (item.status === 'cauldronTarget') {
     const count = item.candidateCount ?? 0;
-    return lang === 'ja' ? `錬金釜候補があります。候補数: ${count}` : `Has cauldron candidates. Candidate count: ${count}`;
+    return lang === 'ja' ? `候補数: ${count}` : `Candidate count: ${count}`;
   }
   if (item.status === 'handCauldron') {
     return lang === 'ja' ? `手入力の錬金釜レシピ ${item.recipeId ?? ''} が存在します。` : `Manual cauldron recipe ${item.recipeId ?? ''} exists.`;
   }
   if (item.status === 'startup') return lang === 'ja' ? '初期投入として扱います。' : 'Provided as a startup input.';
-  if (item.status === 'plantDerivedInput') return lang === 'ja' ? '錬金釜の植物由来3入力として採用します。' : 'Accepted as a plant-derived cauldron input.';
+  if (item.status === 'plantDerivedInput') return '';
   if (item.status === 'cycle') return lang === 'ja' ? '循環を検出しました。初期投入候補として扱います。' : 'Cycle detected; treat as a startup candidate.';
   if (item.status === 'depthLimit') return lang === 'ja' ? '探索上限に達しました。' : 'Depth limit reached.';
   return lang === 'ja' ? '内部生産レシピが見つかりません。' : 'No internal production recipe was found.';
@@ -229,7 +229,7 @@ function renderPlanItem(item: CauldronPlanItem, lang: Lang): ReactNode {
         <em>{planStatusText(item.status, lang)}</em>
       </div>
       {item.recipeId && <p className="cauldron-plan-recipe">{item.recipeId}</p>}
-      <p className="cauldron-plan-reason">{planReasonText(item, lang)}</p>
+      {planReasonText(item, lang) && <p className="cauldron-plan-reason">{planReasonText(item, lang)}</p>}
       {item.children.length > 0 && <ul className="cauldron-plan-tree">{item.children.map((child) => renderPlanItem(child, lang))}</ul>}
     </li>
   );
@@ -284,7 +284,7 @@ function optimizedStatusText(status: CauldronOptimizedPlan['status'], lang: Lang
   const labels: Record<CauldronOptimizedPlan['status'], { ja: string; en: string }> = {
     perfect: { ja: '完全閉鎖', en: 'Perfect closed' },
     closed: { ja: '閉鎖候補', en: 'Closed candidate' },
-    warning: { ja: '警告あり', en: 'Warnings' },
+    warning: { ja: '候補あり', en: 'Candidate' },
     blocked: { ja: '未完結', en: 'Blocked' },
   };
   return labels[status][lang];
@@ -347,7 +347,7 @@ function CauldronOptimizedPlanPanel({ lang, optimization }: { lang: Lang; optimi
         </div>
         <span>{optimizedStatusText(bestPlan.status, lang)}</span>
       </div>
-      <p className="cauldron-plan-summary">{bestPlan.summary[lang]}</p>
+      {bestPlan.summary[lang] && <p className="cauldron-plan-summary">{bestPlan.summary[lang]}</p>}
       <div className="cauldron-plan-metrics">
         {metricRows.map(([label, value]) => (
           <div key={label}>

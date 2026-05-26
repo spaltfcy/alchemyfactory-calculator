@@ -43,6 +43,10 @@ export type RecipeStat = {
   surplusReuseAddedRunsPerMinute?: number;
   surplusReuseSourceItemIds?: string[];
   surplusReuseReplacedRecipeIds?: string[];
+  cauldronTargetValue?: number;
+  cauldronInputRawScore?: number;
+  cauldronInputAdjustedScore?: number;
+  cauldronDuplicatePenalty?: number;
 };
 
 export type CalculatedEndpoint =

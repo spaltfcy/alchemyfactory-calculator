@@ -5,6 +5,7 @@ import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
 import { text } from '../i18n';
+import { CAULDRON_INPUT_VALUES } from '../cauldron/cauldronData';
 import { formatNumber, formatRate } from '../utils/format';
 
 export type PlannerHandleSide = 'left' | 'right' | 'top' | 'bottom';
@@ -275,6 +276,38 @@ function recipeMachineIoLabel(stat: RecipeStat | undefined): string | undefined 
   return 'in ' + formatRate(inputPerMachine) + '/min, out ' + formatRate(outputPerMachine) + '/min';
 }
 
+function cauldronValueText(value: number | undefined): string | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value * 1000) / 1000;
+  return formatNumber(rounded, 3);
+}
+
+function cauldronRecipeValueLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
+  if (!stat) return undefined;
+  const target = cauldronValueText(stat.cauldronTargetValue);
+  const adjusted = cauldronValueText(stat.cauldronInputAdjustedScore);
+  const raw = cauldronValueText(stat.cauldronInputRawScore);
+  const penalty = cauldronValueText(stat.cauldronDuplicatePenalty);
+  const lines: string[] = [];
+  if (target) lines.push((lang === 'ja' ? '目標錬金値 ' : 'Target value ') + target);
+  if (adjusted) lines.push((lang === 'ja' ? '入力錬金値 ' : 'Input value ') + adjusted);
+  if (raw && penalty && stat.cauldronDuplicatePenalty !== undefined && Math.abs(stat.cauldronDuplicatePenalty - 1) > 0.000001) {
+    lines.push((lang === 'ja' ? '生値 ' : 'Raw ') + raw + ' × ' + penalty);
+  }
+  return lines.length ? lines.join('\n') : undefined;
+}
+
+function cauldronRecipeIoLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
+  if (!stat) return undefined;
+  return lang === 'ja' ? '入力3 → 出力1' : '3 inputs → 1 output';
+}
+
+function cauldronInputSourceLabel(itemId: string, lang: Lang): string | undefined {
+  const value = CAULDRON_INPUT_VALUES[itemId]?.value;
+  if (!Number.isFinite(value)) return undefined;
+  return (lang === 'ja' ? '錬金値 ' : 'Value ') + String(value);
+}
+
 function isSteamBoilerRecipe(recipeId: string): boolean {
   return recipeId === 'steam_boiler_low' || recipeId === 'steam_boiler_medium' || recipeId === 'steam_boiler_high';
 }
@@ -296,12 +329,13 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
   if (endpoint.type === 'recipe') {
     const rs = result.recipeStats[endpoint.recipeId];
     const recipe = recipeById[endpoint.recipeId];
+    const isCauldronRecipe = rs?.machineId === 'cauldron' || rs?.machineId === 'advanced_cauldron' || endpoint.recipeId.startsWith('cauldron:');
     const machineLabel = recipeMachineLabel(rs, recipe?.machineId ?? '', lang);
-    const ioLabel = recipeMachineIoLabel(rs);
-    const countLabel = recipeMachineCountLabel(endpoint.recipeId, rs, lang);
+    const ioLabel = isCauldronRecipe ? cauldronRecipeIoLabel(rs, lang) : recipeMachineIoLabel(rs);
+    const countLabel = isCauldronRecipe ? undefined : recipeMachineCountLabel(endpoint.recipeId, rs, lang);
+    const subLabel = isCauldronRecipe ? cauldronRecipeValueLabel(rs, lang) : undefined;
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
-    const isCauldronRecipe = rs?.machineId === 'cauldron' || rs?.machineId === 'advanced_cauldron' || endpoint.recipeId.startsWith('cauldron:');
     const requiredStartupItemIds = result.initialInvestment?.requiredByRecipe?.[endpoint.recipeId] ?? [];
     const badges: PlannerNodeData['badges'] = [];
     if (isCauldronRecipe) badges.push({ text: rs?.machineId === 'advanced_cauldron' ? (lang === 'ja' ? '高性能錬金釜' : 'Advanced cauldron') : (lang === 'ja' ? '錬金釜' : 'Cauldron'), kind: 'cauldron' });
@@ -323,6 +357,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
         machineLabel,
         ioLabel,
         countLabel,
+        subLabel,
         badges: badges.length ? badges : undefined,
         hasStartupWarning: requiredStartupItemIds.length > 0,
         isFuelSource,
@@ -344,15 +379,13 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       : endpoint.sourceMode === 'cycleInput'
         ? (lang === 'ja' ? '初期投入' : 'Startup input')
         : endpoint.sourceMode === 'plantDerivedInput'
-          ? (lang === 'ja' ? '植物由来入力' : 'Plant-derived input')
+          ? (cauldronInputSourceLabel(endpoint.itemId, lang) ?? '')
           : endpoint.sourceMode === 'buy'
             ? (lang === 'ja' ? '購入' : 'Buy')
             : (lang === 'ja' ? '未解決' : 'Unresolved');
     const badges: PlannerNodeData['badges'] = endpoint.sourceMode === 'buy'
       ? [{ text: lang === 'ja' ? '購入' : 'Buy', kind: 'buy' }]
-      : endpoint.sourceMode === 'plantDerivedInput'
-        ? [{ text: lang === 'ja' ? '植物由来' : 'Plant', kind: 'info' }]
-        : [];
+      : [];
     return {
       id,
       type: 'plannerNode',
@@ -360,7 +393,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       data: {
         label,
         kind: 'item',
-        subLabel: modeLabel + (rate > 0 ? ' ' + formatRate(rate) + '/min' : ''),
+        subLabel: modeLabel ? modeLabel + (endpoint.sourceMode !== 'plantDerivedInput' && rate > 0 ? ' ' + formatRate(rate) + '/min' : '') : undefined,
         badges: badges.length ? badges : undefined,
         isPurchasedSource: endpoint.sourceMode === 'buy',
       } satisfies PlannerNodeData,

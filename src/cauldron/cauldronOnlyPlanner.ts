@@ -152,7 +152,7 @@ function sourceNode(
     reason: reason ?? (sourceKind === 'startup'
       ? { ja: `${name.ja} は起動入力として扱います。`, en: `${name.en} is treated as a startup input.` }
       : sourceKind === 'plantDerivedInput'
-        ? { ja: `${name.ja} は植物系・植物加工品の錬金釜入力として採用します。`, en: `${name.en} is accepted as a plant-derived cauldron input.` }
+        ? { ja: `${name.ja} を錬金釜入力に使います。`, en: `${name.en} is used as a cauldron input.` }
         : { ja: `${name.ja} は未解決です。`, en: `${name.en} is unresolved.` }),
   };
 }
@@ -345,10 +345,11 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
   const outputRate = node.kind === 'normal' ? recipeOutputRate(node.recipe, node.itemId) : 1;
   const runsPerMinute = node.kind === 'normal' ? node.runsPerMinute : node.amount;
   const actualMachines = outputRate > 0 ? node.amount / outputRate : node.amount;
+  const cauldronTarget = node.kind === 'cauldron' ? CAULDRON_TARGETS[node.itemId] : undefined;
   return {
     recipeId,
     machineId: node.kind === 'normal' ? node.recipe.machineId : machineId,
-    displayName: node.kind === 'normal' ? node.recipe.name : { ja: `${itemName(node.itemId).ja}（錬金釜）`, en: `${itemName(node.itemId).en} (Cauldron)` },
+    displayName: node.kind === 'normal' ? node.recipe.name : itemName(node.itemId),
     theoreticalMachines: actualMachines,
     actualMachines,
     runsPerMinute,
@@ -360,6 +361,10 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
     surplusOutputRates: {},
     discardedOutputRates: {},
     targetIds: [node.itemId],
+    cauldronTargetValue: cauldronTarget?.targetValue,
+    cauldronInputRawScore: node.kind === 'cauldron' ? node.candidate.rawScore : undefined,
+    cauldronInputAdjustedScore: node.kind === 'cauldron' ? node.candidate.adjustedScore : undefined,
+    cauldronDuplicatePenalty: node.kind === 'cauldron' ? node.candidate.duplicatePenalty : undefined,
   };
 }
 
@@ -369,11 +374,12 @@ function sourceModeForSourceKind(sourceKind: 'startup' | 'plantDerivedInput' | '
   return 'unresolved';
 }
 
-function cauldronInputValueLabel(itemId: string): string {
+function cauldronInputValueText(itemId: string): string {
   const value = CAULDRON_INPUT_VALUES[itemId]?.value;
   if (!Number.isFinite(value)) return '錬金値 ?';
   return '錬金値 ' + String(value);
 }
+
 
 function makeFlow(
   id: string,
@@ -398,7 +404,7 @@ function makeFlow(
     transportKind: transport.transportKind,
     transportUnits: transport.transportUnits,
     role: 'material',
-    displayRateLabel: slotIndex === undefined ? undefined : `slot ${slotIndex + 1} ・ ${cauldronInputValueLabel(itemId)} ・ ${rate}/min`,
+    displayRateLabel: slotIndex === undefined ? undefined : `slot ${slotIndex + 1} ・ ${cauldronInputValueText(itemId)}`, 
   };
 }
 
@@ -467,16 +473,7 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
     flows,
     conveyorEdges: [],
     outputEdges: [],
-    warnings: [
-      {
-        messageJa: mode === 'normalBridge'
-          ? 'Debug: 非錬金釜ターゲットは通常レシピで通過し、錬金釜ターゲットは植物由来3入力の錬金釜候補だけを使っています。通常fallback・速度・熱・燃料・肥料は未計算です。'
-          : 'Phase 1: 植物由来3入力による錬金釜単体探索です。通常レシピ・速度・熱・燃料・肥料は未計算です。',
-        messageEn: mode === 'normalBridge'
-          ? 'Debug: non-cauldron targets are bridged through normal recipes; cauldron targets use only plant-derived three-input cauldron candidates. Normal fallback, speed, heat, fuel, and fertilizer are not calculated.'
-          : 'Phase 1: cauldron-only search using plant-derived three-input candidates. Normal recipes, speed, heat, fuel, and fertilizer are not calculated.',
-      },
-    ],
+    warnings: [],
     calculationStatus: ok ? 'ok' : 'invalid',
     errorSummaries: ok ? [] : [
       {
@@ -528,7 +525,7 @@ function planItemFromNode(node: CauldronPlanNode): CauldronPlanItem {
     amount: node.amount,
     status: node.kind === 'cauldron' ? 'cauldronTarget' : 'normal',
     reason: node.kind === 'cauldron'
-      ? { ja: '植物系・植物加工品から選んだ3入力の錬金釜候補です。', en: 'A cauldron candidate selected from plant-derived inputs.' }
+      ? { ja: '錬金釜で作成します。', en: 'Produced with a cauldron.' }
       : { ja: '非錬金釜ターゲットを通常レシピで通過展開しています。', en: 'Non-cauldron target bridged through a normal recipe.' },
     recipeId: node.kind === 'normal' ? node.recipeId : undefined,
     candidateCount: node.kind === 'cauldron' ? findPlantDerivedCauldronCandidatesForOutput(node.itemId).length : undefined,
@@ -659,7 +656,7 @@ export function planCauldronOnlyTarget(options: {
   const counts = countNodes(resolved.node);
   const rootPlan = planItemFromNode(resolved.node);
   const issues: CauldronOptimizedPlanIssue[] = resolved.ok
-    ? [{ code: 'COMPLETE_CLOSED', severity: 'info', message: { ja: policy.mode === 'normalBridge' ? 'Debug bridge 候補です。錬金釜ターゲットは植物由来3入力だけで処理しています。' : '錬金釜Phase 1候補です。植物由来3入力だけで処理しています。', en: policy.mode === 'normalBridge' ? 'Debug bridge candidate. Cauldron targets use plant-derived three-input candidates only.' : 'Cauldron Phase 1 candidate. It uses plant-derived three-input candidates only.' } }]
+    ? []
     : resolved.failures.slice(0, 10).map(issueFromFailure);
 
   const bestPlan: CauldronOptimizedPlan = {
@@ -670,8 +667,8 @@ export function planCauldronOnlyTarget(options: {
     score: resolved.ok ? 0 : Number.POSITIVE_INFINITY,
     targetItemId: options.targetItemId,
     targetLabel,
-    title: { ja: `${targetLabel.ja}（${policy.mode === 'normalBridge' ? '通常通過Debug' : '錬金釜Phase 1'}）`, en: `${targetLabel.en} (${policy.mode === 'normalBridge' ? 'Normal Bridge Debug' : 'Cauldron Phase 1'})` },
-    summary: { ja: resolved.ok ? '候補を作成しました。' : '未解決を含む候補です。', en: resolved.ok ? 'A candidate was built.' : 'The candidate contains unresolved inputs.' },
+    title: targetLabel,
+    summary: { ja: resolved.ok ? '錬金釜候補があります。' : '未解決を含む候補です。', en: resolved.ok ? 'A cauldron candidate was found.' : 'The candidate contains unresolved inputs.' },
     targetRatePerMinute: amount,
     selectedInputItemIds: resolved.node.kind === 'cauldron' ? [...resolved.node.candidate.inputItemIds] as [string, string, string] : undefined,
     root: rootPlan,
