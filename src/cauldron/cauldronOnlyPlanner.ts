@@ -1,8 +1,8 @@
 import { CAULDRON_INPUT_VALUES, CAULDRON_TARGETS } from './cauldronData';
 import {
-  findPlantDerivedCauldronCandidatesForOutput,
-  isPlantDerivedCauldronInputItem,
-  plantDerivedCauldronInputCount,
+  findPreferredCauldronCandidatesForOutput,
+  isPreferredCauldronInputItem,
+  preferredCauldronInputCount,
   type CauldronRuntimeCandidate,
 } from './cauldronCandidateSearch';
 import type { CauldronMachineId, CauldronOptimizationResult, CauldronOptimizedPlan, CauldronOptimizedPlanIssue, CauldronPlanItem } from './cauldronTypes';
@@ -117,11 +117,11 @@ function failureMessage(code: CauldronOnlyFailureCode, itemId: string): Localize
       return { ja: `${name.ja} は錬金釜の出力ターゲットではありません。`, en: `${name.en} is not a cauldron output target.` };
     case 'NO_CAULDRON_CANDIDATE':
       return {
-        ja: `${name.ja} は植物系・植物加工品だけでは3入力候補が見つかりませんでした。候補プール: ${plantDerivedCauldronInputCount()}件`,
-        en: `No three-input plant-derived cauldron candidate was found for ${name.en}. Pool: ${plantDerivedCauldronInputCount()} items.`,
+        ja: `${name.ja} は現在の錬金釜入力候補では3入力候補が見つかりませんでした。候補プール: ${preferredCauldronInputCount()}件`,
+        en: `No three-input cauldron candidate was found for ${name.en} in the current input pool. Pool: ${preferredCauldronInputCount()} items.`,
       };
     case 'INPUT_NOT_PLANT_DERIVED':
-      return { ja: `${name.ja} は植物由来の錬金釜入力候補ではありません。`, en: `${name.en} is not a plant-derived cauldron input candidate.` };
+      return { ja: `${name.ja} は錬金釜入力候補ではありません。`, en: `${name.en} is not a cauldron input candidate.` };
     case 'CYCLE':
       return { ja: `${name.ja} の探索中に循環しました。`, en: `A cycle was detected while expanding ${name.en}.` };
     case 'DEPTH_LIMIT':
@@ -175,7 +175,7 @@ function selectRecipe(itemId: string, recipePreferences: Record<string, string>)
 }
 
 function resolveCauldronInput(itemId: string, amount: number): ResolveResult {
-  if (!isPlantDerivedCauldronInputItem(itemId)) {
+  if (!isPreferredCauldronInputItem(itemId)) {
     const failure = makeFailure('INPUT_NOT_PLANT_DERIVED', itemId);
     return { ok: false, node: sourceNode(itemId, amount, 'unresolved', failure.message), failures: [failure] };
   }
@@ -188,7 +188,7 @@ function resolveCauldronOutput(
   policy: CauldronPlannerPolicy,
 ): ResolveResult {
   if (!CAULDRON_TARGETS[itemId]) return failedResult('NOT_CAULDRON_TARGET', itemId, policy, amount);
-  const candidates = findPlantDerivedCauldronCandidatesForOutput(itemId);
+  const candidates = findPreferredCauldronCandidatesForOutput(itemId);
   if (candidates.length === 0) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
 
   const candidateFailures: CauldronOnlyFailure[] = [];
@@ -528,7 +528,7 @@ function planItemFromNode(node: CauldronPlanNode): CauldronPlanItem {
       ? { ja: '錬金釜で作成します。', en: 'Produced with a cauldron.' }
       : { ja: '非錬金釜ターゲットを通常レシピで通過展開しています。', en: 'Non-cauldron target bridged through a normal recipe.' },
     recipeId: node.kind === 'normal' ? node.recipeId : undefined,
-    candidateCount: node.kind === 'cauldron' ? findPlantDerivedCauldronCandidatesForOutput(node.itemId).length : undefined,
+    candidateCount: node.kind === 'cauldron' ? findPreferredCauldronCandidatesForOutput(node.itemId).length : undefined,
     selectedInputItemIds: node.kind === 'cauldron' ? [...node.candidate.inputItemIds] as [string, string, string] : undefined,
     children: node.children.map((child) => planItemFromNode(child.node)),
   };

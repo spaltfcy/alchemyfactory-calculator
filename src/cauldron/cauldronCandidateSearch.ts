@@ -64,17 +64,33 @@ export function predictCauldronOutput(inputItemIds: CauldronInputTuple): { outpu
 
 const CAULDRON_INPUT_EXCLUDE_RANK = 999;
 
-function cauldronInputPreferenceRank(itemId: string): number | undefined {
+function explicitCauldronInputPreferenceRank(itemId: string): number | undefined {
   const preference = itemById[itemId]?.cauldronInputPreference;
   if (!preference || preference === 'exclude') return undefined;
   return CAULDRON_INPUT_PREFERENCE_ORDER[preference as Exclude<CauldronInputPreference, 'exclude'>];
+}
+
+export function cauldronInputPreferenceRank(itemId: string): number | undefined {
+  const item = itemById[itemId];
+  if (!item || CAULDRON_INPUT_VALUES[itemId] === undefined) return undefined;
+
+  const explicit = explicitCauldronInputPreferenceRank(itemId);
+  if (explicit !== undefined) return explicit;
+
+  // 06. 錬金釜から作れるアイテム。明示分類が無いターゲットはこの扱いにする。
+  if (item.cauldronTargetValue !== undefined) return CAULDRON_INPUT_PREFERENCE_ORDER.cauldron_producible;
+
+  // 08. 購入品そのもの。種を直接釜に入れる場合もここに落ちるため、かなり低優先になる。
+  if (item.buyPriceCopper !== undefined) return CAULDRON_INPUT_PREFERENCE_ORDER.purchased_raw;
+
+  return undefined;
 }
 
 function cauldronInputCandidateRank(itemId: string): number {
   return cauldronInputPreferenceRank(itemId) ?? CAULDRON_INPUT_EXCLUDE_RANK;
 }
 
-export const PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS = ITEMS
+export const PREFERRED_CAULDRON_INPUT_ITEM_IDS = ITEMS
   .filter((item) => item.cauldronValue !== undefined && cauldronInputPreferenceRank(item.id) !== undefined)
   .map((item) => item.id)
   .sort((a, b) => {
@@ -83,8 +99,15 @@ export const PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS = ITEMS
     return CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b);
   });
 
-export function isPlantDerivedCauldronInputItem(itemId: string): boolean {
+// Backward-compatible alias for the current planner. The pool is no longer limited to plant-derived items.
+export const PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS = PREFERRED_CAULDRON_INPUT_ITEM_IDS;
+
+export function isPreferredCauldronInputItem(itemId: string): boolean {
   return cauldronInputPreferenceRank(itemId) !== undefined && CAULDRON_INPUT_VALUES[itemId] !== undefined;
+}
+
+export function isPlantDerivedCauldronInputItem(itemId: string): boolean {
+  return isPreferredCauldronInputItem(itemId);
 }
 
 function cauldronCandidatePreferenceRanks(candidate: CauldronRuntimeCandidate): number[] {
@@ -167,13 +190,21 @@ export function findCauldronCandidatesForOutput(outputItemId: string, options: F
   return result;
 }
 
-export function findPlantDerivedCauldronCandidatesForOutput(outputItemId: string, options: { maxCandidates?: number } = {}): CauldronRuntimeCandidate[] {
+export function findPreferredCauldronCandidatesForOutput(outputItemId: string, options: { maxCandidates?: number } = {}): CauldronRuntimeCandidate[] {
   return findCauldronCandidatesForOutput(outputItemId, {
     maxCandidates: options.maxCandidates,
-    inputItemIds: PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS,
+    inputItemIds: PREFERRED_CAULDRON_INPUT_ITEM_IDS,
   });
 }
 
+export function findPlantDerivedCauldronCandidatesForOutput(outputItemId: string, options: { maxCandidates?: number } = {}): CauldronRuntimeCandidate[] {
+  return findPreferredCauldronCandidatesForOutput(outputItemId, options);
+}
+
+export function preferredCauldronInputCount(): number {
+  return PREFERRED_CAULDRON_INPUT_ITEM_IDS.length;
+}
+
 export function plantDerivedCauldronInputCount(): number {
-  return PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS.length;
+  return preferredCauldronInputCount();
 }

@@ -31,30 +31,30 @@ export type ItemCategory =
 
 export type CauldronInputPreference =
   | 'exclude'
-  | 'plant_raw'
-  | 'plant_process_1'
-  | 'plant_burn_1'
-  | 'plant_process_2'
-  | 'plant_mix_2'
-  | 'plant_burn_2'
-  | 'plant_process_3'
-  | 'plant_mix_3'
-  | 'plant_burn_3'
-  | 'heavy_plant_raw'
-  | 'plant_late';
+  | 'nursery_output'
+  | 'nursery_processed'
+  | 'nursery_burned'
+  | 'nursery_multi_processed'
+  | 'cauldron_producible'
+  | 'world_tree_derived'
+  | 'purchased_raw'
+  | 'purchased_processed'
+  | 'purchased_burned'
+  | 'purchased_multi_processed';
 
+// 錬金釜の3入力として採用するアイテムの優先順。
+// 01「既に出ている余剰・副産物」は計算中の動的状態なので、items.tsには持たせない。
 export const CAULDRON_INPUT_PREFERENCE_ORDER: Record<Exclude<CauldronInputPreference, 'exclude'>, number> = {
-  plant_raw: 0,
-  plant_process_1: 1,
-  plant_burn_1: 2,
-  plant_process_2: 3,
-  plant_mix_2: 4,
-  plant_burn_2: 5,
-  plant_process_3: 6,
-  plant_mix_3: 7,
-  plant_burn_3: 8,
-  heavy_plant_raw: 9,
-  plant_late: 99,
+  nursery_output: 0,
+  nursery_processed: 1,
+  nursery_burned: 2,
+  nursery_multi_processed: 3,
+  cauldron_producible: 4,
+  world_tree_derived: 5,
+  purchased_raw: 6,
+  purchased_processed: 7,
+  purchased_burned: 8,
+  purchased_multi_processed: 9,
 };
 
 export type Item = {
