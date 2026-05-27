@@ -13,6 +13,11 @@ export type CauldronRuntimeCandidate = {
   duplicatePenalty: number;
   adjustedScore: number;
   weightedDistance: number;
+  duplicateItemCount: number;
+  maxDuplicateCount: number;
+  overTargetInputCount: number;
+  overTargetExcessTotal: number;
+  overTargetExcessMax: number;
 };
 
 export function duplicatePenaltyForCauldronInput(inputItemIds: CauldronInputTuple): number {
@@ -122,16 +127,70 @@ function cauldronCandidatePreferenceRankSum(candidate: CauldronRuntimeCandidate)
   return cauldronCandidatePreferenceRanks(candidate).reduce((sum, rank) => sum + rank, 0);
 }
 
+function duplicateMetrics(inputItemIds: CauldronInputTuple): { duplicateItemCount: number; maxDuplicateCount: number } {
+  const counts = new Map<string, number>();
+  for (const itemId of inputItemIds) counts.set(itemId, (counts.get(itemId) ?? 0) + 1);
+  const maxDuplicateCount = Math.max(...counts.values());
+  return {
+    duplicateItemCount: inputItemIds.length - counts.size,
+    maxDuplicateCount,
+  };
+}
+
+function overTargetMetrics(outputItemId: string, inputItemIds: CauldronInputTuple): { overTargetInputCount: number; overTargetExcessTotal: number; overTargetExcessMax: number } {
+  const targetValue = CAULDRON_TARGETS[outputItemId]?.targetValue;
+  if (!Number.isFinite(targetValue)) return { overTargetInputCount: 0, overTargetExcessTotal: 0, overTargetExcessMax: 0 };
+
+  let overTargetInputCount = 0;
+  let overTargetExcessTotal = 0;
+  let overTargetExcessMax = 0;
+  for (const itemId of inputItemIds) {
+    const value = CAULDRON_INPUT_VALUES[itemId]?.value;
+    if (!Number.isFinite(value)) continue;
+    const excess = value - targetValue;
+    if (excess <= EPS) continue;
+    overTargetInputCount += 1;
+    overTargetExcessTotal += excess;
+    overTargetExcessMax = Math.max(overTargetExcessMax, excess);
+  }
+  return { overTargetInputCount, overTargetExcessTotal, overTargetExcessMax };
+}
+
+function buildRuntimeCandidate(outputItemId: string, inputItemIds: CauldronInputTuple, prediction: NonNullable<ReturnType<typeof predictCauldronOutput>>): CauldronRuntimeCandidate {
+  return {
+    outputItemId,
+    inputItemIds,
+    rawScore: prediction.rawScore,
+    duplicatePenalty: prediction.duplicatePenalty,
+    adjustedScore: prediction.adjustedScore,
+    weightedDistance: prediction.weightedDistance,
+    ...duplicateMetrics(inputItemIds),
+    ...overTargetMetrics(outputItemId, inputItemIds),
+  };
+}
+
 function sortRuntimeCandidates(candidates: CauldronRuntimeCandidate[]): CauldronRuntimeCandidate[] {
   return candidates.sort((a, b) => {
     const worstRank = cauldronCandidateWorstPreferenceRank(a) - cauldronCandidateWorstPreferenceRank(b);
     if (worstRank !== 0) return worstRank;
 
+    const duplicateItemCount = a.duplicateItemCount - b.duplicateItemCount;
+    if (duplicateItemCount !== 0) return duplicateItemCount;
+
+    const maxDuplicateCount = a.maxDuplicateCount - b.maxDuplicateCount;
+    if (maxDuplicateCount !== 0) return maxDuplicateCount;
+
+    const overTargetInputCount = a.overTargetInputCount - b.overTargetInputCount;
+    if (overTargetInputCount !== 0) return overTargetInputCount;
+
+    const overTargetExcessTotal = a.overTargetExcessTotal - b.overTargetExcessTotal;
+    if (Math.abs(overTargetExcessTotal) > EPS) return overTargetExcessTotal;
+
+    const overTargetExcessMax = a.overTargetExcessMax - b.overTargetExcessMax;
+    if (Math.abs(overTargetExcessMax) > EPS) return overTargetExcessMax;
+
     const rankSum = cauldronCandidatePreferenceRankSum(a) - cauldronCandidatePreferenceRankSum(b);
     if (rankSum !== 0) return rankSum;
-
-    const duplicate = b.duplicatePenalty - a.duplicatePenalty;
-    if (Math.abs(duplicate) > EPS) return duplicate;
 
     const distance = a.weightedDistance - b.weightedDistance;
     if (Math.abs(distance) > EPS) return distance;
@@ -180,14 +239,7 @@ export function findCauldronCandidatesForOutput(outputItemId: string, options: F
         const inputItemIds: CauldronInputTuple = [itemIds[i], itemIds[j], itemIds[k]];
         const prediction = predictCauldronOutput(inputItemIds);
         if (!prediction || prediction.outputItemId !== outputItemId) continue;
-        candidates.push({
-          outputItemId,
-          inputItemIds,
-          rawScore: prediction.rawScore,
-          duplicatePenalty: prediction.duplicatePenalty,
-          adjustedScore: prediction.adjustedScore,
-          weightedDistance: prediction.weightedDistance,
-        });
+        candidates.push(buildRuntimeCandidate(outputItemId, inputItemIds, prediction));
       }
     }
   }
