@@ -157,9 +157,17 @@ function normalizeInputPool(inputItemIds?: readonly string[]): string[] {
     .sort((a, b) => CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b));
 }
 
+function normalizeInputPoolForOutput(outputItemId: string, inputItemIds?: readonly string[]): string[] {
+  // A cauldron recipe that consumes the same item it outputs is self-referential for
+  // the current one-output planner. Remove it before generating triples so it never
+  // appears in candidate lists, debug logs, or graphs. Duplicate input slots for
+  // other items remain allowed because the game applies duplicate penalties.
+  return normalizeInputPool(inputItemIds).filter((itemId) => itemId !== outputItemId);
+}
+
 export function findCauldronCandidatesForOutput(outputItemId: string, options: FindCandidateOptions = {}): CauldronRuntimeCandidate[] {
   if (!CAULDRON_TARGETS[outputItemId]) return [];
-  const itemIds = normalizeInputPool(options.inputItemIds);
+  const itemIds = normalizeInputPoolForOutput(outputItemId, options.inputItemIds);
   const maxCandidates = options.maxCandidates === undefined ? undefined : Math.max(1, Math.floor(options.maxCandidates));
   const cacheKey = `${outputItemId}:${maxCandidates ?? 'all'}:${itemIds.join('|')}`;
   const cached = candidateCache.get(cacheKey);

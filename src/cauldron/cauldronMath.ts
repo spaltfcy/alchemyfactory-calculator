@@ -85,7 +85,8 @@ export function generateCauldronCandidatesForOutput(
   const target = CAULDRON_TARGETS[outputItemId];
   if (!target) return [];
 
-  const inputItemIds = (options?.inputItemIds ?? CAULDRON_INPUT_ITEM_IDS).filter((itemId) => CAULDRON_INPUT_VALUES[itemId]);
+  const inputItemIds = [...new Set(options?.inputItemIds ?? CAULDRON_INPUT_ITEM_IDS)]
+    .filter((itemId) => itemId !== outputItemId && CAULDRON_INPUT_VALUES[itemId]);
   const allowDuplicateInputs = options?.allowDuplicateInputs ?? true;
   const candidates: CauldronCandidate[] = [];
 
