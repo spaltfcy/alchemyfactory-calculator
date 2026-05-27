@@ -28,6 +28,35 @@ export type ItemCategory =
   | 'fertilizer'
   | 'internal';
 
+
+export type CauldronInputPreference =
+  | 'exclude'
+  | 'plant_raw'
+  | 'plant_process_1'
+  | 'plant_burn_1'
+  | 'plant_process_2'
+  | 'plant_mix_2'
+  | 'plant_burn_2'
+  | 'plant_process_3'
+  | 'plant_mix_3'
+  | 'plant_burn_3'
+  | 'heavy_plant_raw'
+  | 'plant_late';
+
+export const CAULDRON_INPUT_PREFERENCE_ORDER: Record<Exclude<CauldronInputPreference, 'exclude'>, number> = {
+  plant_raw: 0,
+  plant_process_1: 1,
+  plant_burn_1: 2,
+  plant_process_2: 3,
+  plant_mix_2: 4,
+  plant_burn_2: 5,
+  plant_process_3: 6,
+  plant_mix_3: 7,
+  plant_burn_3: 8,
+  heavy_plant_raw: 9,
+  plant_late: 99,
+};
+
 export type Item = {
   id: string; // アイテムID
   name: LocalizedText; // 表示名
@@ -43,6 +72,7 @@ export type Item = {
   cauldronValue?: number; // 錬金釜入力値。通常計算からは参照しない
   cauldronTargetValue?: number; // 錬金釜出力ターゲット値。通常計算からは参照しない
   cauldronTargetMultiplier?: number; // 錬金釜出力選択時の距離倍率。未定義なら1
+  cauldronInputPreference?: CauldronInputPreference; // 錬金釜入力候補としての優先区分。通常計算からは参照しない
   cauldronValueStatus?: 'unverified' | 'verified' | 'conflict';
   cauldronTargetStatus?: 'unverified' | 'verified' | 'conflict';
   internal?: boolean; // 内部用。ターゲット・売却候補には出さない

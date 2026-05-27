@@ -1,7 +1,8 @@
 import { CAULDRON_INPUT_ITEM_IDS, CAULDRON_INPUT_VALUES, CAULDRON_TARGETS } from './cauldronData';
 import type { CauldronInputTuple } from './cauldronTypes';
-import { ITEMS } from '../data/items';
-import { RECIPES } from '../data/recipes';
+import { ITEMS, itemById } from '../data/items';
+import { CAULDRON_INPUT_PREFERENCE_ORDER } from '../types';
+import type { CauldronInputPreference } from '../types';
 
 const EPS = 1e-9;
 
@@ -61,59 +62,60 @@ export function predictCauldronOutput(inputItemIds: CauldronInputTuple): { outpu
   return best ? { outputItemId: best.outputItemId, weightedDistance: best.weightedDistance, adjustedScore, rawScore, duplicatePenalty } : undefined;
 }
 
-function recipeHasOnlyKnownItemInputs(recipeId: string, known: Set<string>): boolean {
-  const recipe = RECIPES.find((candidate) => candidate.id === recipeId);
-  if (!recipe || recipe.internal) return false;
-  if (recipe.inputs.length === 0) return false;
-  return recipe.inputs.every((input) => input.kind !== 'paradoxableItem' && known.has(input.itemId));
+const CAULDRON_INPUT_EXCLUDE_RANK = 999;
+
+function cauldronInputPreferenceRank(itemId: string): number | undefined {
+  const preference = itemById[itemId]?.cauldronInputPreference;
+  if (!preference || preference === 'exclude') return undefined;
+  return CAULDRON_INPUT_PREFERENCE_ORDER[preference as Exclude<CauldronInputPreference, 'exclude'>];
 }
 
-function buildPlantDerivedItemIds(): string[] {
-  const known = new Set<string>();
-  for (const item of ITEMS) {
-    if (item.category === 'seed') known.add(item.id);
-  }
-
-  for (let pass = 0; pass < 16; pass += 1) {
-    let changed = false;
-    for (const recipe of RECIPES) {
-      if (recipe.internal) continue;
-      if (recipe.inputs.length === 0) continue;
-      if (!recipe.inputs.every((input) => input.kind !== 'paradoxableItem' && known.has(input.itemId))) continue;
-      for (const output of recipe.outputs) {
-        if (output.amount <= 0) continue;
-        if (!known.has(output.itemId)) {
-          known.add(output.itemId);
-          changed = true;
-        }
-      }
-    }
-    if (!changed) break;
-  }
-
-  // Keep the list human-oriented but deterministic. Cauldron values are filtered by callers.
-  return [...known].sort((a, b) => a.localeCompare(b));
+function cauldronInputCandidateRank(itemId: string): number {
+  return cauldronInputPreferenceRank(itemId) ?? CAULDRON_INPUT_EXCLUDE_RANK;
 }
 
-const plantDerivedItemIds = buildPlantDerivedItemIds();
-const seedItemIds = new Set(ITEMS.filter((item) => item.category === 'seed').map((item) => item.id));
-
-export const PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS = plantDerivedItemIds
-  .filter((itemId) => !seedItemIds.has(itemId) && CAULDRON_INPUT_VALUES[itemId])
-  .sort((a, b) => CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b));
+export const PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS = ITEMS
+  .filter((item) => item.cauldronValue !== undefined && cauldronInputPreferenceRank(item.id) !== undefined)
+  .map((item) => item.id)
+  .sort((a, b) => {
+    const rank = cauldronInputCandidateRank(a) - cauldronInputCandidateRank(b);
+    if (rank !== 0) return rank;
+    return CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b);
+  });
 
 export function isPlantDerivedCauldronInputItem(itemId: string): boolean {
-  return PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS.includes(itemId);
+  return cauldronInputPreferenceRank(itemId) !== undefined && CAULDRON_INPUT_VALUES[itemId] !== undefined;
+}
+
+function cauldronCandidatePreferenceRanks(candidate: CauldronRuntimeCandidate): number[] {
+  return candidate.inputItemIds.map(cauldronInputCandidateRank);
+}
+
+function cauldronCandidateWorstPreferenceRank(candidate: CauldronRuntimeCandidate): number {
+  return Math.max(...cauldronCandidatePreferenceRanks(candidate));
+}
+
+function cauldronCandidatePreferenceRankSum(candidate: CauldronRuntimeCandidate): number {
+  return cauldronCandidatePreferenceRanks(candidate).reduce((sum, rank) => sum + rank, 0);
 }
 
 function sortRuntimeCandidates(candidates: CauldronRuntimeCandidate[]): CauldronRuntimeCandidate[] {
   return candidates.sort((a, b) => {
-    const distance = a.weightedDistance - b.weightedDistance;
-    if (Math.abs(distance) > EPS) return distance;
+    const worstRank = cauldronCandidateWorstPreferenceRank(a) - cauldronCandidateWorstPreferenceRank(b);
+    if (worstRank !== 0) return worstRank;
+
+    const rankSum = cauldronCandidatePreferenceRankSum(a) - cauldronCandidatePreferenceRankSum(b);
+    if (rankSum !== 0) return rankSum;
+
     const duplicate = b.duplicatePenalty - a.duplicatePenalty;
     if (Math.abs(duplicate) > EPS) return duplicate;
+
+    const distance = a.weightedDistance - b.weightedDistance;
+    if (Math.abs(distance) > EPS) return distance;
+
     const score = a.adjustedScore - b.adjustedScore;
     if (Math.abs(score) > EPS) return score;
+
     return a.inputItemIds.join('\u0000').localeCompare(b.inputItemIds.join('\u0000'));
   });
 }
