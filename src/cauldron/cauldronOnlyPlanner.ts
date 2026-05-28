@@ -486,19 +486,52 @@ function recipeOutputRate(recipe: Recipe, itemId: string): number {
   return outputAmount * 60 / recipe.timeSec;
 }
 
-function recipeIdForNode(node: CauldronPlanNode, pathKey: string, machineId: CauldronMachineId): string {
-  if (node.kind === 'normal') return `${node.recipeId}:phase15:${pathKey}`;
-  if (node.kind === 'cauldron') return `cauldron:phase1:${machineId}:${node.itemId}:${pathKey}:${node.candidate.inputItemIds.join('+')}`;
-  return `source:${node.sourceKind}:${node.itemId}:${pathKey}`;
+function recipeIdForNode(node: CauldronPlanNode, _pathKey: string, machineId: CauldronMachineId): string {
+  if (node.kind === 'normal') return `normal:${node.recipeId}:${node.itemId}`;
+  if (node.kind === 'cauldron') return `cauldron:phase1:${machineId}:${node.itemId}:${node.candidate.inputItemIds.join('+')}`;
+  return `source:${node.sourceKind}:${node.itemId}`;
+}
+
+function isStartupSourceNode(node: CauldronPlanNode): boolean {
+  return node.kind === 'source' && node.sourceKind === 'startup';
+}
+
+function addRate(target: Record<string, number>, itemId: string, rate: number): void {
+  if (!Number.isFinite(rate) || rate === 0) return;
+  target[itemId] = (target[itemId] ?? 0) + rate;
+}
+
+function addRates(target: Record<string, number>, source: Record<string, number>): void {
+  for (const [itemId, rate] of Object.entries(source)) addRate(target, itemId, rate);
 }
 
 function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'cauldron' }>, recipeId: string, machineId: CauldronMachineId): RecipeStat {
   const inputRates: Record<string, number> = {};
-  for (const child of node.children) inputRates[child.itemId] = (inputRates[child.itemId] ?? 0) + child.amount;
+  for (const child of node.children) {
+    if (isStartupSourceNode(child.node)) continue;
+    addRate(inputRates, child.itemId, child.amount);
+  }
+
+  const outputRates: Record<string, number> = {};
+  if (node.kind === 'normal') {
+    for (const output of node.recipe.outputs) {
+      addRate(outputRates, output.itemId, output.amount * (output.probability ?? 1) * node.runsPerMinute);
+    }
+  } else {
+    addRate(outputRates, node.itemId, node.amount);
+  }
+
   const outputRate = node.kind === 'normal' ? recipeOutputRate(node.recipe, node.itemId) : 1;
   const runsPerMinute = node.kind === 'normal' ? node.runsPerMinute : node.amount;
   const actualMachines = outputRate > 0 ? node.amount / outputRate : node.amount;
   const cauldronTarget = node.kind === 'cauldron' ? CAULDRON_TARGETS[node.itemId] : undefined;
+  const surplusOutputRates: Record<string, number> = {};
+  if (node.kind === 'normal') {
+    for (const [outputItemId, rate] of Object.entries(outputRates)) {
+      if (outputItemId !== node.itemId) addRate(surplusOutputRates, outputItemId, rate);
+    }
+  }
+
   return {
     recipeId,
     machineId: node.kind === 'normal' ? node.recipe.machineId : machineId,
@@ -509,9 +542,9 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
     positiveNetProductionRate: node.amount,
     perMachineProductionRate: outputRate || 1,
     inputRates,
-    outputRates: { [node.itemId]: node.amount },
-    netRates: { [node.itemId]: node.amount },
-    surplusOutputRates: {},
+    outputRates,
+    netRates: { ...outputRates },
+    surplusOutputRates,
     discardedOutputRates: {},
     targetIds: [node.itemId],
     cauldronTargetValue: cauldronTarget?.targetValue,
@@ -519,6 +552,19 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
     cauldronInputAdjustedScore: node.kind === 'cauldron' ? node.candidate.adjustedScore : undefined,
     cauldronDuplicatePenalty: node.kind === 'cauldron' ? node.candidate.duplicatePenalty : undefined,
   };
+}
+
+function mergeRecipeStat(existing: RecipeStat, addition: RecipeStat): void {
+  existing.theoreticalMachines += addition.theoreticalMachines;
+  existing.actualMachines += addition.actualMachines;
+  existing.runsPerMinute += addition.runsPerMinute;
+  existing.positiveNetProductionRate += addition.positiveNetProductionRate;
+  addRates(existing.inputRates, addition.inputRates);
+  addRates(existing.outputRates, addition.outputRates);
+  addRates(existing.netRates, addition.netRates);
+  addRates(existing.surplusOutputRates, addition.surplusOutputRates);
+  addRates(existing.discardedOutputRates, addition.discardedOutputRates);
+  existing.targetIds = Array.from(new Set([...existing.targetIds, ...addition.targetIds]));
 }
 
 function sourceModeForSourceKind(sourceKind: 'startup' | 'purchase' | 'plantDerivedInput' | 'unresolved'): 'cycleInput' | 'buy' | 'plantDerivedInput' | 'unresolved' {
@@ -597,10 +643,15 @@ function collectPlannerTotals(node: CauldronPlanNode, settings: AppSettings): Pl
     fertilizerRequiredPerMin: 0,
   };
 
+  const seenStartupItems = new Set<string>();
+
   function addFromNode(current: CauldronPlanNode): void {
     if (current.kind === 'source') {
       const price = itemById[current.itemId]?.buyPriceCopper ?? 0;
-      if (current.sourceKind === 'startup') totals.initialCostCopper += price * current.amount;
+      if (current.sourceKind === 'startup' && !seenStartupItems.has(current.itemId)) {
+        seenStartupItems.add(current.itemId);
+        totals.initialCostCopper += price * current.amount;
+      }
       if (current.sourceKind === 'purchase') totals.purchaseCostCopperPerMin += price * current.amount;
       return;
     }
@@ -631,22 +682,78 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
   const itemStats: Record<string, ItemStat> = {};
   const recipeStats: Record<string, RecipeStat> = {};
   const flows: CalculatedFlow[] = [];
-  let nodeIndex = 0;
+  const seenInitialItems = new Set<string>();
+
+  function addOrMergeFlow(flow: CalculatedFlow): void {
+    if (flow.displayRateLabel || flow.role === 'finalOutput' || flow.role === 'surplus' || flow.role === 'discard') {
+      flows.push(flow);
+      return;
+    }
+    const key = JSON.stringify({ from: flow.from, to: flow.to, itemId: flow.itemId, role: flow.role, transportKind: flow.transportKind });
+    const existing = flows.find((candidate) => {
+      if (candidate.displayRateLabel || candidate.role === 'finalOutput' || candidate.role === 'surplus' || candidate.role === 'discard') return false;
+      const candidateKey = JSON.stringify({ from: candidate.from, to: candidate.to, itemId: candidate.itemId, role: candidate.role, transportKind: candidate.transportKind });
+      return candidateKey === key;
+    });
+    if (!existing) {
+      flows.push(flow);
+      return;
+    }
+    existing.rate += flow.rate;
+    const transport = flowTransportForItem(existing.itemId, existing.rate, 60);
+    existing.belts = transport.belts;
+    existing.transportKind = transport.transportKind;
+    existing.transportUnits = transport.transportUnits;
+  }
+
+  function addRecipeOccurrence(node: Extract<CauldronPlanNode, { kind: 'normal' | 'cauldron' }>, recipeId: string): void {
+    const addition = makeRecipeStat(node, recipeId, machineId);
+    if (recipeStats[recipeId]) mergeRecipeStat(recipeStats[recipeId], addition);
+    else recipeStats[recipeId] = addition;
+  }
+
+  function addSurplusOutputs(node: Extract<CauldronPlanNode, { kind: 'normal' | 'cauldron' }>, recipeId: string): void {
+    if (node.kind !== 'normal') return;
+    const stat = recipeStats[recipeId];
+    if (!stat) return;
+    for (const output of node.recipe.outputs) {
+      const outputRate = output.amount * (output.probability ?? 1) * node.runsPerMinute;
+      if (output.itemId === node.itemId || outputRate <= 0) continue;
+      const itemStat = addItemStat(itemStats, output.itemId);
+      itemStat.produced += outputRate;
+      itemStat.surplus += outputRate;
+      addOrMergeFlow({
+        id: `cauldron-planner:${recipeId}:surplus:${output.itemId}:${flows.length}`,
+        from: { type: 'recipe', recipeId },
+        to: { type: 'itemSink', itemId: output.itemId, sinkMode: 'surplus' },
+        itemId: output.itemId,
+        rate: outputRate,
+        belts: flowTransportForItem(output.itemId, outputRate, 60).belts,
+        transportKind: flowTransportForItem(output.itemId, outputRate, 60).transportKind,
+        transportUnits: flowTransportForItem(output.itemId, outputRate, 60).transportUnits,
+        role: 'surplus',
+      });
+    }
+  }
 
   function visit(node: CauldronPlanNode, parentRecipeId?: string, parentSlotIndex?: number, pathKey = 'root'): string | undefined {
     if (node.kind === 'source') {
       const stat = addItemStat(itemStats, node.itemId);
       const price = itemById[node.itemId]?.buyPriceCopper ?? 0;
       if (node.sourceKind === 'startup') {
-        stat.initialPurchased += node.amount;
-        stat.initialCostCopper += price * node.amount;
+        if (!seenInitialItems.has(node.itemId)) {
+          seenInitialItems.add(node.itemId);
+          stat.initialPurchased += node.amount;
+          stat.initialCostCopper += price * node.amount;
+        }
+        return undefined;
       }
       if (node.sourceKind === 'purchase') {
         stat.purchased += node.amount;
         stat.purchaseCostCopperPerMin += price * node.amount;
       }
       if (parentRecipeId) {
-        flows.push(makeFlow(
+        addOrMergeFlow(makeFlow(
           `cauldron-planner:${parentRecipeId}:source:${node.sourceKind}:${node.itemId}:slot${parentSlotIndex ?? 'x'}:${flows.length}`,
           undefined,
           parentRecipeId,
@@ -659,8 +766,8 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
       return undefined;
     }
 
-    const recipeId = recipeIdForNode(node, `${pathKey}:${nodeIndex++}`, machineId);
-    recipeStats[recipeId] = makeRecipeStat(node, recipeId, machineId);
+    const recipeId = recipeIdForNode(node, pathKey, machineId);
+    addRecipeOccurrence(node, recipeId);
     const produced = addItemStat(itemStats, node.itemId);
     produced.produced += node.amount;
     if (!parentRecipeId) {
@@ -669,16 +776,22 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
     }
 
     node.children.forEach((child, childIndex) => {
+      if (isStartupSourceNode(child.node)) {
+        visit(child.node, recipeId, child.slotIndex, `${pathKey}.${childIndex}`);
+        return;
+      }
       const consumed = addItemStat(itemStats, child.itemId);
       consumed.consumed += child.amount;
       const childRecipeId = visit(child.node, recipeId, child.slotIndex, `${pathKey}.${childIndex}`);
       if (child.node.kind !== 'source') {
-        flows.push(makeFlow(`cauldron-planner:${recipeId}:slot${child.slotIndex ?? childIndex}:${child.itemId}:${flows.length}`, childRecipeId, recipeId, child.itemId, child.amount, child.slotIndex));
+        addOrMergeFlow(makeFlow(`cauldron-planner:${recipeId}:slot${child.slotIndex ?? childIndex}:${child.itemId}:${flows.length}`, childRecipeId, recipeId, child.itemId, child.amount, child.slotIndex));
       }
     });
 
-    if (parentRecipeId && parentSlotIndex !== undefined) return recipeId;
-    flows.push({
+    addSurplusOutputs(node, recipeId);
+
+    if (parentRecipeId) return recipeId;
+    addOrMergeFlow({
       id: `cauldron-planner:${recipeId}:final:${node.itemId}`,
       from: { type: 'recipe', recipeId },
       to: { type: 'itemSink', itemId: node.itemId, sinkMode: 'final' },
@@ -757,7 +870,7 @@ function planItemFromNode(node: CauldronPlanNode): CauldronPlanItem {
     recipeId: node.kind === 'normal' ? node.recipeId : undefined,
     candidateCount: node.kind === 'cauldron' ? findPreferredCauldronCandidatesForOutput(node.itemId).length : undefined,
     selectedInputItemIds: node.kind === 'cauldron' ? [...node.candidate.inputItemIds] as [string, string, string] : undefined,
-    children: node.children.map((child) => planItemFromNode(child.node)),
+    children: node.children.filter((child) => !isStartupSourceNode(child.node)).map((child) => planItemFromNode(child.node)),
   };
 }
 
@@ -806,7 +919,7 @@ function countNodes(node: CauldronPlanNode): { recipes: number; edges: number; d
     };
   }
   let recipes = 1;
-  let edges = node.children.length + 1;
+  let edges = node.children.filter((child) => !isStartupSourceNode(child.node)).length + 1;
   let depth = 1;
   const missing: string[] = [];
   const initial: string[] = [];
