@@ -5,7 +5,7 @@ import {
   preferredCauldronInputCount,
   type CauldronRuntimeCandidate,
 } from './cauldronCandidateSearch';
-import type { CauldronMachineId, CauldronOptimizationResult, CauldronOptimizedPlan, CauldronOptimizedPlanIssue, CauldronPlanItem } from './cauldronTypes';
+import type { CauldronMachineId, CauldronObjectiveViolation, CauldronOptimizationResult, CauldronOptimizedPlan, CauldronOptimizedPlanIssue, CauldronPlanItem } from './cauldronTypes';
 import type { CalculationResult, CalculatedFlow, ItemStat, RecipeStat } from '../engine/calculate';
 import type { AppSettings, CauldronInputPreference, LocalizedText, Recipe } from '../types';
 import { itemById } from '../data/items';
@@ -936,6 +936,179 @@ function countNodes(node: CauldronPlanNode): { recipes: number; edges: number; d
   return { recipes, edges, depth, missing, initial, purchased };
 }
 
+const OBJECTIVE_EPS = 1e-6;
+
+type ObjectiveSourceBuckets = {
+  purchased: Set<string>;
+  unresolved: Set<string>;
+  plantDerivedInput: Set<string>;
+};
+
+function uniqueSorted(values: Iterable<string>): string[] {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function namesText(itemIds: string[], lang: 'ja' | 'en'): string {
+  return itemIds.map((itemId) => itemName(itemId)[lang]).join(lang === 'ja' ? '、' : ', ');
+}
+
+function collectSourceBuckets(node: CauldronPlanNode, buckets: ObjectiveSourceBuckets): void {
+  if (node.kind === 'source') {
+    if (node.sourceKind === 'purchase') buckets.purchased.add(node.itemId);
+    if (node.sourceKind === 'unresolved') buckets.unresolved.add(node.itemId);
+    if (node.sourceKind === 'plantDerivedInput') buckets.plantDerivedInput.add(node.itemId);
+    return;
+  }
+  for (const child of node.children) collectSourceBuckets(child.node, buckets);
+}
+
+function canonicalRecipeKey(recipeId: string): string {
+  if (recipeId.startsWith('normal:')) {
+    const parts = recipeId.split(':');
+    if (parts.length >= 2) return `normal:${parts[1]}`;
+  }
+  return recipeId;
+}
+
+function violation(
+  code: CauldronObjectiveViolation['code'],
+  itemIds: string[],
+  messageJa: string,
+  messageEn: string,
+  options: { recipeIds?: string[]; details?: Record<string, unknown>; severity?: CauldronObjectiveViolation['severity'] } = {},
+): CauldronObjectiveViolation {
+  return {
+    code,
+    severity: options.severity ?? 'error',
+    message: { ja: messageJa, en: messageEn },
+    itemIds: uniqueSorted(itemIds),
+    recipeIds: options.recipeIds ? uniqueSorted(options.recipeIds) : undefined,
+    details: options.details,
+  };
+}
+
+function collectObjectiveViolations(root: CauldronPlanNode, result: CalculationResult): CauldronObjectiveViolation[] {
+  const violations: CauldronObjectiveViolation[] = [];
+  const sourceBuckets: ObjectiveSourceBuckets = { purchased: new Set(), unresolved: new Set(), plantDerivedInput: new Set() };
+  collectSourceBuckets(root, sourceBuckets);
+
+  const purchased = uniqueSorted(sourceBuckets.purchased);
+  if (purchased.length > 0) {
+    violations.push(violation(
+      'CONSTANT_PURCHASE',
+      purchased,
+      `常時購入が残っています: ${namesText(purchased, 'ja')}`,
+      `Constant purchases remain: ${namesText(purchased, 'en')}`,
+    ));
+  }
+
+  const unresolved = uniqueSorted(sourceBuckets.unresolved);
+  if (unresolved.length > 0) {
+    violations.push(violation(
+      'UNRESOLVED_INPUT',
+      unresolved,
+      `未解決入力が残っています: ${namesText(unresolved, 'ja')}`,
+      `Unresolved inputs remain: ${namesText(unresolved, 'en')}`,
+    ));
+  }
+
+  const plantDerivedInput = uniqueSorted(sourceBuckets.plantDerivedInput);
+  if (plantDerivedInput.length > 0) {
+    violations.push(violation(
+      'EXTERNAL_PLANT_INPUT',
+      plantDerivedInput,
+      `錬金釜入力が常時供給扱いのままです: ${namesText(plantDerivedInput, 'ja')}`,
+      `Cauldron inputs are still treated as constant supply: ${namesText(plantDerivedInput, 'en')}`,
+    ));
+  }
+
+  const surplus = uniqueSorted(Object.values(result.itemStats)
+    .filter((stat) => Number(stat.surplus ?? 0) > OBJECTIVE_EPS)
+    .map((stat) => stat.itemId));
+  if (surplus.length > 0) {
+    violations.push(violation(
+      'SURPLUS_OUTPUT',
+      surplus,
+      `需要へ再利用されていない余剰が残っています: ${namesText(surplus, 'ja')}`,
+      `Surplus remains without being reused by demand: ${namesText(surplus, 'en')}`,
+      { severity: 'error' },
+    ));
+  }
+
+  const discarded = uniqueSorted(Object.values(result.itemStats)
+    .filter((stat) => Number(stat.discarded ?? 0) > OBJECTIVE_EPS)
+    .map((stat) => stat.itemId));
+  if (discarded.length > 0) {
+    violations.push(violation(
+      'DISCARDED_OUTPUT',
+      discarded,
+      `破棄出力が残っています: ${namesText(discarded, 'ja')}`,
+      `Discarded outputs remain: ${namesText(discarded, 'en')}`,
+    ));
+  }
+
+  const duplicateCanonicalRecipeIds = Object.keys(result.recipeStats)
+    .reduce<Record<string, string[]>>((groups, recipeId) => {
+      const key = canonicalRecipeKey(recipeId);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(recipeId);
+      return groups;
+    }, {});
+  const duplicateRecipeIds = Object.values(duplicateCanonicalRecipeIds)
+    .filter((recipeIds) => recipeIds.length > 1)
+    .flat();
+  if (duplicateRecipeIds.length > 0) {
+    violations.push(violation(
+      'DUPLICATE_RECIPE_NODE',
+      [],
+      `同一通常レシピが複数ノードに分かれています: ${duplicateRecipeIds.join('、')}`,
+      `The same normal recipe is split into multiple nodes: ${duplicateRecipeIds.join(', ')}`,
+      { recipeIds: duplicateRecipeIds, details: { canonicalGroups: duplicateCanonicalRecipeIds } },
+    ));
+  }
+
+  const initialInvestmentFlows = result.flows.filter((flow) => flow.from.type === 'itemSource' && flow.from.sourceMode === 'cycleInput');
+  if (initialInvestmentFlows.length > 0) {
+    violations.push(violation(
+      'INITIAL_INVESTMENT_FLOW',
+      initialInvestmentFlows.map((flow) => flow.itemId),
+      '初期投資が /min フローとしてグラフに出ています。',
+      'Initial investment is emitted as a /min graph flow.',
+      { details: { flowIds: initialInvestmentFlows.map((flow) => flow.id) } },
+    ));
+  }
+
+  return violations;
+}
+
+function issueFromObjectiveViolation(entry: CauldronObjectiveViolation): CauldronOptimizedPlanIssue {
+  return {
+    code: entry.code,
+    severity: entry.severity,
+    message: entry.message,
+    itemIds: entry.itemIds,
+  };
+}
+
+function appendObjectiveErrors(result: CalculationResult, violations: CauldronObjectiveViolation[]): CalculationResult {
+  const blocking = violations.filter((entry) => entry.severity === 'error');
+  if (blocking.length === 0) return result;
+  return {
+    ...result,
+    calculationStatus: 'invalid',
+    errorSummaries: [
+      ...(result.errorSummaries ?? []),
+      ...blocking.map((entry) => ({
+        code: `CAULDRON_OBJECTIVE_${entry.code}`,
+        messageJa: entry.message.ja,
+        messageEn: entry.message.en,
+        itemIds: entry.itemIds,
+        recipeIds: entry.recipeIds,
+      })),
+    ],
+  };
+}
+
 export function planCauldronOnlyTarget(options: {
   targetItemId: string;
   amount: number;
@@ -1001,29 +1174,38 @@ export function planCauldronOnlyTarget(options: {
     };
   }
 
-  const result = buildCalculationResult(resolved.node, options.settings, options.machineId, resolved.ok, resolved.failures, policy.mode);
+  const rawResult = buildCalculationResult(resolved.node, options.settings, options.machineId, resolved.ok, resolved.failures, policy.mode);
+  const objectiveViolations = collectObjectiveViolations(resolved.node, rawResult);
+  const result = appendObjectiveErrors(rawResult, objectiveViolations);
+  const blockingObjectiveViolations = objectiveViolations.filter((entry) => entry.severity === 'error');
+  const hasBlockingObjectiveViolations = blockingObjectiveViolations.length > 0;
   const counts = countNodes(resolved.node);
   const rootPlan = planItemFromNode(resolved.node);
-  const issues: CauldronOptimizedPlanIssue[] = resolved.ok
-    ? []
-    : resolved.failures.slice(0, 10).map(issueFromFailure);
+  const surplusItemIds = uniqueSorted(Object.values(result.itemStats)
+    .filter((stat) => Number(stat.surplus ?? 0) > OBJECTIVE_EPS || Number(stat.discarded ?? 0) > OBJECTIVE_EPS)
+    .map((stat) => stat.itemId));
+  const issues: CauldronOptimizedPlanIssue[] = [
+    ...(resolved.ok ? [] : resolved.failures.slice(0, 10).map(issueFromFailure)),
+    ...objectiveViolations.map(issueFromObjectiveViolation),
+  ];
+  const objectiveOk = resolved.ok && !hasBlockingObjectiveViolations;
 
   const bestPlan: CauldronOptimizedPlan = {
     id: `cauldron:${policy.mode}:${options.targetItemId}`,
     rank: 1,
     source: 'cauldron',
-    status: resolved.ok ? 'warning' : 'blocked',
-    score: resolved.ok ? 0 : Number.POSITIVE_INFINITY,
+    status: objectiveOk ? (objectiveViolations.length > 0 ? 'warning' : 'closed') : 'blocked',
+    score: objectiveOk ? objectiveViolations.length : Number.POSITIVE_INFINITY,
     targetItemId: options.targetItemId,
     targetLabel,
     title: targetLabel,
-    summary: { ja: resolved.ok ? (counts.purchased.length > 0 ? '常時購入を含む候補です。' : '初期投資を除き外部供給なしの候補です。') : '未解決を含む候補です。', en: resolved.ok ? (counts.purchased.length > 0 ? 'The candidate includes constant purchases.' : 'The candidate has no external supply except initial investment.') : 'The candidate contains unresolved inputs.' },
+    summary: { ja: objectiveOk ? (objectiveViolations.length > 0 ? '目的違反の警告を含む候補です。' : '初期投資を除き外部供給なしの候補です。') : '目的違反または未解決を含む候補です。', en: objectiveOk ? (objectiveViolations.length > 0 ? 'The candidate contains objective warnings.' : 'The candidate has no external supply except initial investment.') : 'The candidate contains objective violations or unresolved inputs.' },
     targetRatePerMinute: amount,
     selectedInputItemIds: resolved.node.kind === 'cauldron' ? [...resolved.node.candidate.inputItemIds] as [string, string, string] : undefined,
     root: rootPlan,
     metrics: {
-      selfContained: resolved.ok && counts.purchased.length === 0,
-      noSurplus: true,
+      selfContained: objectiveOk && counts.purchased.length === 0,
+      noSurplus: surplusItemIds.length === 0,
       hasConstantSupply: counts.purchased.length > 0,
       hasMissing: !resolved.ok || counts.missing.length > 0,
       hasBlockingSurplus: false,
@@ -1033,10 +1215,10 @@ export function planCauldronOnlyTarget(options: {
       purchasedItemIds: Array.from(new Set(counts.purchased)),
       externalItemIds: Array.from(new Set(counts.purchased)),
       unresolvedItemIds: Array.from(new Set(counts.missing.length ? counts.missing : resolved.ok ? [] : [options.targetItemId])),
-      surplusItemIds: [],
+      surplusItemIds,
       coinSurplusItemIds: [],
       sellableSurplusItemIds: [],
-      blockingSurplusItemIds: [],
+      blockingSurplusItemIds: surplusItemIds,
       recipeCount: counts.recipes,
       edgeCount: counts.edges,
       depth: counts.depth,
@@ -1044,6 +1226,10 @@ export function planCauldronOnlyTarget(options: {
       heatRequiredPerMin: result.totals.heatRequiredPerMin,
       fuelRequiredPerMin: result.totals.fuelRequiredPerMin,
       fertilizerRequiredPerMin: result.totals.fertilizerRequiredPerMin,
+      hasObjectiveViolations: objectiveViolations.length > 0,
+      objectiveViolationCount: objectiveViolations.length,
+      objectiveViolationCodes: objectiveViolations.map((entry) => entry.code),
+      objectiveViolations,
     },
     issues,
   };

@@ -60,6 +60,25 @@ export type CauldronObservedCase = {
   createdAt: string;
 };
 
+
+export type CauldronObjectiveViolationCode =
+  | 'CONSTANT_PURCHASE'
+  | 'UNRESOLVED_INPUT'
+  | 'EXTERNAL_PLANT_INPUT'
+  | 'SURPLUS_OUTPUT'
+  | 'DISCARDED_OUTPUT'
+  | 'DUPLICATE_RECIPE_NODE'
+  | 'INITIAL_INVESTMENT_FLOW';
+
+export type CauldronObjectiveViolation = {
+  code: CauldronObjectiveViolationCode;
+  severity: 'warning' | 'error';
+  message: LocalizedText;
+  itemIds?: string[];
+  recipeIds?: string[];
+  details?: Record<string, unknown>;
+};
+
 export type CauldronPlanItemStatus = 'startup' | 'purchase' | 'normal' | 'cauldronTarget' | 'handCauldron' | 'plantDerivedInput' | 'missing' | 'cycle' | 'depthLimit';
 
 export type CauldronPlanItem = {
@@ -100,7 +119,8 @@ export type CauldronOptimizedPlanIssue = {
     | 'INITIAL_INPUT'
     | 'TIME_UNVERIFIED'
     | 'CYCLE_UNPROVEN'
-    | 'CAULDRON_DATA_MISSING';
+    | 'CAULDRON_DATA_MISSING'
+    | CauldronObjectiveViolationCode;
   severity: 'info' | 'warning' | 'error';
   message: LocalizedText;
   itemIds?: string[];
@@ -129,6 +149,10 @@ export type CauldronOptimizedPlanMetrics = {
   heatRequiredPerMin: number;
   fuelRequiredPerMin: number;
   fertilizerRequiredPerMin: number;
+  hasObjectiveViolations?: boolean;
+  objectiveViolationCount?: number;
+  objectiveViolationCodes?: string[];
+  objectiveViolations?: CauldronObjectiveViolation[];
 };
 
 export type CauldronOptimizedPlan = {

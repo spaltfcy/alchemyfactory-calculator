@@ -13,6 +13,7 @@ import { itemById } from '../data/items';
 import { buildTableViewModel } from '../engine/tableViewModel';
 import { buildCauldronGraphResult, cauldronStateFromRequest, type CauldronGraphRequest } from '../cauldron/cauldronGraph';
 import { planCauldronOnlyTarget, type CauldronResolveMode } from '../cauldron/cauldronOnlyPlanner';
+import type { CauldronObjectiveViolation } from '../cauldron/cauldronTypes';
 
 type DebugTabProps = {
   lang: Lang;
@@ -97,6 +98,8 @@ type VerificationZipResult = {
   cauldronStatus?: 'ok' | 'invalid';
   cauldronGraphNodeCount?: number;
   cauldronGraphEdgeCount?: number;
+  cauldronObjectiveViolationCount?: number;
+  cauldronObjectiveViolationCodes?: string[];
 };
 
 function createRunId(prefix = 'run'): string {
@@ -150,6 +153,9 @@ type VerificationExpectation = {
   expectedDataAuditNetNonPositive?: Record<string, string[]>;
   expectedDataAuditProducerIncludes?: Record<string, string[]>;
   expectedDataAuditProducerExcludes?: Record<string, string[]>;
+  expectedCauldronObjectiveViolationCodes?: string[];
+  expectedNoCauldronObjectiveViolationCodes?: string[];
+  expectedCauldronObjectiveViolationCount?: number;
 };
 
 type VerificationExpectations = Record<string, VerificationExpectation>;
@@ -261,6 +267,16 @@ function expectationMatchesArtifact(
     structuredBalanceTrace?: { sourceBuckets?: Record<string, Record<string, number>>; unresolvedItemIds?: string[] };
     totals?: { purchaseCostCopperPerMin?: number };
     issues?: Array<{ code?: string }>;
+    cauldronObjectiveViolations?: Array<{ code?: string }>;
+    optimization?: {
+      bestPlan?: {
+        metrics?: {
+          objectiveViolations?: Array<{ code?: string }>;
+          objectiveViolationCodes?: string[];
+          objectiveViolationCount?: number;
+        };
+      };
+    };
     dataAudit?: {
       counts?: Record<string, number>;
       probabilityRecipeIds?: string[];
@@ -578,6 +594,21 @@ function expectationMatchesArtifact(
       const producers = producerMap.get(itemId) ?? new Set<string>();
       for (const recipeId of recipeIds) if (producers.has(recipeId)) return false;
     }
+  }
+
+  if (expectation.expectedCauldronObjectiveViolationCodes || expectation.expectedNoCauldronObjectiveViolationCodes || typeof expectation.expectedCauldronObjectiveViolationCount === 'number') {
+    const metricCodes = debugLog?.optimization?.bestPlan?.metrics?.objectiveViolationCodes ?? [];
+    const objectCodes = [
+      ...(debugLog?.cauldronObjectiveViolations ?? []).map((entry) => entry.code).filter(Boolean).map(String),
+      ...(debugLog?.optimization?.bestPlan?.metrics?.objectiveViolations ?? []).map((entry) => entry.code).filter(Boolean).map(String),
+    ];
+    const codes = new Set([...metricCodes.map(String), ...objectCodes]);
+    if (typeof expectation.expectedCauldronObjectiveViolationCount === 'number') {
+      const actualCount = Number(debugLog?.optimization?.bestPlan?.metrics?.objectiveViolationCount ?? codes.size);
+      if (!Number.isFinite(actualCount) || actualCount !== expectation.expectedCauldronObjectiveViolationCount) return false;
+    }
+    for (const code of expectation.expectedCauldronObjectiveViolationCodes ?? []) if (!codes.has(code)) return false;
+    for (const code of expectation.expectedNoCauldronObjectiveViolationCodes ?? []) if (codes.has(code)) return false;
   }
 
   if (expectation.expectedGraphStartupLabel) {
@@ -1133,7 +1164,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 47,
+      debugSchemaVersion: 48,
       calculationStatus: resultWithDebugStatus.calculationStatus ?? ignoredDebugCalculationStatus ?? 'ok',
       errorSummaries: normalizedErrorSummaries,
       ...debugLogBody,
@@ -1205,6 +1236,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
           mode: plannerMode as CauldronResolveMode,
         })
       : undefined;
+    const objectiveViolations = (planned?.optimization.bestPlan?.metrics.objectiveViolations ?? []) as CauldronObjectiveViolation[];
     const build = planned
       ? {
           request: { ...requestRecord, targetItemId, targetRatePerMinute, machineId, plannerMode },
@@ -1216,11 +1248,14 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
             messageEn: planned.result.errorSummaries?.[0]?.messageEn ?? 'Cauldron planner verification result.',
             graphNodeCount: Object.keys(planned.result.recipeStats).length,
             graphEdgeCount: planned.result.flows.length,
+            objectiveViolationCount: objectiveViolations.length,
+            objectiveViolationCodes: objectiveViolations.map((entry) => entry.code),
           },
           prediction: null,
           selectedCandidate: planned.optimization.bestPlan?.selectedInputItemIds ?? null,
           candidates: planned.optimization.plans,
           optimization: planned.optimization,
+          objectiveViolations,
         }
       : buildCauldronGraphResult(rawRequest, state.cauldronState);
     const resultForSvg = build.result;
@@ -1250,7 +1285,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const enrichedDebugLog = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 47,
+      debugSchemaVersion: 48,
       mode: 'cauldron',
       calculationStatus: build.summary.status,
       errorSummaries: build.result.errorSummaries ?? [],
@@ -1260,6 +1295,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       selectedCandidate: build.selectedCandidate ?? null,
       candidates: build.candidates,
       optimization: 'optimization' in build ? build.optimization : undefined,
+      cauldronObjectiveViolations: 'objectiveViolations' in build ? build.objectiveViolations : [],
       graphArtifacts: {
         normal: { metrics: normalGraphArtifact.metrics },
         debug: { metrics: debugGraphArtifact.metrics },
@@ -1400,7 +1436,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     return {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 47,
+      debugSchemaVersion: 48,
       status: args.status,
       phase: args.phase,
       code: args.code,
@@ -1562,7 +1598,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     expectation?: VerificationExpectation;
     cauldronArtifact?: ReturnType<typeof buildCauldronDebugArtifact>;
   }): VerificationZipResult {
-    const errorSummaries = (args.artifact?.enrichedDebugLog as { errorSummaries?: unknown[] } | undefined)?.errorSummaries;
+    const expectationArtifact = args.artifact ?? args.cauldronArtifact;
+    const errorSummaries = (expectationArtifact?.enrichedDebugLog as { errorSummaries?: unknown[] } | undefined)?.errorSummaries;
     return {
       sourceFileName: args.source.name,
       resultZipName: args.resultZipName,
@@ -1581,10 +1618,12 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       previousMessageCount: Math.max(0, (args.allMessageLogs?.length ?? userMessages.length) - (args.currentRunMessageLogs?.length ?? 0)),
       negativeTargetCount: args.negativeTargets?.length ?? 0,
       expectedStatus: args.expectation?.expectedStatus,
-      expectedMatched: expectationMatchesArtifact(args.expectation, args.status, args.artifact, { phase: args.phase, code: args.code }),
+      expectedMatched: expectationMatchesArtifact(args.expectation, args.status, expectationArtifact, { phase: args.phase, code: args.code }),
       cauldronStatus: args.cauldronArtifact?.build.summary.status,
       cauldronGraphNodeCount: args.cauldronArtifact?.build.summary.graphNodeCount,
       cauldronGraphEdgeCount: args.cauldronArtifact?.build.summary.graphEdgeCount,
+      cauldronObjectiveViolationCount: args.cauldronArtifact && 'objectiveViolationCount' in args.cauldronArtifact.build.summary ? args.cauldronArtifact.build.summary.objectiveViolationCount : undefined,
+      cauldronObjectiveViolationCodes: args.cauldronArtifact && 'objectiveViolationCodes' in args.cauldronArtifact.build.summary ? args.cauldronArtifact.build.summary.objectiveViolationCodes : undefined,
     };
   }
 
@@ -1874,7 +1913,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       zip.file(baseName + '__zip-contents.json', JSON.stringify({
         appVersion,
         gameVersion,
-        debugSchemaVersion: 47,
+        debugSchemaVersion: 48,
         mode: 'verification-envelope',
         sections: { normal: Boolean(normalArtifact), cauldron: Boolean(cauldronArtifact) },
         include,
@@ -1951,7 +1990,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
         zip.file(baseName + '__error-summary.json', JSON.stringify({
           appVersion,
           gameVersion,
-          debugSchemaVersion: 47,
+          debugSchemaVersion: 48,
           status: 'invalid',
           phase: normalInvalid ? 'calculation' : 'cauldron_graph',
           code: normalInvalid ? 'CALCULATION_INVALID' : cauldronArtifact?.build.summary.code,
@@ -2115,7 +2154,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     zip.file(baseName + '__zip-contents.json', JSON.stringify({
       appVersion,
       gameVersion,
-      debugSchemaVersion: 47,
+      debugSchemaVersion: 48,
       include,
       includeOptionsSource,
       verificationJsonIncludeOptions: verificationJsonIncludeOptions ?? null,
@@ -2297,7 +2336,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const summary = {
       appVersion,
       gameVersion,
-      debugSchemaVersion: 47,
+      debugSchemaVersion: 48,
       batchId,
       sourceZip: fileInfo(file),
       createdAt: new Date().toISOString(),
