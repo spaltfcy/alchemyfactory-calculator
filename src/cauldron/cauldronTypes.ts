@@ -60,7 +60,7 @@ export type CauldronObservedCase = {
   createdAt: string;
 };
 
-export type CauldronPlanItemStatus = 'startup' | 'normal' | 'cauldronTarget' | 'handCauldron' | 'plantDerivedInput' | 'missing' | 'cycle' | 'depthLimit';
+export type CauldronPlanItemStatus = 'startup' | 'purchase' | 'normal' | 'cauldronTarget' | 'handCauldron' | 'plantDerivedInput' | 'missing' | 'cycle' | 'depthLimit';
 
 export type CauldronPlanItem = {
   itemId: string;

@@ -191,6 +191,7 @@ function formatPlanAmount(value: number): string {
 function planStatusText(status: CauldronPlanItem['status'], lang: Lang): string {
   const labels: Record<CauldronPlanItem['status'], { ja: string; en: string }> = {
     startup: { ja: '初期投入', en: 'Startup' },
+    purchase: { ja: '常時購入', en: 'Purchase' },
     normal: { ja: '通常レシピ', en: 'Normal recipe' },
     cauldronTarget: { ja: '錬金釜', en: 'Cauldron' },
     handCauldron: { ja: '手入力釜', en: 'Manual cauldron' },
@@ -213,7 +214,8 @@ function planReasonText(item: CauldronPlanItem, lang: Lang): string {
   if (item.status === 'handCauldron') {
     return lang === 'ja' ? `手入力の錬金釜レシピ ${item.recipeId ?? ''} が存在します。` : `Manual cauldron recipe ${item.recipeId ?? ''} exists.`;
   }
-  if (item.status === 'startup') return lang === 'ja' ? '初期投入として扱います。' : 'Provided as a startup input.';
+  if (item.status === 'startup') return lang === 'ja' ? '初期投資として扱います。' : 'Provided as initial investment.';
+  if (item.status === 'purchase') return lang === 'ja' ? '常時購入として扱います。' : 'Provided by constant purchase.';
   if (item.status === 'plantDerivedInput') return '';
   if (item.status === 'cycle') return lang === 'ja' ? '循環を検出しました。初期投入候補として扱います。' : 'Cycle detected; treat as a startup candidate.';
   if (item.status === 'depthLimit') return lang === 'ja' ? '探索上限に達しました。' : 'Depth limit reached.';
