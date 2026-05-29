@@ -68,7 +68,9 @@ export type CauldronObjectiveViolationCode =
   | 'SURPLUS_OUTPUT'
   | 'DISCARDED_OUTPUT'
   | 'DUPLICATE_RECIPE_NODE'
-  | 'INITIAL_INVESTMENT_FLOW';
+  | 'INITIAL_INVESTMENT_FLOW'
+  | 'FUEL_NOT_CLOSED'
+  | 'FERTILIZER_NOT_CLOSED';
 
 export type CauldronObjectiveViolation = {
   code: CauldronObjectiveViolationCode;

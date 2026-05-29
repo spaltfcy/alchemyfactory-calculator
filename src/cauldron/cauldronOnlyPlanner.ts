@@ -987,6 +987,18 @@ function violation(
   };
 }
 
+
+function flowRateByRole(result: CalculationResult, itemId: string, role: CalculatedFlow['role']): number {
+  return result.flows
+    .filter((flow) => flow.role === role && flow.itemId === itemId)
+    .reduce((sum, flow) => sum + Math.max(0, Number(flow.rate) || 0), 0);
+}
+
+function formatRate(value: number): string {
+  if (!Number.isFinite(value)) return '?';
+  return String(Math.round(value * 10000) / 10000);
+}
+
 function collectObjectiveViolations(root: CauldronPlanNode, result: CalculationResult): CauldronObjectiveViolation[] {
   const violations: CauldronObjectiveViolation[] = [];
   const sourceBuckets: ObjectiveSourceBuckets = { purchased: new Set(), unresolved: new Set(), plantDerivedInput: new Set() };
@@ -1076,6 +1088,36 @@ function collectObjectiveViolations(root: CauldronPlanNode, result: CalculationR
       'Initial investment is emitted as a /min graph flow.',
       { details: { flowIds: initialInvestmentFlows.map((flow) => flow.id) } },
     ));
+  }
+
+  const fuelRequiredPerMin = Number(result.totals.fuelRequiredPerMin ?? 0);
+  const fuelItemId = result.totals.fuelItemId;
+  if (fuelItemId && fuelRequiredPerMin > OBJECTIVE_EPS) {
+    const fuelFlowTotal = flowRateByRole(result, fuelItemId, 'fuel');
+    if (fuelFlowTotal + OBJECTIVE_EPS < fuelRequiredPerMin) {
+      violations.push(violation(
+        'FUEL_NOT_CLOSED',
+        [fuelItemId],
+        `燃料需要が内製フローで閉じていません: ${itemName(fuelItemId).ja} 必要 ${formatRate(fuelRequiredPerMin)}/min、供給 ${formatRate(fuelFlowTotal)}/min`,
+        `Fuel demand is not closed by internal flows: ${itemName(fuelItemId).en} required ${formatRate(fuelRequiredPerMin)}/min, supplied ${formatRate(fuelFlowTotal)}/min`,
+        { details: { fuelItemId, requiredPerMin: fuelRequiredPerMin, suppliedPerMin: fuelFlowTotal } },
+      ));
+    }
+  }
+
+  const fertilizerRequiredPerMin = Number(result.totals.fertilizerRequiredPerMin ?? 0);
+  const fertilizerItemId = result.totals.fertilizerItemId;
+  if (fertilizerItemId && fertilizerRequiredPerMin > OBJECTIVE_EPS) {
+    const fertilizerFlowTotal = flowRateByRole(result, fertilizerItemId, 'fertilizer');
+    if (fertilizerFlowTotal + OBJECTIVE_EPS < fertilizerRequiredPerMin) {
+      violations.push(violation(
+        'FERTILIZER_NOT_CLOSED',
+        [fertilizerItemId],
+        `肥料需要が内製フローで閉じていません: ${itemName(fertilizerItemId).ja} 必要 ${formatRate(fertilizerRequiredPerMin)}/min、供給 ${formatRate(fertilizerFlowTotal)}/min`,
+        `Fertilizer demand is not closed by internal flows: ${itemName(fertilizerItemId).en} required ${formatRate(fertilizerRequiredPerMin)}/min, supplied ${formatRate(fertilizerFlowTotal)}/min`,
+        { details: { fertilizerItemId, requiredPerMin: fertilizerRequiredPerMin, suppliedPerMin: fertilizerFlowTotal } },
+      ));
+    }
   }
 
   return violations;
