@@ -23,14 +23,13 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.22';
+const APP_VERSION = '0.10.23';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
   debug: boolean;
   explicitSafeMode: boolean;
   safeMode: boolean;
-  cauldronResolveMode: 'cauldronOnly' | 'normalBridge';
 };
 
 const abilityLabels: Record<AbilityId, { ja: string; en: string }> = {
@@ -51,7 +50,6 @@ function parseRuntimeFlags(): RuntimeFlags {
   const cleanParts: string[] = [];
   let debug = false;
   let explicitSafeMode = false;
-  let cauldronResolveMode: RuntimeFlags['cauldronResolveMode'] = 'cauldronOnly';
 
   for (const part of rawHash.split('&').filter(Boolean)) {
     if (part === 'DEBUG=ON') {
@@ -67,10 +65,6 @@ function parseRuntimeFlags(): RuntimeFlags {
       continue;
     }
 
-    if (part === 'CAULDRON=BRIDGE') {
-      cauldronResolveMode = 'normalBridge';
-      cleanParts.push('CAULDRON=BRIDGE');
-    }
   }
 
   const cleanHash = cleanParts.length ? `#${cleanParts.join('&')}` : '';
@@ -79,7 +73,7 @@ function parseRuntimeFlags(): RuntimeFlags {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${cleanHash}`);
   }
 
-  return { debug, explicitSafeMode, safeMode: debug || explicitSafeMode, cauldronResolveMode }; 
+  return { debug, explicitSafeMode, safeMode: debug || explicitSafeMode };
 }
 
 function isUnsupportedSavedState(value: unknown): boolean {
@@ -688,7 +682,6 @@ export function App() {
               completedGraphNodeIds={state.completedGraphNodeIds}
               onToggleCompleted={toggleCompleted}
               focusRequest={cauldronFocusGraphRequest}
-              cauldronResolveMode={runtimeFlags.cauldronResolveMode}
             />
           )}
           {state.activeTab === 'about' && <AboutTab lang={lang} />}

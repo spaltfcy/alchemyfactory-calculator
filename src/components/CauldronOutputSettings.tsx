@@ -31,7 +31,9 @@ function makeTarget(lang: Lang, targetDefaults: TargetDefaults): ProductionTarge
 }
 
 function normalizeCauldronTarget(target: ProductionTarget, patch: Partial<ProductionTarget> = {}): ProductionTarget {
-  return { ...target, ...patch, enabled: true, recipeId: '', mode: 'rate', value: 1 };
+  const rawValue = Number(patch.value ?? target.value);
+  const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 1;
+  return { ...target, ...patch, enabled: true, recipeId: '', mode: 'rate', value };
 }
 
 function normalizeCauldronTargetPatch(target: ProductionTarget, patch: Partial<ProductionTarget>): ProductionTarget {

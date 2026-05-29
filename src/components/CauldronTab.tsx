@@ -3,7 +3,7 @@ import { CAULDRON_TARGETS } from '../cauldron/cauldronData';
 import { buildCauldronGraphResult, cauldronRequestForTarget } from '../cauldron/cauldronGraph';
 import { generateCauldronCandidatesForOutput } from '../cauldron/cauldronMath';
 import { optimizeCauldronTargetWithResult } from '../cauldron/cauldronOptimizer';
-import { planCauldronOnlyTarget, type CauldronResolveMode } from '../cauldron/cauldronOnlyPlanner';
+import { planCauldronTarget } from '../cauldron/cauldronPlanner';
 import { cauldronItemName, parseItemIdsText } from '../cauldron/cauldronSearch';
 import type { CauldronOptimizationResult, CauldronOptimizedPlan, CauldronPlanItem, CauldronTargetPlan, CauldronState } from '../cauldron/cauldronTypes';
 import { calculate } from '../engine/calculate';
@@ -22,7 +22,6 @@ type CauldronTabProps = {
   completedGraphNodeIds: Record<string, boolean>;
   onToggleCompleted: (nodeId: string) => void;
   focusRequest?: GraphFocusRequest;
-  cauldronResolveMode?: CauldronResolveMode;
 };
 
 const EMPTY_TOTALS: CalculationResult['totals'] = {
@@ -386,19 +385,18 @@ function CauldronOptimizedPlanPanel({ lang, optimization }: { lang: Lang; optimi
   );
 }
 
-export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies, completedGraphNodeIds, onToggleCompleted, focusRequest, cauldronResolveMode = 'cauldronOnly' }: CauldronTabProps) {
+export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies, completedGraphNodeIds, onToggleCompleted, focusRequest }: CauldronTabProps) {
   const targetItemId = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId)?.outputItemId ?? state.candidateTargetItemId;
   const targetRatePerMinute = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId === targetItemId)?.value ?? 1;
   const planned = useMemo(
-    () => planCauldronOnlyTarget({
+    () => planCauldronTarget({
       targetItemId,
       amount: Math.max(1, Number(targetRatePerMinute) || 1),
       machineId: state.machineId,
       settings,
       recipePreferences,
-      mode: cauldronResolveMode,
     }),
-    [cauldronResolveMode, recipePreferences, settings, state.machineId, targetItemId, targetRatePerMinute],
+    [recipePreferences, settings, state.machineId, targetItemId, targetRatePerMinute],
   );
   const optimization = planned.optimization;
   const result = planned.result;

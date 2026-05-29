@@ -19,33 +19,21 @@ import { flowTransportForItem } from '../engine/flowTransport';
 const MAX_DEPTH = 9;
 const MAX_RUNTIME_CANDIDATES_TO_EXPAND = 24;
 
-export type CauldronResolveMode = 'cauldronOnly' | 'normalBridge';
-
 export type CauldronPlannerPolicy = {
-  mode: CauldronResolveMode;
   allowNormalForNonCauldronTarget: boolean;
   allowNormalFallbackAfterCauldronFailure: boolean;
   allowStartupSeeds: boolean;
   allowPartialGraph: boolean;
 };
 
-export const CAULDRON_ONLY_POLICY: CauldronPlannerPolicy = {
-  mode: 'cauldronOnly',
-  allowNormalForNonCauldronTarget: false,
-  allowNormalFallbackAfterCauldronFailure: false,
-  allowStartupSeeds: false,
-  allowPartialGraph: false,
-};
-
-export const NORMAL_BRIDGE_POLICY: CauldronPlannerPolicy = {
-  mode: 'normalBridge',
+export const CAULDRON_PLANNER_POLICY: CauldronPlannerPolicy = {
   allowNormalForNonCauldronTarget: true,
-  allowNormalFallbackAfterCauldronFailure: false,
+  allowNormalFallbackAfterCauldronFailure: true,
   allowStartupSeeds: true,
   allowPartialGraph: true,
 };
 
-export type CauldronOnlyFailureCode =
+export type CauldronPlannerFailureCode =
   | 'NOT_CAULDRON_TARGET'
   | 'NO_CAULDRON_CANDIDATE'
   | 'INPUT_NOT_PLANT_DERIVED'
@@ -55,12 +43,12 @@ export type CauldronOnlyFailureCode =
   | 'NO_NURSERY_RECIPE'
   | 'UNSUPPORTED_RECIPE_INPUT';
 
-type CauldronOnlyFailure = {
-  code: CauldronOnlyFailureCode;
+type CauldronPlannerFailure = {
+  code: CauldronPlannerFailureCode;
   itemId: string;
   message: LocalizedText;
   candidate?: readonly [string, string, string];
-  children?: CauldronOnlyFailure[];
+  children?: CauldronPlannerFailure[];
 };
 
 type CauldronPlanNode =
@@ -98,12 +86,12 @@ type CauldronPlanChild = {
 type ResolveResult = {
   ok: boolean;
   node?: CauldronPlanNode;
-  failures: CauldronOnlyFailure[];
+  failures: CauldronPlannerFailure[];
 };
 
 type ResolveMemo = Map<string, ResolveResult>;
 
-export type CauldronOnlyPlannerResult = {
+export type CauldronPlannerResult = {
   result: CalculationResult;
   optimization: CauldronOptimizationResult;
 };
@@ -116,7 +104,7 @@ function isSeedItem(itemId: string): boolean {
   return itemById[itemId]?.category === 'seed';
 }
 
-function failureMessage(code: CauldronOnlyFailureCode, itemId: string): LocalizedText {
+function failureMessage(code: CauldronPlannerFailureCode, itemId: string): LocalizedText {
   const name = itemName(itemId);
   switch (code) {
     case 'NOT_CAULDRON_TARGET':
@@ -141,7 +129,7 @@ function failureMessage(code: CauldronOnlyFailureCode, itemId: string): Localize
   }
 }
 
-function makeFailure(code: CauldronOnlyFailureCode, itemId: string, candidate?: readonly [string, string, string], children?: CauldronOnlyFailure[]): CauldronOnlyFailure {
+function makeFailure(code: CauldronPlannerFailureCode, itemId: string, candidate?: readonly [string, string, string], children?: CauldronPlannerFailure[]): CauldronPlannerFailure {
   return { code, itemId, message: failureMessage(code, itemId), candidate, children };
 }
 
@@ -167,7 +155,7 @@ function sourceNode(
   };
 }
 
-function failedResult(code: CauldronOnlyFailureCode, itemId: string, policy: CauldronPlannerPolicy, amount: number, extraFailures: CauldronOnlyFailure[] = []): ResolveResult {
+function failedResult(code: CauldronPlannerFailureCode, itemId: string, policy: CauldronPlannerPolicy, amount: number, extraFailures: CauldronPlannerFailure[] = []): ResolveResult {
   const failure = makeFailure(code, itemId);
   const failures = [failure, ...extraFailures];
   if (policy.allowPartialGraph) return { ok: false, node: sourceNode(itemId, amount, 'unresolved', failure.message), failures };
@@ -239,7 +227,7 @@ function resolveNormalRecipe(
 
   const runsPerMinute = amount / outputAmount;
   const children: CauldronPlanChild[] = [];
-  const failures: CauldronOnlyFailure[] = [];
+  const failures: CauldronPlannerFailure[] = [];
 
   for (const startup of extraStartupItems) {
     children.push({
@@ -359,10 +347,10 @@ function resolveCauldronOutput(
     .slice(0, MAX_RUNTIME_CANDIDATES_TO_EXPAND);
   if (candidates.length === 0) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
 
-  const candidateFailures: CauldronOnlyFailure[] = [];
+  const candidateFailures: CauldronPlannerFailure[] = [];
   for (const candidate of candidates) {
     const children: CauldronPlanChild[] = [];
-    const failures: CauldronOnlyFailure[] = [];
+    const failures: CauldronPlannerFailure[] = [];
     candidate.inputItemIds.forEach((childItemId, index) => {
       const slotIndex = index as 0 | 1 | 2;
       const child = resolveCauldronInputMaterial(childItemId, amount, policy, recipePreferences, depth - 1, path, memo);
@@ -408,7 +396,7 @@ function resolveOutputItem(
   if (path.has(itemId)) return failedResult('CYCLE', itemId, policy, amount);
   if (policy.allowStartupSeeds && isSeedItem(itemId)) return { ok: true, node: sourceNode(itemId, amount, 'startup'), failures: [] };
 
-  const memoKey = `${policy.mode}:${itemId}:${amount.toFixed(6)}:${depth}`;
+  const memoKey = `${itemId}:${amount.toFixed(6)}:${depth}`;
   const cached = memo.get(memoKey);
   if (cached) return cached;
 
@@ -487,7 +475,7 @@ function recipeOutputRate(recipe: Recipe, itemId: string): number {
 }
 
 function recipeIdForNode(node: CauldronPlanNode, _pathKey: string, machineId: CauldronMachineId): string {
-  if (node.kind === 'normal') return `normal:${node.recipeId}:${node.itemId}`;
+  if (node.kind === 'normal') return `normal:${node.recipeId}`;
   if (node.kind === 'cauldron') return `cauldron:phase1:${machineId}:${node.itemId}:${node.candidate.inputItemIds.join('+')}`;
   return `source:${node.sourceKind}:${node.itemId}`;
 }
@@ -526,11 +514,6 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
   const actualMachines = outputRate > 0 ? node.amount / outputRate : node.amount;
   const cauldronTarget = node.kind === 'cauldron' ? CAULDRON_TARGETS[node.itemId] : undefined;
   const surplusOutputRates: Record<string, number> = {};
-  if (node.kind === 'normal') {
-    for (const [outputItemId, rate] of Object.entries(outputRates)) {
-      if (outputItemId !== node.itemId) addRate(surplusOutputRates, outputItemId, rate);
-    }
-  }
 
   return {
     recipeId,
@@ -678,7 +661,7 @@ function collectPlannerTotals(node: CauldronPlanNode, settings: AppSettings): Pl
   return totals;
 }
 
-function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, machineId: CauldronMachineId, ok: boolean, failures: CauldronOnlyFailure[], mode: CauldronResolveMode): CalculationResult {
+function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, machineId: CauldronMachineId, ok: boolean, failures: CauldronPlannerFailure[]): CalculationResult {
   const itemStats: Record<string, ItemStat> = {};
   const recipeStats: Record<string, RecipeStat> = {};
   const flows: CalculatedFlow[] = [];
@@ -712,27 +695,48 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
     else recipeStats[recipeId] = addition;
   }
 
-  function addSurplusOutputs(node: Extract<CauldronPlanNode, { kind: 'normal' | 'cauldron' }>, recipeId: string): void {
-    if (node.kind !== 'normal') return;
-    const stat = recipeStats[recipeId];
-    if (!stat) return;
-    for (const output of node.recipe.outputs) {
-      const outputRate = output.amount * (output.probability ?? 1) * node.runsPerMinute;
-      if (output.itemId === node.itemId || outputRate <= 0) continue;
-      const itemStat = addItemStat(itemStats, output.itemId);
-      itemStat.produced += outputRate;
-      itemStat.surplus += outputRate;
-      addOrMergeFlow({
-        id: `cauldron-planner:${recipeId}:surplus:${output.itemId}:${flows.length}`,
-        from: { type: 'recipe', recipeId },
-        to: { type: 'itemSink', itemId: output.itemId, sinkMode: 'surplus' },
-        itemId: output.itemId,
-        rate: outputRate,
-        belts: flowTransportForItem(output.itemId, outputRate, 60).belts,
-        transportKind: flowTransportForItem(output.itemId, outputRate, 60).transportKind,
-        transportUnits: flowTransportForItem(output.itemId, outputRate, 60).transportUnits,
-        role: 'surplus',
-      });
+  function addSurplusFlow(recipeId: string, itemId: string, rate: number): void {
+    if (rate <= 0) return;
+    const transport = flowTransportForItem(itemId, rate, 60);
+    flows.push({
+      id: `cauldron-planner:${recipeId}:surplus:${itemId}:${flows.length}`,
+      from: { type: 'recipe', recipeId },
+      to: { type: 'itemSink', itemId, sinkMode: 'surplus' },
+      itemId,
+      rate,
+      belts: transport.belts,
+      transportKind: transport.transportKind,
+      transportUnits: transport.transportUnits,
+      role: 'surplus',
+    });
+  }
+
+  function rebuildProducedAndSurplusFromRecipeStats(): void {
+    for (const stat of Object.values(itemStats)) {
+      stat.produced = 0;
+      stat.surplus = 0;
+    }
+
+    for (const recipeStat of Object.values(recipeStats)) {
+      recipeStat.surplusOutputRates = {};
+      for (const [itemId, rate] of Object.entries(recipeStat.outputRates)) {
+        addItemStat(itemStats, itemId).produced += rate;
+      }
+    }
+
+    for (const stat of Object.values(itemStats)) {
+      const surplus = Math.max(0, (stat.produced ?? 0) - (stat.consumed ?? 0) - (stat.targetActual ?? 0));
+      if (surplus <= 1e-6) continue;
+      stat.surplus = surplus;
+      let remaining = surplus;
+      for (const [recipeId, recipeStat] of Object.entries(recipeStats)) {
+        const outputRate = recipeStat.outputRates[stat.itemId] ?? 0;
+        if (outputRate <= 0 || remaining <= 1e-6) continue;
+        const flowRate = Math.min(outputRate, remaining);
+        addRate(recipeStat.surplusOutputRates, stat.itemId, flowRate);
+        addSurplusFlow(recipeId, stat.itemId, flowRate);
+        remaining -= flowRate;
+      }
     }
   }
 
@@ -767,6 +771,13 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
     }
 
     const recipeId = recipeIdForNode(node, pathKey, machineId);
+    if (node.kind === 'normal') {
+      const existing = recipeStats[recipeId];
+      if (existing && !existing.targetIds.includes(node.itemId)) {
+        existing.targetIds = Array.from(new Set([...existing.targetIds, node.itemId]));
+        return recipeId;
+      }
+    }
     addRecipeOccurrence(node, recipeId);
     const produced = addItemStat(itemStats, node.itemId);
     produced.produced += node.amount;
@@ -788,7 +799,6 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
       }
     });
 
-    addSurplusOutputs(node, recipeId);
 
     if (parentRecipeId) return recipeId;
     addOrMergeFlow({
@@ -806,6 +816,7 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
   }
 
   visit(root);
+  rebuildProducedAndSurplusFromRecipeStats();
 
   return {
     itemStats,
@@ -827,7 +838,7 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
   };
 }
 
-function blockedResult(targetItemId: string, settings: AppSettings, failures: CauldronOnlyFailure[]): CalculationResult {
+function blockedResult(targetItemId: string, settings: AppSettings, failures: CauldronPlannerFailure[]): CalculationResult {
   return {
     itemStats: {},
     recipeStats: {},
@@ -880,7 +891,7 @@ function formatFailureCandidate(candidate: readonly [string, string, string] | u
   return lang === 'ja' ? `候補: ${items}` : `Candidate: ${items}`;
 }
 
-function failureDetailText(failure: CauldronOnlyFailure, lang: 'ja' | 'en', depth = 0): string {
+function failureDetailText(failure: CauldronPlannerFailure, lang: 'ja' | 'en', depth = 0): string {
   const indent = '  '.repeat(depth);
   const lines = [`${indent}${failure.message[lang]}`];
   const candidateLine = formatFailureCandidate(failure.candidate, lang);
@@ -891,14 +902,14 @@ function failureDetailText(failure: CauldronOnlyFailure, lang: 'ja' | 'en', dept
   return lines.join('\n');
 }
 
-function collectFailureItemIds(failure: CauldronOnlyFailure, output = new Set<string>()): string[] {
+function collectFailureItemIds(failure: CauldronPlannerFailure, output = new Set<string>()): string[] {
   output.add(failure.itemId);
   for (const candidateItemId of failure.candidate ?? []) output.add(candidateItemId);
   for (const child of failure.children ?? []) collectFailureItemIds(child, output);
   return [...output];
 }
 
-function issueFromFailure(failure: CauldronOnlyFailure): CauldronOptimizedPlanIssue {
+function issueFromFailure(failure: CauldronPlannerFailure): CauldronOptimizedPlanIssue {
   return {
     code: 'MISSING',
     severity: 'error',
@@ -1151,16 +1162,15 @@ function appendObjectiveErrors(result: CalculationResult, violations: CauldronOb
   };
 }
 
-export function planCauldronOnlyTarget(options: {
+export function planCauldronTarget(options: {
   targetItemId: string;
   amount: number;
   machineId: CauldronMachineId;
   settings: AppSettings;
   recipePreferences?: Record<string, string>;
-  mode?: CauldronResolveMode;
-}): CauldronOnlyPlannerResult {
+}): CauldronPlannerResult {
   const amount = Math.max(1, Number(options.amount) || 1);
-  const policy = options.mode === 'normalBridge' ? NORMAL_BRIDGE_POLICY : CAULDRON_ONLY_POLICY;
+  const policy = CAULDRON_PLANNER_POLICY;
   const recipePreferences = options.recipePreferences ?? {};
   const resolved = resolveOutputItem(options.targetItemId, amount, policy, recipePreferences);
   const targetLabel = itemName(options.targetItemId);
@@ -1174,14 +1184,14 @@ export function planCauldronOnlyTarget(options: {
         targetItemId: options.targetItemId,
         targetLabel,
         bestPlan: {
-          id: `cauldron:${policy.mode}:${options.targetItemId}:blocked`,
+          id: `cauldron:bridge:${options.targetItemId}:blocked`,
           rank: 1,
           source: 'cauldron',
           status: 'blocked',
           score: Number.POSITIVE_INFINITY,
           targetItemId: options.targetItemId,
           targetLabel,
-          title: { ja: `${targetLabel.ja}（錬金釜 ${policy.mode}）`, en: `${targetLabel.en} (Cauldron ${policy.mode})` },
+          title: { ja: `${targetLabel.ja}（錬金釜Bridge）`, en: `${targetLabel.en} (Cauldron bridge)` },
           summary: { ja: '候補を作れませんでした。', en: 'No candidate could be selected.' },
           targetRatePerMinute: amount,
           root: { itemId: options.targetItemId, label: targetLabel, amount, status: 'missing', reason: resolved.failures[0]?.message ?? { ja: '候補なし', en: 'No candidate' }, children: [] },
@@ -1216,7 +1226,7 @@ export function planCauldronOnlyTarget(options: {
     };
   }
 
-  const rawResult = buildCalculationResult(resolved.node, options.settings, options.machineId, resolved.ok, resolved.failures, policy.mode);
+  const rawResult = buildCalculationResult(resolved.node, options.settings, options.machineId, resolved.ok, resolved.failures);
   const objectiveViolations = collectObjectiveViolations(resolved.node, rawResult);
   const result = appendObjectiveErrors(rawResult, objectiveViolations);
   const blockingObjectiveViolations = objectiveViolations.filter((entry) => entry.severity === 'error');
@@ -1233,7 +1243,7 @@ export function planCauldronOnlyTarget(options: {
   const objectiveOk = resolved.ok && !hasBlockingObjectiveViolations;
 
   const bestPlan: CauldronOptimizedPlan = {
-    id: `cauldron:${policy.mode}:${options.targetItemId}`,
+    id: `cauldron:bridge:${options.targetItemId}`,
     rank: 1,
     source: 'cauldron',
     status: objectiveOk ? (objectiveViolations.length > 0 ? 'warning' : 'closed') : 'blocked',

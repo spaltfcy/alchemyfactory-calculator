@@ -12,7 +12,7 @@ import { buildFlowGraphDebugArtifacts, buildFlowGraphSvg, compareFlowGraphLayout
 import { itemById } from '../data/items';
 import { buildTableViewModel } from '../engine/tableViewModel';
 import { buildCauldronGraphResult, cauldronStateFromRequest, type CauldronGraphRequest } from '../cauldron/cauldronGraph';
-import { planCauldronOnlyTarget, type CauldronResolveMode } from '../cauldron/cauldronOnlyPlanner';
+import { planCauldronTarget } from '../cauldron/cauldronPlanner';
 import type { CauldronObjectiveViolation } from '../cauldron/cauldronTypes';
 
 type DebugTabProps = {
@@ -1222,42 +1222,36 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
 
   function buildCauldronDebugArtifact(rawRequest: unknown) {
     const requestRecord = isObjectRecord(rawRequest) ? rawRequest : {};
-    const plannerMode = requestRecord.plannerMode === 'normalBridge' ? 'normalBridge' : requestRecord.plannerMode === 'cauldronOnly' ? 'cauldronOnly' : undefined;
     const targetItemId = typeof requestRecord.targetItemId === 'string' ? requestRecord.targetItemId : state.cauldronState.candidateTargetItemId;
     const targetRatePerMinute = typeof requestRecord.targetRatePerMinute === 'number' ? requestRecord.targetRatePerMinute : 1;
     const machineId = requestRecord.machineId === 'advanced_cauldron' ? 'advanced_cauldron' : state.cauldronState.machineId;
-    const planned = plannerMode
-      ? planCauldronOnlyTarget({
-          targetItemId,
-          amount: targetRatePerMinute,
-          machineId,
-          settings: state.settings,
-          recipePreferences: state.recipePreferences,
-          mode: plannerMode as CauldronResolveMode,
-        })
-      : undefined;
-    const objectiveViolations = (planned?.optimization.bestPlan?.metrics.objectiveViolations ?? []) as CauldronObjectiveViolation[];
-    const build = planned
-      ? {
-          request: { ...requestRecord, targetItemId, targetRatePerMinute, machineId, plannerMode },
-          result: planned.result,
-          summary: {
-            status: planned.result.calculationStatus === 'ok' ? 'ok' as const : 'invalid' as const,
-            code: planned.result.errorSummaries?.[0]?.code,
-            messageJa: planned.result.errorSummaries?.[0]?.messageJa ?? '錬金釜Planner検証結果です。',
-            messageEn: planned.result.errorSummaries?.[0]?.messageEn ?? 'Cauldron planner verification result.',
-            graphNodeCount: Object.keys(planned.result.recipeStats).length,
-            graphEdgeCount: planned.result.flows.length,
-            objectiveViolationCount: objectiveViolations.length,
-            objectiveViolationCodes: objectiveViolations.map((entry) => entry.code),
-          },
-          prediction: null,
-          selectedCandidate: planned.optimization.bestPlan?.selectedInputItemIds ?? null,
-          candidates: planned.optimization.plans,
-          optimization: planned.optimization,
-          objectiveViolations,
-        }
-      : buildCauldronGraphResult(rawRequest, state.cauldronState);
+    const planned = planCauldronTarget({
+      targetItemId,
+      amount: targetRatePerMinute,
+      machineId,
+      settings: state.settings,
+      recipePreferences: state.recipePreferences,
+    });
+    const objectiveViolations = (planned.optimization.bestPlan?.metrics.objectiveViolations ?? []) as CauldronObjectiveViolation[];
+    const build = {
+      request: { ...requestRecord, targetItemId, targetRatePerMinute, machineId, planner: 'bridgeOnly' },
+      result: planned.result,
+      summary: {
+        status: planned.result.calculationStatus === 'ok' ? 'ok' as const : 'invalid' as const,
+        code: planned.result.errorSummaries?.[0]?.code,
+        messageJa: planned.result.errorSummaries?.[0]?.messageJa ?? '錬金釜Planner検証結果です。',
+        messageEn: planned.result.errorSummaries?.[0]?.messageEn ?? 'Cauldron planner verification result.',
+        graphNodeCount: Object.keys(planned.result.recipeStats).length,
+        graphEdgeCount: planned.result.flows.length,
+        objectiveViolationCount: objectiveViolations.length,
+        objectiveViolationCodes: objectiveViolations.map((entry) => entry.code),
+      },
+      prediction: null,
+      selectedCandidate: planned.optimization.bestPlan?.selectedInputItemIds ?? null,
+      candidates: planned.optimization.plans,
+      optimization: planned.optimization,
+      objectiveViolations,
+    };
     const resultForSvg = build.result;
     const normalGraphArtifact = buildFlowGraphDebugArtifacts(
       resultForSvg,
