@@ -394,9 +394,10 @@ export function CauldronTab({ lang, state, settings, abilities, recipePreference
       amount: Math.max(1, Number(targetRatePerMinute) || 1),
       machineId: state.machineId,
       settings,
+      abilities,
       recipePreferences,
     }),
-    [recipePreferences, settings, state.machineId, targetItemId, targetRatePerMinute],
+    [abilities, recipePreferences, settings, state.machineId, targetItemId, targetRatePerMinute],
   );
   const optimization = planned.optimization;
   const result = planned.result;

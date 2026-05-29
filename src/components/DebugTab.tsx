@@ -1230,6 +1230,7 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       amount: targetRatePerMinute,
       machineId,
       settings: state.settings,
+      abilities: state.abilities,
       recipePreferences: state.recipePreferences,
     });
     const objectiveViolations = (planned.optimization.bestPlan?.metrics.objectiveViolations ?? []) as CauldronObjectiveViolation[];

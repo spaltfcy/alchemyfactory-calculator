@@ -1,4 +1,5 @@
 import { CAULDRON_INPUT_ITEM_IDS, CAULDRON_INPUT_VALUES, CAULDRON_TARGETS } from './cauldronData';
+import { calcBaseCauldronHeatPerSec, calcBaseCauldronTimeSec } from './cauldronPhysics';
 import type { CauldronInputTuple } from './cauldronTypes';
 import { ITEMS, itemById } from '../data/items';
 import { CAULDRON_INPUT_PREFERENCE_ORDER } from '../types';
@@ -18,6 +19,10 @@ export type CauldronRuntimeCandidate = {
   overTargetInputCount: number;
   overTargetExcessTotal: number;
   overTargetExcessMax: number;
+  targetValue: number;
+  targetMultiplier: number;
+  baseTimeSec: number;
+  baseHeatPerSec: number;
 };
 
 export function duplicatePenaltyForCauldronInput(inputItemIds: CauldronInputTuple): number {
@@ -157,6 +162,8 @@ function overTargetMetrics(outputItemId: string, inputItemIds: CauldronInputTupl
 }
 
 function buildRuntimeCandidate(outputItemId: string, inputItemIds: CauldronInputTuple, prediction: NonNullable<ReturnType<typeof predictCauldronOutput>>): CauldronRuntimeCandidate {
+  const target = CAULDRON_TARGETS[outputItemId];
+  const targetValue = target?.targetValue ?? 0;
   return {
     outputItemId,
     inputItemIds,
@@ -166,19 +173,26 @@ function buildRuntimeCandidate(outputItemId: string, inputItemIds: CauldronInput
     weightedDistance: prediction.weightedDistance,
     ...duplicateMetrics(inputItemIds),
     ...overTargetMetrics(outputItemId, inputItemIds),
+    targetValue,
+    targetMultiplier: target?.multiplier ?? 1,
+    baseTimeSec: calcBaseCauldronTimeSec(targetValue),
+    baseHeatPerSec: calcBaseCauldronHeatPerSec(targetValue),
   };
 }
 
 function sortRuntimeCandidates(candidates: CauldronRuntimeCandidate[]): CauldronRuntimeCandidate[] {
   return candidates.sort((a, b) => {
-    const worstRank = cauldronCandidateWorstPreferenceRank(a) - cauldronCandidateWorstPreferenceRank(b);
-    if (worstRank !== 0) return worstRank;
-
     const duplicateItemCount = a.duplicateItemCount - b.duplicateItemCount;
     if (duplicateItemCount !== 0) return duplicateItemCount;
 
     const maxDuplicateCount = a.maxDuplicateCount - b.maxDuplicateCount;
     if (maxDuplicateCount !== 0) return maxDuplicateCount;
+
+    const worstRank = cauldronCandidateWorstPreferenceRank(a) - cauldronCandidateWorstPreferenceRank(b);
+    if (worstRank !== 0) return worstRank;
+
+    const rankSum = cauldronCandidatePreferenceRankSum(a) - cauldronCandidatePreferenceRankSum(b);
+    if (rankSum !== 0) return rankSum;
 
     const overTargetInputCount = a.overTargetInputCount - b.overTargetInputCount;
     if (overTargetInputCount !== 0) return overTargetInputCount;
@@ -186,14 +200,11 @@ function sortRuntimeCandidates(candidates: CauldronRuntimeCandidate[]): Cauldron
     const overTargetExcessTotal = a.overTargetExcessTotal - b.overTargetExcessTotal;
     if (Math.abs(overTargetExcessTotal) > EPS) return overTargetExcessTotal;
 
-    const overTargetExcessMax = a.overTargetExcessMax - b.overTargetExcessMax;
-    if (Math.abs(overTargetExcessMax) > EPS) return overTargetExcessMax;
-
-    const rankSum = cauldronCandidatePreferenceRankSum(a) - cauldronCandidatePreferenceRankSum(b);
-    if (rankSum !== 0) return rankSum;
-
     const distance = a.weightedDistance - b.weightedDistance;
     if (Math.abs(distance) > EPS) return distance;
+
+    const overTargetExcessMax = a.overTargetExcessMax - b.overTargetExcessMax;
+    if (Math.abs(overTargetExcessMax) > EPS) return overTargetExcessMax;
 
     const score = a.adjustedScore - b.adjustedScore;
     if (Math.abs(score) > EPS) return score;
@@ -259,6 +270,10 @@ export function findPreferredCauldronCandidatesForOutput(outputItemId: string, o
 
 export function findPlantDerivedCauldronCandidatesForOutput(outputItemId: string, options: { maxCandidates?: number } = {}): CauldronRuntimeCandidate[] {
   return findPreferredCauldronCandidatesForOutput(outputItemId, options);
+}
+
+export function cauldronInputCount(): number {
+  return CAULDRON_INPUT_ITEM_IDS.length;
 }
 
 export function preferredCauldronInputCount(): number {

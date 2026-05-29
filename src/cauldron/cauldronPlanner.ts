@@ -1,23 +1,26 @@
 import { CAULDRON_INPUT_VALUES, CAULDRON_TARGETS } from './cauldronData';
 import {
-  findPreferredCauldronCandidatesForOutput,
+  findCauldronCandidatesForOutput,
   isPreferredCauldronInputItem,
-  preferredCauldronInputCount,
+  cauldronInputCount,
+  cauldronInputPreferenceRank,
   type CauldronRuntimeCandidate,
 } from './cauldronCandidateSearch';
-import type { CauldronMachineId, CauldronObjectiveViolation, CauldronOptimizationResult, CauldronOptimizedPlan, CauldronOptimizedPlanIssue, CauldronPlanItem } from './cauldronTypes';
+import type { CauldronCandidateSelectionKey, CauldronMachineId, CauldronObjectiveViolation, CauldronOptimizationResult, CauldronOptimizedPlan, CauldronOptimizedPlanIssue, CauldronPlanItem } from './cauldronTypes';
 import type { CalculationResult, CalculatedFlow, ItemStat, RecipeStat } from '../engine/calculate';
-import type { AppSettings, CauldronInputPreference, LocalizedText, Recipe } from '../types';
+import type { AbilitySettings, AppSettings, CauldronInputPreference, LocalizedText, Recipe } from '../types';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
 import { getRecipesProducing } from '../data/recipes';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID } from '../data/fertilizer';
+import { getConveyorItemsPerMinute, getFertilizerNutritionMultiplier, getFuelHeatValueMultiplier, getHeatConsumptionMultiplier, getProductionSpeedMultiplier } from '../data/abilityTables';
+import { calcEffectiveCauldronStats } from './cauldronPhysics';
 import { chooseRecipeForItem } from '../engine/itemSourceResolver';
 import { flowTransportForItem } from '../engine/flowTransport';
 
 const MAX_DEPTH = 9;
-const MAX_RUNTIME_CANDIDATES_TO_EXPAND = 24;
+const MAX_RUNTIME_CANDIDATES_TO_EXPAND = 120;
 
 export type CauldronPlannerPolicy = {
   allowNormalForNonCauldronTarget: boolean;
@@ -111,8 +114,8 @@ function failureMessage(code: CauldronPlannerFailureCode, itemId: string): Local
       return { ja: `${name.ja} は錬金釜の出力ターゲットではありません。`, en: `${name.en} is not a cauldron output target.` };
     case 'NO_CAULDRON_CANDIDATE':
       return {
-        ja: `${name.ja} は現在の錬金釜入力候補では3入力候補が見つかりませんでした。候補プール: ${preferredCauldronInputCount()}件`,
-        en: `No three-input cauldron candidate was found for ${name.en} in the current input pool. Pool: ${preferredCauldronInputCount()} items.`,
+        ja: `${name.ja} は現在の錬金釜入力候補では3入力候補が見つかりませんでした。候補プール: ${cauldronInputCount()}件`,
+        en: `No three-input cauldron candidate was found for ${name.en} in the current input pool. Pool: ${cauldronInputCount()} items.`,
       };
     case 'INPUT_NOT_PLANT_DERIVED':
       return { ja: `${name.ja} は錬金釜入力候補ではありません。`, en: `${name.en} is not a cauldron input candidate.` };
@@ -322,12 +325,97 @@ function resolveCauldronInputMaterial(
       return purchaseSource(itemId, amount);
     default:
       if (isPurchasable(itemId)) return purchaseSource(itemId, amount);
+      if (selectRecipe(itemId, recipePreferences)) return resolveNormalOutput(itemId, amount, policy, recipePreferences, depth, nextPath, memo);
       if (!isPreferredCauldronInputItem(itemId)) {
         const failure = makeFailure('INPUT_NOT_PLANT_DERIVED', itemId);
         return { ok: false, node: sourceNode(itemId, amount, 'unresolved', failure.message), failures: [failure] };
       }
       return { ok: true, node: sourceNode(itemId, amount, 'plantDerivedInput'), failures: [] };
   }
+}
+
+type CandidateAttempt = {
+  candidate: CauldronRuntimeCandidate;
+  node: CauldronPlanNode;
+  failures: CauldronPlannerFailure[];
+  selectionKey: CauldronCandidateSelectionKey;
+};
+
+function collectNodeSourceKinds(node: CauldronPlanNode): { purchased: Set<string>; unresolved: Set<string>; plantDerivedInput: Set<string> } {
+  const buckets = { purchased: new Set<string>(), unresolved: new Set<string>(), plantDerivedInput: new Set<string>() };
+  function visit(current: CauldronPlanNode): void {
+    if (current.kind === 'source') {
+      if (current.sourceKind === 'purchase') buckets.purchased.add(current.itemId);
+      if (current.sourceKind === 'unresolved') buckets.unresolved.add(current.itemId);
+      if (current.sourceKind === 'plantDerivedInput') buckets.plantDerivedInput.add(current.itemId);
+      return;
+    }
+    for (const child of current.children) visit(child.node);
+  }
+  visit(node);
+  return buckets;
+}
+
+function selectionKeyForCandidateAttempt(candidate: CauldronRuntimeCandidate, node: CauldronPlanNode, failures: CauldronPlannerFailure[]): CauldronCandidateSelectionKey {
+  const buckets = collectNodeSourceKinds(node);
+  const counts = countNodes(node);
+  const unresolvedCount = buckets.unresolved.size + failures.length;
+  const constantPurchaseCount = buckets.purchased.size;
+  const plantDerivedInputCount = buckets.plantDerivedInput.size;
+  const classRank = unresolvedCount > 0
+    ? 5
+    : constantPurchaseCount > 0
+      ? 4
+      : plantDerivedInputCount > 0
+        ? 3
+        : 0;
+  const preferenceRanks = candidate.inputItemIds.map((itemId) => cauldronInputPreferenceRank(itemId) ?? 999);
+  return {
+    classRank,
+    unresolvedCount,
+    constantPurchaseCount,
+    plantDerivedInputCount,
+    fertilizerOpenCount: 0,
+    fuelOpenCount: 0,
+    heatOpenCount: 0,
+    worstInputPreferenceRank: Math.max(...preferenceRanks),
+    routeRecipeCount: counts.recipes,
+    routeDepth: counts.depth,
+    duplicateInputCount: candidate.duplicateItemCount,
+    overTargetInputCount: candidate.overTargetInputCount,
+    weightedDistance: candidate.weightedDistance,
+    adjustedScore: candidate.adjustedScore,
+  };
+}
+
+function compareCandidateSelectionKey(a: CauldronCandidateSelectionKey, b: CauldronCandidateSelectionKey): number {
+  const fields: Array<keyof CauldronCandidateSelectionKey> = [
+    'classRank',
+    'unresolvedCount',
+    'constantPurchaseCount',
+    'plantDerivedInputCount',
+    'fertilizerOpenCount',
+    'fuelOpenCount',
+    'heatOpenCount',
+    'worstInputPreferenceRank',
+    'routeRecipeCount',
+    'routeDepth',
+    'duplicateInputCount',
+    'overTargetInputCount',
+    'weightedDistance',
+    'adjustedScore',
+  ];
+  for (const field of fields) {
+    const diff = a[field] - b[field];
+    if (Math.abs(diff) > 1e-9) return diff;
+  }
+  return 0;
+}
+
+function compareCandidateAttempt(a: CandidateAttempt, b: CandidateAttempt): number {
+  const key = compareCandidateSelectionKey(a.selectionKey, b.selectionKey);
+  if (key !== 0) return key;
+  return a.candidate.inputItemIds.join('\u0000').localeCompare(b.candidate.inputItemIds.join('\u0000'));
 }
 
 function resolveCauldronOutput(
@@ -341,12 +429,13 @@ function resolveCauldronOutput(
   allowNestedCauldronInputs = true,
 ): ResolveResult {
   if (!CAULDRON_TARGETS[itemId]) return failedResult('NOT_CAULDRON_TARGET', itemId, policy, amount);
-  const allCandidates = findPreferredCauldronCandidatesForOutput(itemId, { maxCandidates: MAX_RUNTIME_CANDIDATES_TO_EXPAND * 3 });
+  const allCandidates = findCauldronCandidatesForOutput(itemId, { maxCandidates: MAX_RUNTIME_CANDIDATES_TO_EXPAND * 3 });
   const candidates = allCandidates
     .filter((candidate) => allowNestedCauldronInputs || !candidate.inputItemIds.some(isCauldronProducibleInput))
     .slice(0, MAX_RUNTIME_CANDIDATES_TO_EXPAND);
   if (candidates.length === 0) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
 
+  const attempts: CandidateAttempt[] = [];
   const candidateFailures: CauldronPlannerFailure[] = [];
   for (const candidate of candidates) {
     const children: CauldronPlanChild[] = [];
@@ -359,9 +448,14 @@ function resolveCauldronOutput(
     });
 
     const node: CauldronPlanNode = { kind: 'cauldron', itemId, amount, candidate, children };
-    if (failures.length === 0) return { ok: true, node, failures: [] };
-    candidateFailures.push(makeFailure('INPUT_NOT_PLANT_DERIVED', itemId, candidate.inputItemIds, failures));
+    attempts.push({ candidate, node, failures, selectionKey: selectionKeyForCandidateAttempt(candidate, node, failures) });
+    if (failures.length > 0) candidateFailures.push(makeFailure('INPUT_NOT_PLANT_DERIVED', itemId, candidate.inputItemIds, failures));
   }
+
+  attempts.sort(compareCandidateAttempt);
+  const best = attempts[0];
+  if (best && best.failures.length === 0) return { ok: true, node: best.node, failures: [] };
+  if (policy.allowPartialGraph && best) return { ok: false, node: best.node, failures: best.failures.length > 0 ? best.failures : [makeFailure('NO_CAULDRON_CANDIDATE', itemId)] };
 
   return { ok: false, failures: [makeFailure('NO_CAULDRON_CANDIDATE', itemId, undefined, candidateFailures.slice(0, 12))] };
 }
@@ -418,19 +512,24 @@ function resolveOutputItem(
   return result;
 }
 
-function emptyTotals(settings: AppSettings, overrides: Partial<CalculationResult['totals']> = {}): CalculationResult['totals'] {
+function emptyTotals(settings: AppSettings, abilities: AbilitySettings, overrides: Partial<CalculationResult['totals']> = {}): CalculationResult['totals'] {
+  const productionSpeedMultiplier = getProductionSpeedMultiplier(abilities);
+  const heatConsumptionMultiplier = getHeatConsumptionMultiplier(abilities);
+  const conveyorItemsPerMinute = getConveyorItemsPerMinute(abilities);
+  const fuelHeatValueMultiplier = getFuelHeatValueMultiplier(abilities);
+  const fertilizerNutritionMultiplier = getFertilizerNutritionMultiplier(abilities);
   return {
     initialCostCopper: 0,
     runningCostCopperPerMin: 0,
     purchaseCostCopperPerMin: 0,
     revenueCopperPerMin: 0,
     profitCopperPerMin: 0,
-    conveyorItemsPerMinute: 60,
-    productionSpeedMultiplier: 1,
-    heatConsumptionMultiplier: 1,
+    conveyorItemsPerMinute,
+    productionSpeedMultiplier,
+    heatConsumptionMultiplier,
     sellPriceMultiplier: 1,
-    fuelHeatValueMultiplier: 1,
-    fertilizerNutritionMultiplier: 1,
+    fuelHeatValueMultiplier,
+    fertilizerNutritionMultiplier,
     heatRequiredPerMin: 0,
     fuelRequiredPerMin: 0,
     fuelItemId: settings.fuel.fuelItemId,
@@ -493,7 +592,13 @@ function addRates(target: Record<string, number>, source: Record<string, number>
   for (const [itemId, rate] of Object.entries(source)) addRate(target, itemId, rate);
 }
 
-function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'cauldron' }>, recipeId: string, machineId: CauldronMachineId): RecipeStat {
+function makeRecipeStat(
+  node: Extract<CauldronPlanNode, { kind: 'normal' | 'cauldron' }>,
+  recipeId: string,
+  machineId: CauldronMachineId,
+  productionSpeedMultiplier: number,
+  heatConsumptionMultiplier: number,
+): RecipeStat {
   const inputRates: Record<string, number> = {};
   for (const child of node.children) {
     if (isStartupSourceNode(child.node)) continue;
@@ -509,10 +614,13 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
     addRate(outputRates, node.itemId, node.amount);
   }
 
-  const outputRate = node.kind === 'normal' ? recipeOutputRate(node.recipe, node.itemId) : 1;
+  const cauldronTarget = node.kind === 'cauldron' ? CAULDRON_TARGETS[node.itemId] : undefined;
+  const cauldronStats = node.kind === 'cauldron'
+    ? calcEffectiveCauldronStats(cauldronTarget?.targetValue ?? node.candidate.targetValue ?? 1, productionSpeedMultiplier, heatConsumptionMultiplier)
+    : undefined;
+  const outputRate = node.kind === 'normal' ? recipeOutputRate(node.recipe, node.itemId) * productionSpeedMultiplier : (cauldronStats?.outputPerMin ?? 1);
   const runsPerMinute = node.kind === 'normal' ? node.runsPerMinute : node.amount;
   const actualMachines = outputRate > 0 ? node.amount / outputRate : node.amount;
-  const cauldronTarget = node.kind === 'cauldron' ? CAULDRON_TARGETS[node.itemId] : undefined;
   const surplusOutputRates: Record<string, number> = {};
 
   return {
@@ -534,6 +642,7 @@ function makeRecipeStat(node: Extract<CauldronPlanNode, { kind: 'normal' | 'caul
     cauldronInputRawScore: node.kind === 'cauldron' ? node.candidate.rawScore : undefined,
     cauldronInputAdjustedScore: node.kind === 'cauldron' ? node.candidate.adjustedScore : undefined,
     cauldronDuplicatePenalty: node.kind === 'cauldron' ? node.candidate.duplicatePenalty : undefined,
+    factorySpeedMultiplier: productionSpeedMultiplier,
   };
 }
 
@@ -601,22 +710,29 @@ type PlannerTotals = {
   fertilizerRequiredPerMin: number;
 };
 
-function recipeHeatRequiredPerMin(recipe: Recipe, runsPerMinute: number): number {
+function recipeHeatRequiredPerMin(recipe: Recipe, runsPerMinute: number, heatConsumptionMultiplier: number): number {
   const heatPerSecond = (HEAT_CONSUMER_BY_MACHINE_ID[recipe.machineId]?.heatPerSec ?? 0) + (recipe.heatInputPerSec ?? 0);
   if (!Number.isFinite(heatPerSecond) || heatPerSecond <= 0 || runsPerMinute <= 0 || recipe.timeSec <= 0) return 0;
-  return heatPerSecond * recipe.timeSec * runsPerMinute;
+  return heatPerSecond * heatConsumptionMultiplier * recipe.timeSec * runsPerMinute;
 }
 
-function cauldronHeatRequiredPerMin(node: Extract<CauldronPlanNode, { kind: 'cauldron' }>): number {
+function cauldronStatsForNode(node: Extract<CauldronPlanNode, { kind: 'cauldron' }>, productionSpeedMultiplier: number, heatConsumptionMultiplier: number) {
   const target = CAULDRON_TARGETS[node.itemId];
-  const heatPerSecond = target?.heatPerSec ?? 0;
-  if (!Number.isFinite(heatPerSecond) || heatPerSecond <= 0 || node.amount <= 0) return 0;
-  const timeSec = target?.timeSec;
-  const machineCount = Number.isFinite(timeSec) && (timeSec ?? 0) > 0 ? node.amount / (60 / (timeSec ?? 1)) : node.amount;
-  return heatPerSecond * 60 * machineCount;
+  return calcEffectiveCauldronStats(target?.targetValue ?? node.candidate.targetValue ?? 1, productionSpeedMultiplier, heatConsumptionMultiplier);
 }
 
-function collectPlannerTotals(node: CauldronPlanNode, settings: AppSettings): PlannerTotals {
+function cauldronHeatRequiredPerMin(node: Extract<CauldronPlanNode, { kind: 'cauldron' }>, productionSpeedMultiplier: number, heatConsumptionMultiplier: number): number {
+  if (node.amount <= 0) return 0;
+  const stats = cauldronStatsForNode(node, productionSpeedMultiplier, heatConsumptionMultiplier);
+  const machineCount = stats.outputPerMin > 0 ? node.amount / stats.outputPerMin : node.amount;
+  return stats.heatPerMinPerMachine * machineCount;
+}
+
+function collectPlannerTotals(node: CauldronPlanNode, settings: AppSettings, abilities: AbilitySettings): PlannerTotals {
+  const productionSpeedMultiplier = getProductionSpeedMultiplier(abilities);
+  const heatConsumptionMultiplier = getHeatConsumptionMultiplier(abilities);
+  const fuelHeatValueMultiplier = getFuelHeatValueMultiplier(abilities);
+  const fertilizerNutritionMultiplier = getFertilizerNutritionMultiplier(abilities);
   const totals: PlannerTotals = {
     initialCostCopper: 0,
     purchaseCostCopperPerMin: 0,
@@ -640,11 +756,11 @@ function collectPlannerTotals(node: CauldronPlanNode, settings: AppSettings): Pl
     }
 
     if (current.kind === 'normal') {
-      totals.heatRequiredPerMin += recipeHeatRequiredPerMin(current.recipe, current.runsPerMinute);
+      totals.heatRequiredPerMin += recipeHeatRequiredPerMin(current.recipe, current.runsPerMinute, heatConsumptionMultiplier);
       const nutrients = Math.max(0, current.recipe.nutrientInputPerRun ?? 0) * current.runsPerMinute;
       if (Number.isFinite(nutrients) && nutrients > 0) totals.fertilizerNutrientsRequiredPerMin += nutrients;
     } else {
-      totals.heatRequiredPerMin += cauldronHeatRequiredPerMin(current);
+      totals.heatRequiredPerMin += cauldronHeatRequiredPerMin(current, productionSpeedMultiplier, heatConsumptionMultiplier);
     }
 
     for (const child of current.children) addFromNode(child.node);
@@ -652,16 +768,18 @@ function collectPlannerTotals(node: CauldronPlanNode, settings: AppSettings): Pl
 
   addFromNode(node);
 
-  const fuelHeatValue = FUEL_HEAT_VALUE_BY_ITEM_ID[settings.fuel.fuelItemId] ?? 0;
+  const fuelHeatValue = (FUEL_HEAT_VALUE_BY_ITEM_ID[settings.fuel.fuelItemId] ?? 0) * fuelHeatValueMultiplier;
   if (fuelHeatValue > 0) totals.fuelRequiredPerMin = totals.heatRequiredPerMin / fuelHeatValue;
 
-  const fertilizerValue = FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[settings.fertilizer.fertilizerItemId] ?? 0;
+  const fertilizerValue = (FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[settings.fertilizer.fertilizerItemId] ?? 0) * fertilizerNutritionMultiplier;
   if (fertilizerValue > 0) totals.fertilizerRequiredPerMin = totals.fertilizerNutrientsRequiredPerMin / fertilizerValue;
 
   return totals;
 }
 
-function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, machineId: CauldronMachineId, ok: boolean, failures: CauldronPlannerFailure[]): CalculationResult {
+function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, abilities: AbilitySettings, machineId: CauldronMachineId, ok: boolean, failures: CauldronPlannerFailure[]): CalculationResult {
+  const productionSpeedMultiplier = getProductionSpeedMultiplier(abilities);
+  const heatConsumptionMultiplier = getHeatConsumptionMultiplier(abilities);
   const itemStats: Record<string, ItemStat> = {};
   const recipeStats: Record<string, RecipeStat> = {};
   const flows: CalculatedFlow[] = [];
@@ -690,7 +808,7 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
   }
 
   function addRecipeOccurrence(node: Extract<CauldronPlanNode, { kind: 'normal' | 'cauldron' }>, recipeId: string): void {
-    const addition = makeRecipeStat(node, recipeId, machineId);
+    const addition = makeRecipeStat(node, recipeId, machineId, productionSpeedMultiplier, heatConsumptionMultiplier);
     if (recipeStats[recipeId]) mergeRecipeStat(recipeStats[recipeId], addition);
     else recipeStats[recipeId] = addition;
   }
@@ -834,11 +952,11 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, m
         itemIds: Array.from(new Set(failures.flatMap((failure) => [failure.itemId, ...(failure.children ?? []).map((child) => child.itemId)]))),
       },
     ],
-    totals: emptyTotals(settings, collectPlannerTotals(root, settings)),
+    totals: emptyTotals(settings, abilities, collectPlannerTotals(root, settings, abilities)),
   };
 }
 
-function blockedResult(targetItemId: string, settings: AppSettings, failures: CauldronPlannerFailure[]): CalculationResult {
+function blockedResult(targetItemId: string, settings: AppSettings, abilities: AbilitySettings, failures: CauldronPlannerFailure[]): CalculationResult {
   return {
     itemStats: {},
     recipeStats: {},
@@ -855,7 +973,7 @@ function blockedResult(targetItemId: string, settings: AppSettings, failures: Ca
         itemIds: Array.from(new Set(failures.map((failure) => failure.itemId))),
       },
     ],
-    totals: emptyTotals(settings),
+    totals: emptyTotals(settings, abilities),
   };
 }
 
@@ -879,7 +997,7 @@ function planItemFromNode(node: CauldronPlanNode): CauldronPlanItem {
       ? { ja: '錬金釜で作成します。', en: 'Produced with a cauldron.' }
       : { ja: '非錬金釜ターゲットを通常レシピで通過展開しています。', en: 'Non-cauldron target bridged through a normal recipe.' },
     recipeId: node.kind === 'normal' ? node.recipeId : undefined,
-    candidateCount: node.kind === 'cauldron' ? findPreferredCauldronCandidatesForOutput(node.itemId).length : undefined,
+    candidateCount: node.kind === 'cauldron' ? findCauldronCandidatesForOutput(node.itemId).length : undefined,
     selectedInputItemIds: node.kind === 'cauldron' ? [...node.candidate.inputItemIds] as [string, string, string] : undefined,
     children: node.children.filter((child) => !isStartupSourceNode(child.node)).map((child) => planItemFromNode(child.node)),
   };
@@ -1090,6 +1208,23 @@ function collectObjectiveViolations(root: CauldronPlanNode, result: CalculationR
     ));
   }
 
+  const cauldronInputSlotMismatches = Object.keys(result.recipeStats)
+    .filter((recipeId) => recipeId.startsWith('cauldron:'))
+    .map((recipeId) => {
+      const slotFlows = result.flows.filter((flow) => flow.to.type === 'recipe' && flow.to.recipeId === recipeId && flow.role === 'material' && typeof flow.displayRateLabel === 'string' && flow.displayRateLabel.startsWith('slot '));
+      return { recipeId, slotCount: slotFlows.length, itemIds: slotFlows.map((flow) => flow.itemId) };
+    })
+    .filter((entry) => entry.slotCount !== 3);
+  if (cauldronInputSlotMismatches.length > 0) {
+    violations.push(violation(
+      'CAULDRON_INPUT_SLOT_MISMATCH',
+      cauldronInputSlotMismatches.flatMap((entry) => entry.itemIds),
+      '錬金釜ノードの入力slot数が3本ではありません。',
+      'A cauldron recipe node does not have exactly three input slot flows.',
+      { recipeIds: cauldronInputSlotMismatches.map((entry) => entry.recipeId), details: { mismatches: cauldronInputSlotMismatches } },
+    ));
+  }
+
   const initialInvestmentFlows = result.flows.filter((flow) => flow.from.type === 'itemSource' && flow.from.sourceMode === 'cycleInput');
   if (initialInvestmentFlows.length > 0) {
     violations.push(violation(
@@ -1167,6 +1302,7 @@ export function planCauldronTarget(options: {
   amount: number;
   machineId: CauldronMachineId;
   settings: AppSettings;
+  abilities: AbilitySettings;
   recipePreferences?: Record<string, string>;
 }): CauldronPlannerResult {
   const amount = Math.max(1, Number(options.amount) || 1);
@@ -1176,7 +1312,7 @@ export function planCauldronTarget(options: {
   const targetLabel = itemName(options.targetItemId);
 
   if (!resolved.node) {
-    const result = blockedResult(options.targetItemId, options.settings, resolved.failures);
+    const result = blockedResult(options.targetItemId, options.settings, options.abilities, resolved.failures);
     const issues = resolved.failures.slice(0, 10).map(issueFromFailure);
     return {
       result,
@@ -1226,7 +1362,7 @@ export function planCauldronTarget(options: {
     };
   }
 
-  const rawResult = buildCalculationResult(resolved.node, options.settings, options.machineId, resolved.ok, resolved.failures);
+  const rawResult = buildCalculationResult(resolved.node, options.settings, options.abilities, options.machineId, resolved.ok, resolved.failures);
   const objectiveViolations = collectObjectiveViolations(resolved.node, rawResult);
   const result = appendObjectiveErrors(rawResult, objectiveViolations);
   const blockingObjectiveViolations = objectiveViolations.filter((entry) => entry.severity === 'error');

@@ -70,7 +70,8 @@ export type CauldronObjectiveViolationCode =
   | 'DUPLICATE_RECIPE_NODE'
   | 'INITIAL_INVESTMENT_FLOW'
   | 'FUEL_NOT_CLOSED'
-  | 'FERTILIZER_NOT_CLOSED';
+  | 'FERTILIZER_NOT_CLOSED'
+  | 'CAULDRON_INPUT_SLOT_MISMATCH';
 
 export type CauldronObjectiveViolation = {
   code: CauldronObjectiveViolationCode;
@@ -79,6 +80,24 @@ export type CauldronObjectiveViolation = {
   itemIds?: string[];
   recipeIds?: string[];
   details?: Record<string, unknown>;
+};
+
+
+export type CauldronCandidateSelectionKey = {
+  classRank: number;
+  unresolvedCount: number;
+  constantPurchaseCount: number;
+  plantDerivedInputCount: number;
+  fertilizerOpenCount: number;
+  fuelOpenCount: number;
+  heatOpenCount: number;
+  worstInputPreferenceRank: number;
+  routeRecipeCount: number;
+  routeDepth: number;
+  duplicateInputCount: number;
+  overTargetInputCount: number;
+  weightedDistance: number;
+  adjustedScore: number;
 };
 
 export type CauldronPlanItemStatus = 'startup' | 'purchase' | 'normal' | 'cauldronTarget' | 'handCauldron' | 'plantDerivedInput' | 'missing' | 'cycle' | 'depthLimit';
