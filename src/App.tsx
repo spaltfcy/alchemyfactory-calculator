@@ -23,7 +23,7 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.25';
+const APP_VERSION = '0.10.27';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -94,10 +94,41 @@ function isUnsupportedSavedState(value: unknown): boolean {
     candidate.stockOverrides !== undefined ||
     candidate.settings?.fuel?.fuelSourceMode !== undefined ||
     candidate.settings?.fertilizer?.fertilizerSourceMode !== undefined ||
-    candidate.version !== DEFAULT_STATE.version ||
     typeof paradoxItemId !== 'string' ||
     !isParadoxableItem(paradoxItemId)
   );
+}
+
+function normalizeMergedCauldronState(
+  cauldronState: AppState['cauldronState'],
+  savedVersion: unknown,
+): AppState['cauldronState'] {
+  const needsCauldronDefaultMigration = savedVersion !== DEFAULT_STATE.version;
+  const defaultTarget = DEFAULT_STATE.cauldronState.targets[0];
+  const rawTarget = cauldronState.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId)
+    ?? cauldronState.targets[0]
+    ?? defaultTarget;
+  const migratedTarget = needsCauldronDefaultMigration
+    ? defaultTarget
+    : {
+        ...defaultTarget,
+        ...rawTarget,
+        id: rawTarget.id || defaultTarget.id,
+        enabled: true,
+        outputItemId: rawTarget.outputItemId || defaultTarget.outputItemId,
+        recipeId: rawTarget.recipeId ?? defaultTarget.recipeId,
+        mode: rawTarget.mode === 'rate' || rawTarget.mode === 'machines' ? rawTarget.mode : defaultTarget.mode,
+        value: Number.isFinite(Number(rawTarget.value)) && Number(rawTarget.value) > 0 ? Number(rawTarget.value) : defaultTarget.value,
+      };
+
+  return {
+    ...cauldronState,
+    targets: [{ ...migratedTarget }],
+    candidateTargetItemId: needsCauldronDefaultMigration
+      ? DEFAULT_STATE.cauldronState.candidateTargetItemId
+      : (cauldronState.candidateTargetItemId || migratedTarget.outputItemId || DEFAULT_STATE.cauldronState.candidateTargetItemId),
+    inputItemIds: needsCauldronDefaultMigration ? DEFAULT_STATE.cauldronState.inputItemIds : cauldronState.inputItemIds,
+  };
 }
 
 function mergeInitialState(safeMode: boolean): AppState {
@@ -167,6 +198,7 @@ function mergeInitialState(safeMode: boolean): AppState {
 
   if (merged.settings.showInitialInvestmentLines === undefined) merged.settings.showInitialInvestmentLines = DEFAULT_STATE.settings.showInitialInvestmentLines;
 
+  merged.cauldronState = normalizeMergedCauldronState(merged.cauldronState, saved.version);
   merged.targets = sanitizeNegativeTargets(merged.targets).targets;
   merged.version = DEFAULT_STATE.version;
   return merged;

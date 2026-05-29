@@ -14,7 +14,7 @@ import type { CalculationResult, CalculatedFlow, ItemStat, RecipeStat } from '..
 import type { AbilitySettings, AppSettings, CauldronInputPreference, LocalizedText, Recipe } from '../types';
 import { itemById } from '../data/items';
 import { machineById } from '../data/machines';
-import { getRecipesProducing } from '../data/recipes';
+import { getRecipesProducing, recipeById } from '../data/recipes';
 import { FUEL_HEAT_VALUE_BY_ITEM_ID, HEAT_CONSUMER_BY_MACHINE_ID } from '../data/heat';
 import { FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID } from '../data/fertilizer';
 import { getConveyorItemsPerMinute, getFertilizerNutritionMultiplier, getFuelHeatValueMultiplier, getHeatConsumptionMultiplier, getProductionSpeedMultiplier } from '../data/abilityTables';
@@ -704,6 +704,7 @@ function makeRecipeStat(
     cauldronOutputPerMin: cauldronStats?.outputPerMin,
     cauldronHeatPerMinPerMachine: cauldronStats?.heatPerMinPerMachine,
     factorySpeedMultiplier: productionSpeedMultiplier,
+    heatConsumptionMultiplier,
   };
 }
 
@@ -728,6 +729,7 @@ function mergeRecipeStat(existing: RecipeStat, addition: RecipeStat): void {
   existing.cauldronEffectiveHeatPerSec ??= addition.cauldronEffectiveHeatPerSec;
   existing.cauldronOutputPerMin ??= addition.cauldronOutputPerMin;
   existing.cauldronHeatPerMinPerMachine ??= addition.cauldronHeatPerMinPerMachine;
+  existing.heatConsumptionMultiplier ??= addition.heatConsumptionMultiplier;
 }
 
 function sourceModeForSourceKind(sourceKind: 'startup' | 'purchase' | 'plantDerivedInput' | 'unresolved'): 'cycleInput' | 'buy' | 'plantDerivedInput' | 'unresolved' {
@@ -981,7 +983,7 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, a
     produced.produced += node.amount;
     if (!parentRecipeId) {
       produced.targetRequested += node.amount;
-      produced.targetActual += ok ? node.amount : 0;
+      produced.targetActual += node.amount;
     }
 
     node.children.forEach((child, childIndex) => {
@@ -1034,6 +1036,404 @@ function buildCalculationResult(root: CauldronPlanNode, settings: AppSettings, a
     ],
     totals: emptyTotals(settings, abilities, collectPlannerTotals(root, settings, abilities)),
   };
+}
+
+
+type SupportProductionProfile = {
+  role: 'fuel' | 'fertilizer';
+  itemId: string;
+  result: CalculationResult;
+  sourceEndpoint: CalculatedFlow['from'];
+  heatPerItemPerMin: number;
+  fertilizerNutrientsPerItemPerMin: number;
+  unresolvedItemIds: string[];
+};
+
+type SupportClosureSolution = {
+  finite: boolean;
+  mode: 'none' | 'fuel-only' | 'fertilizer-only' | 'direct-2x2';
+  fuelItemId: string;
+  fertilizerItemId: string;
+  fuelRequiredPerMin: number;
+  fertilizerRequiredPerMin: number;
+  fuelHeatValue: number;
+  fertilizerNutritionValue: number;
+  baseHeatRequiredPerMin: number;
+  baseFertilizerNutrientsRequiredPerMin: number;
+  fuelProductionHeatPerMinPerItem: number;
+  fuelProductionNutrientsPerMinPerItem: number;
+  fertilizerProductionHeatPerMinPerItem: number;
+  fertilizerProductionNutrientsPerMinPerItem: number;
+  determinant?: number;
+};
+
+type SupportClosureApplication = {
+  solution: SupportClosureSolution;
+  fuelProfile?: SupportProductionProfile;
+  fertilizerProfile?: SupportProductionProfile;
+};
+
+function plannerRecipeBaseRecipeId(plannerRecipeId: string): string | undefined {
+  if (plannerRecipeId.startsWith('normal:')) return plannerRecipeId.split(':')[1];
+  if (plannerRecipeId.startsWith('cauldron:official:')) return plannerRecipeId.split(':')[2];
+  return undefined;
+}
+
+function recipeStatHeatRequiredPerMin(stat: RecipeStat): number {
+  if (isCauldronMachineId(stat.machineId)) {
+    const heatPerMinPerMachine = Number(stat.cauldronHeatPerMinPerMachine ?? 0);
+    return heatPerMinPerMachine > 0 ? heatPerMinPerMachine * Math.max(0, Number(stat.actualMachines) || 0) : 0;
+  }
+  const baseRecipeId = plannerRecipeBaseRecipeId(stat.recipeId);
+  const recipe = baseRecipeId ? recipeById[baseRecipeId] : undefined;
+  if (!recipe) return 0;
+  const heatPerSecond = (HEAT_CONSUMER_BY_MACHINE_ID[recipe.machineId]?.heatPerSec ?? 0) + (recipe.heatInputPerSec ?? 0);
+  if (!Number.isFinite(heatPerSecond) || heatPerSecond <= 0) return 0;
+  return heatPerSecond * (stat.heatConsumptionMultiplier ?? 1) * recipe.timeSec * Math.max(0, stat.runsPerMinute || 0);
+}
+
+function recipeStatFertilizerNutrientsRequiredPerMin(stat: RecipeStat): number {
+  const baseRecipeId = plannerRecipeBaseRecipeId(stat.recipeId);
+  const recipe = baseRecipeId ? recipeById[baseRecipeId] : undefined;
+  if (!recipe) return 0;
+  const nutrients = Math.max(0, Number(recipe.nutrientInputPerRun ?? 0)) * Math.max(0, Number(stat.runsPerMinute) || 0);
+  return Number.isFinite(nutrients) ? nutrients : 0;
+}
+
+function scaleNumberRecord(source: Record<string, number>, multiplier: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(source)) out[key] = value * multiplier;
+  return out;
+}
+
+function mergeItemStat(target: ItemStat, addition: ItemStat): void {
+  target.requested += addition.requested;
+  target.consumed += addition.consumed;
+  target.produced += addition.produced;
+  target.purchased += addition.purchased;
+  target.initialPurchased += addition.initialPurchased;
+  target.reused += addition.reused;
+  target.surplus += addition.surplus;
+  target.discarded += addition.discarded;
+  target.targetRequested += addition.targetRequested;
+  target.targetActual += addition.targetActual;
+  target.purchaseCostCopperPerMin += addition.purchaseCostCopperPerMin;
+  target.initialCostCopper += addition.initialCostCopper;
+  target.revenueCopperPerMin += addition.revenueCopperPerMin;
+}
+
+function scaledItemStat(stat: ItemStat, multiplier: number): ItemStat {
+  return {
+    itemId: stat.itemId,
+    requested: stat.requested * multiplier,
+    consumed: stat.consumed * multiplier,
+    produced: stat.produced * multiplier,
+    purchased: stat.purchased * multiplier,
+    initialPurchased: stat.initialPurchased * multiplier,
+    reused: stat.reused * multiplier,
+    surplus: stat.surplus * multiplier,
+    discarded: stat.discarded * multiplier,
+    targetRequested: 0,
+    targetActual: 0,
+    purchaseCostCopperPerMin: stat.purchaseCostCopperPerMin * multiplier,
+    initialCostCopper: stat.initialCostCopper * multiplier,
+    revenueCopperPerMin: stat.revenueCopperPerMin * multiplier,
+  };
+}
+
+function scaledRecipeStat(stat: RecipeStat, multiplier: number): RecipeStat {
+  return {
+    ...stat,
+    theoreticalMachines: stat.theoreticalMachines * multiplier,
+    actualMachines: stat.actualMachines * multiplier,
+    runsPerMinute: stat.runsPerMinute * multiplier,
+    positiveNetProductionRate: stat.positiveNetProductionRate * multiplier,
+    inputRates: scaleNumberRecord(stat.inputRates, multiplier),
+    outputRates: scaleNumberRecord(stat.outputRates, multiplier),
+    netRates: scaleNumberRecord(stat.netRates, multiplier),
+    surplusOutputRates: scaleNumberRecord(stat.surplusOutputRates, multiplier),
+    discardedOutputRates: scaleNumberRecord(stat.discardedOutputRates, multiplier),
+  };
+}
+
+function scaledFlow(flow: CalculatedFlow, multiplier: number, prefix: string): CalculatedFlow {
+  const rate = flow.rate * multiplier;
+  const transport = flowTransportForItem(flow.itemId, rate, 60);
+  return {
+    ...flow,
+    id: `${prefix}:${flow.id}`,
+    rate,
+    belts: transport.belts,
+    transportKind: transport.transportKind,
+    transportUnits: transport.transportUnits,
+  };
+}
+
+function addRoleFlow(result: CalculationResult, role: 'fuel' | 'fertilizer', sourceEndpoint: CalculatedFlow['from'], recipeId: string, itemId: string, rate: number, flowIndex: number): void {
+  if (!Number.isFinite(rate) || rate <= OBJECTIVE_EPS) return;
+  const transport = flowTransportForItem(itemId, rate, 60);
+  result.flows.push({
+    id: `cauldron-support:${role}:${recipeId}:${itemId}:${flowIndex}`,
+    from: sourceEndpoint,
+    to: { type: 'recipe', recipeId },
+    itemId,
+    rate,
+    belts: transport.belts,
+    transportKind: transport.transportKind,
+    transportUnits: transport.transportUnits,
+    role,
+  });
+  addItemStat(result.itemStats, itemId).consumed += rate;
+}
+
+function mergeSupportProfileResult(result: CalculationResult, profile: SupportProductionProfile, multiplier: number): CalculatedFlow['from'] {
+  const prefix = `support-${profile.role}-${profile.itemId}`;
+  let sourceEndpoint = profile.sourceEndpoint;
+  for (const stat of Object.values(profile.result.itemStats)) {
+    const scaled = scaledItemStat(stat, multiplier);
+    mergeItemStat(addItemStat(result.itemStats, scaled.itemId), scaled);
+  }
+  for (const [recipeId, stat] of Object.entries(profile.result.recipeStats)) {
+    const scaled = scaledRecipeStat(stat, multiplier);
+    if (result.recipeStats[recipeId]) mergeRecipeStat(result.recipeStats[recipeId], scaled);
+    else result.recipeStats[recipeId] = scaled;
+  }
+  for (const flow of profile.result.flows) {
+    if (flow.role === 'finalOutput' && flow.itemId === profile.itemId) {
+      sourceEndpoint = flow.from;
+      continue;
+    }
+    result.flows.push(scaledFlow(flow, multiplier, prefix));
+  }
+  return sourceEndpoint;
+}
+
+function supportEndpointFromProfileResult(result: CalculationResult, itemId: string): CalculatedFlow['from'] {
+  const finalFlow = result.flows.find((flow) => flow.role === 'finalOutput' && flow.itemId === itemId);
+  if (finalFlow) return finalFlow.from;
+  const stat = result.itemStats[itemId];
+  if ((stat?.purchased ?? 0) > OBJECTIVE_EPS) return { type: 'itemSource', itemId, sourceMode: 'buy' };
+  return { type: 'itemSource', itemId, sourceMode: 'unresolved' };
+}
+
+function buildSupportProductionProfile(
+  role: 'fuel' | 'fertilizer',
+  itemId: string,
+  settings: AppSettings,
+  abilities: AbilitySettings,
+  machineId: CauldronMachineId,
+  recipePreferences: Record<string, string>,
+): SupportProductionProfile | undefined {
+  if (!itemId) return undefined;
+  const resolved = resolveOutputItem(itemId, 1, CAULDRON_PLANNER_POLICY, recipePreferences, MAX_DEPTH, new Set(), new Map());
+  if (!resolved.node) return undefined;
+  const result = buildCalculationResult(resolved.node, settings, abilities, machineId, resolved.ok, resolved.failures);
+  return {
+    role,
+    itemId,
+    result,
+    sourceEndpoint: supportEndpointFromProfileResult(result, itemId),
+    heatPerItemPerMin: Number(result.totals.heatRequiredPerMin ?? 0),
+    fertilizerNutrientsPerItemPerMin: Number(result.totals.fertilizerNutrientsRequiredPerMin ?? 0),
+    unresolvedItemIds: Object.values(result.itemStats).filter((stat) => (stat.requested > 0 || stat.consumed > 0) && stat.produced <= OBJECTIVE_EPS && stat.purchased <= OBJECTIVE_EPS).map((stat) => stat.itemId),
+  };
+}
+
+function solveSupportClosure(
+  base: CalculationResult,
+  settings: AppSettings,
+  abilities: AbilitySettings,
+  machineId: CauldronMachineId,
+  recipePreferences: Record<string, string>,
+): SupportClosureApplication {
+  const fuelItemId = settings.fuel?.fuelItemId ?? '';
+  const fertilizerItemId = settings.fertilizer?.fertilizerItemId ?? '';
+  const fuelEnabled = Boolean(settings.fuel?.enabled && fuelItemId);
+  const fertilizerEnabled = Boolean(settings.fertilizer?.enabled && fertilizerItemId);
+  const fuelHeatValue = fuelEnabled ? (FUEL_HEAT_VALUE_BY_ITEM_ID[fuelItemId] ?? 0) * getFuelHeatValueMultiplier(abilities) : 0;
+  const fertilizerNutritionValue = fertilizerEnabled ? (FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID[fertilizerItemId] ?? 0) * getFertilizerNutritionMultiplier(abilities) : 0;
+  const baseHeat = fuelEnabled ? Number(base.totals.heatRequiredPerMin ?? 0) : 0;
+  const baseNutrients = fertilizerEnabled ? Number(base.totals.fertilizerNutrientsRequiredPerMin ?? 0) : 0;
+
+  const needsFuelProfile = fuelEnabled && settings.fuel.sourceMode === 'internal' && (baseHeat > OBJECTIVE_EPS || baseNutrients > OBJECTIVE_EPS);
+  const needsFertilizerProfile = fertilizerEnabled && settings.fertilizer.sourceMode === 'internal' && (baseHeat > OBJECTIVE_EPS || baseNutrients > OBJECTIVE_EPS);
+  const fuelProfile = needsFuelProfile ? buildSupportProductionProfile('fuel', fuelItemId, settings, abilities, machineId, recipePreferences) : undefined;
+  const fertilizerProfile = needsFertilizerProfile ? buildSupportProductionProfile('fertilizer', fertilizerItemId, settings, abilities, machineId, recipePreferences) : undefined;
+
+  const hf = fuelProfile?.heatPerItemPerMin ?? 0;
+  const nf = fuelProfile?.fertilizerNutrientsPerItemPerMin ?? 0;
+  const hg = fertilizerProfile?.heatPerItemPerMin ?? 0;
+  const ng = fertilizerProfile?.fertilizerNutrientsPerItemPerMin ?? 0;
+
+  let mode: SupportClosureSolution['mode'] = 'none';
+  let determinant: number | undefined;
+  let finite = true;
+  let fuelRequiredPerMin = 0;
+  let fertilizerRequiredPerMin = 0;
+
+  const fuelResourceNeeded = fuelEnabled && (baseHeat > OBJECTIVE_EPS || (fertilizerEnabled && baseNutrients > OBJECTIVE_EPS && hg > OBJECTIVE_EPS));
+  const fertilizerResourceNeeded = fertilizerEnabled && (baseNutrients > OBJECTIVE_EPS || (fuelEnabled && baseHeat > OBJECTIVE_EPS && nf > OBJECTIVE_EPS));
+  if (fuelResourceNeeded && fuelHeatValue <= OBJECTIVE_EPS) finite = false;
+  if (fertilizerResourceNeeded && fertilizerNutritionValue <= OBJECTIVE_EPS) finite = false;
+
+  if (finite && fuelEnabled && fertilizerEnabled && (baseHeat > OBJECTIVE_EPS || baseNutrients > OBJECTIVE_EPS)) {
+    mode = 'direct-2x2';
+    const a11 = 1 - hf / Math.max(OBJECTIVE_EPS, fuelHeatValue);
+    const a12 = -hg / Math.max(OBJECTIVE_EPS, fuelHeatValue);
+    const a21 = -nf / Math.max(OBJECTIVE_EPS, fertilizerNutritionValue);
+    const a22 = 1 - ng / Math.max(OBJECTIVE_EPS, fertilizerNutritionValue);
+    const b1 = baseHeat / Math.max(OBJECTIVE_EPS, fuelHeatValue);
+    const b2 = baseNutrients / Math.max(OBJECTIVE_EPS, fertilizerNutritionValue);
+    determinant = a11 * a22 - a12 * a21;
+    if (Math.abs(determinant) <= 1e-12) finite = false;
+    else {
+      fuelRequiredPerMin = (b1 * a22 - a12 * b2) / determinant;
+      fertilizerRequiredPerMin = (a11 * b2 - b1 * a21) / determinant;
+    }
+  } else if (finite && fuelEnabled && baseHeat > OBJECTIVE_EPS) {
+    mode = 'fuel-only';
+    const denominator = fuelHeatValue - hf;
+    if (denominator <= OBJECTIVE_EPS) finite = false;
+    else fuelRequiredPerMin = baseHeat / denominator;
+  } else if (finite && fertilizerEnabled && baseNutrients > OBJECTIVE_EPS) {
+    mode = 'fertilizer-only';
+    const denominator = fertilizerNutritionValue - ng;
+    if (denominator <= OBJECTIVE_EPS) finite = false;
+    else fertilizerRequiredPerMin = baseNutrients / denominator;
+  }
+
+  if (!Number.isFinite(fuelRequiredPerMin) || fuelRequiredPerMin < -OBJECTIVE_EPS) finite = false;
+  if (!Number.isFinite(fertilizerRequiredPerMin) || fertilizerRequiredPerMin < -OBJECTIVE_EPS) finite = false;
+  if (!finite) {
+    fuelRequiredPerMin = 0;
+    fertilizerRequiredPerMin = 0;
+  } else {
+    fuelRequiredPerMin = Math.max(0, fuelRequiredPerMin);
+    fertilizerRequiredPerMin = Math.max(0, fertilizerRequiredPerMin);
+  }
+
+  return {
+    fuelProfile,
+    fertilizerProfile,
+    solution: {
+      finite,
+      mode,
+      fuelItemId,
+      fertilizerItemId,
+      fuelRequiredPerMin,
+      fertilizerRequiredPerMin,
+      fuelHeatValue,
+      fertilizerNutritionValue,
+      baseHeatRequiredPerMin: baseHeat,
+      baseFertilizerNutrientsRequiredPerMin: baseNutrients,
+      fuelProductionHeatPerMinPerItem: hf,
+      fuelProductionNutrientsPerMinPerItem: nf,
+      fertilizerProductionHeatPerMinPerItem: hg,
+      fertilizerProductionNutrientsPerMinPerItem: ng,
+      determinant,
+    },
+  };
+}
+
+function collectSupportDemandByRecipe(result: CalculationResult): { heatByRecipeId: Record<string, number>; nutrientsByRecipeId: Record<string, number>; totalHeat: number; totalNutrients: number } {
+  const heatByRecipeId: Record<string, number> = {};
+  const nutrientsByRecipeId: Record<string, number> = {};
+  let totalHeat = 0;
+  let totalNutrients = 0;
+  for (const [recipeId, stat] of Object.entries(result.recipeStats)) {
+    const heat = recipeStatHeatRequiredPerMin(stat);
+    const nutrients = recipeStatFertilizerNutrientsRequiredPerMin(stat);
+    if (heat > OBJECTIVE_EPS) {
+      heatByRecipeId[recipeId] = heat;
+      totalHeat += heat;
+    }
+    if (nutrients > OBJECTIVE_EPS) {
+      nutrientsByRecipeId[recipeId] = nutrients;
+      totalNutrients += nutrients;
+    }
+  }
+  return { heatByRecipeId, nutrientsByRecipeId, totalHeat, totalNutrients };
+}
+
+function applySupportClosure(base: CalculationResult, application: SupportClosureApplication, settings: AppSettings): CalculationResult {
+  const result: CalculationResult = {
+    ...base,
+    itemStats: { ...base.itemStats },
+    recipeStats: { ...base.recipeStats },
+    flows: [...base.flows],
+    totals: { ...base.totals },
+    warnings: [...base.warnings],
+    errorSummaries: [...(base.errorSummaries ?? [])],
+  };
+  const solution = application.solution;
+  let fuelSource: CalculatedFlow['from'] | undefined;
+  let fertilizerSource: CalculatedFlow['from'] | undefined;
+
+  if (solution.finite && solution.fuelRequiredPerMin > OBJECTIVE_EPS) {
+    if (settings.fuel.sourceMode === 'external') fuelSource = { type: 'itemSource', itemId: solution.fuelItemId, sourceMode: 'external' };
+    else if (application.fuelProfile) fuelSource = mergeSupportProfileResult(result, application.fuelProfile, solution.fuelRequiredPerMin);
+  }
+  if (solution.finite && solution.fertilizerRequiredPerMin > OBJECTIVE_EPS) {
+    if (settings.fertilizer.sourceMode === 'external') fertilizerSource = { type: 'itemSource', itemId: solution.fertilizerItemId, sourceMode: 'external' };
+    else if (application.fertilizerProfile) fertilizerSource = mergeSupportProfileResult(result, application.fertilizerProfile, solution.fertilizerRequiredPerMin);
+  }
+
+  const demand = collectSupportDemandByRecipe(result);
+  if (solution.finite && fuelSource && solution.fuelRequiredPerMin > OBJECTIVE_EPS && demand.totalHeat > OBJECTIVE_EPS) {
+    let i = 0;
+    for (const [recipeId, heat] of Object.entries(demand.heatByRecipeId)) {
+      addRoleFlow(result, 'fuel', fuelSource, recipeId, solution.fuelItemId, solution.fuelRequiredPerMin * (heat / demand.totalHeat), i++);
+    }
+  }
+  if (solution.finite && fertilizerSource && solution.fertilizerRequiredPerMin > OBJECTIVE_EPS && demand.totalNutrients > OBJECTIVE_EPS) {
+    let i = 0;
+    for (const [recipeId, nutrients] of Object.entries(demand.nutrientsByRecipeId)) {
+      addRoleFlow(result, 'fertilizer', fertilizerSource, recipeId, solution.fertilizerItemId, solution.fertilizerRequiredPerMin * (nutrients / demand.totalNutrients), i++);
+    }
+  }
+
+  result.totals.heatRequiredPerMin = demand.totalHeat;
+  result.totals.fertilizerNutrientsRequiredPerMin = demand.totalNutrients;
+  result.totals.fuelRequiredPerMin = solution.finite ? solution.fuelRequiredPerMin : result.totals.fuelRequiredPerMin;
+  result.totals.fertilizerRequiredPerMin = solution.finite ? solution.fertilizerRequiredPerMin : result.totals.fertilizerRequiredPerMin;
+  result.totals.fuelItemId = solution.fuelItemId || result.totals.fuelItemId;
+  result.totals.fertilizerItemId = solution.fertilizerItemId || result.totals.fertilizerItemId;
+  return result;
+}
+
+
+function supportClosureObjectiveViolations(application: SupportClosureApplication): CauldronObjectiveViolation[] {
+  const out: CauldronObjectiveViolation[] = [];
+  const solution = application.solution;
+  const hasDemand = solution.baseHeatRequiredPerMin > OBJECTIVE_EPS || solution.baseFertilizerNutrientsRequiredPerMin > OBJECTIVE_EPS;
+  if (hasDemand && !solution.finite) {
+    out.push(violation(
+      'SUPPORT_CLOSURE_NOT_FINITE',
+      [solution.fuelItemId, solution.fertilizerItemId].filter(Boolean),
+      '燃料・肥料の線形閉鎖が有限解になりませんでした。燃料/肥料の自己増幅または無効な熱量・栄養値を確認してください。',
+      'Linear fuel/fertilizer closure did not produce a finite solution. Check self-amplifying support demand or invalid heat/nutrition values.',
+      { details: { solution } },
+    ));
+  }
+  if (solution.fuelRequiredPerMin > OBJECTIVE_EPS && application.fuelProfile?.unresolvedItemIds.length) {
+    out.push(violation(
+      'FUEL_PROFILE_UNRESOLVED',
+      application.fuelProfile.unresolvedItemIds,
+      `燃料生産プロファイルに未解決入力があります: ${namesText(application.fuelProfile.unresolvedItemIds, 'ja')}`,
+      `Fuel production profile has unresolved inputs: ${namesText(application.fuelProfile.unresolvedItemIds, 'en')}`,
+      { details: { fuelItemId: solution.fuelItemId } },
+    ));
+  }
+  if (solution.fertilizerRequiredPerMin > OBJECTIVE_EPS && application.fertilizerProfile?.unresolvedItemIds.length) {
+    out.push(violation(
+      'FERTILIZER_PROFILE_UNRESOLVED',
+      application.fertilizerProfile.unresolvedItemIds,
+      `肥料生産プロファイルに未解決入力があります: ${namesText(application.fertilizerProfile.unresolvedItemIds, 'ja')}`,
+      `Fertilizer production profile has unresolved inputs: ${namesText(application.fertilizerProfile.unresolvedItemIds, 'en')}`,
+      { details: { fertilizerItemId: solution.fertilizerItemId } },
+    ));
+  }
+  return out;
 }
 
 function blockedResult(targetItemId: string, settings: AppSettings, abilities: AbilitySettings, failures: CauldronPlannerFailure[]): CalculationResult {
@@ -1444,8 +1844,13 @@ export function planCauldronTarget(options: {
   }
 
   const rawResult = buildCalculationResult(resolved.node, options.settings, options.abilities, options.machineId, resolved.ok, resolved.failures);
-  const objectiveViolations = collectObjectiveViolations(resolved.node, rawResult);
-  const result = appendObjectiveErrors(rawResult, objectiveViolations);
+  const supportClosure = solveSupportClosure(rawResult, options.settings, options.abilities, options.machineId, recipePreferences);
+  const supportClosedResult = applySupportClosure(rawResult, supportClosure, options.settings);
+  const objectiveViolations = [
+    ...collectObjectiveViolations(resolved.node, supportClosedResult),
+    ...supportClosureObjectiveViolations(supportClosure),
+  ];
+  const result = appendObjectiveErrors(supportClosedResult, objectiveViolations);
   const blockingObjectiveViolations = objectiveViolations.filter((entry) => entry.severity === 'error');
   const hasBlockingObjectiveViolations = blockingObjectiveViolations.length > 0;
   const counts = countNodes(resolved.node);

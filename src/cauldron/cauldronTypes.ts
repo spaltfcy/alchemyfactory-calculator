@@ -71,7 +71,10 @@ export type CauldronObjectiveViolationCode =
   | 'INITIAL_INVESTMENT_FLOW'
   | 'FUEL_NOT_CLOSED'
   | 'FERTILIZER_NOT_CLOSED'
-  | 'CAULDRON_INPUT_SLOT_MISMATCH';
+  | 'CAULDRON_INPUT_SLOT_MISMATCH'
+  | 'SUPPORT_CLOSURE_NOT_FINITE'
+  | 'FUEL_PROFILE_UNRESOLVED'
+  | 'FERTILIZER_PROFILE_UNRESOLVED';
 
 export type CauldronObjectiveViolation = {
   code: CauldronObjectiveViolationCode;

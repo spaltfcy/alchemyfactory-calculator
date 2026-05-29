@@ -34,6 +34,7 @@ export type RecipeStat = {
   discardedOutputRates: Record<string, number>;
   targetIds: string[];
   factorySpeedMultiplier?: number;
+  heatConsumptionMultiplier?: number;
   thermalHeightMultiplier?: number;
   thermalExtractorHeight?: number;
   thermalExtractorBonusPercent?: number;
@@ -282,6 +283,7 @@ export type CalculationDebugLog = {
     machineOutputRatesPerMinute: Record<string, number>;
     machineNetRatesPerMinute: Record<string, number>;
     factorySpeedMultiplier?: number;
+  heatConsumptionMultiplier?: number;
     thermalHeightMultiplier?: number;
     thermalExtractorHeight?: number;
     thermalExtractorBonusPercent?: number;

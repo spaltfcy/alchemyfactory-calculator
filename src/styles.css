@@ -1983,14 +1983,12 @@ a {
 }
 
 .cauldron-output-settings .item-output-toolbar,
-.cauldron-output-settings .item-output-enabled-checkbox,
-.cauldron-output-settings .item-output-value-field,
-.cauldron-output-settings .item-output-mode-field {
+.cauldron-output-settings .item-output-enabled-checkbox {
   display: none;
 }
 
 .cauldron-output-settings .item-output-card {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(5.5rem, 7rem) minmax(5.5rem, 7rem);
 }
 
 .cauldron-output-settings .item-output-item-field {
