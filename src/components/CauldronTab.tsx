@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import { CAULDRON_TARGETS } from '../cauldron/cauldronData';
+import { calcEffectiveCauldronStats } from '../cauldron/cauldronPhysics';
 import { buildCauldronGraphResult, cauldronRequestForTarget } from '../cauldron/cauldronGraph';
 import { generateCauldronCandidatesForOutput } from '../cauldron/cauldronMath';
 import { optimizeCauldronTargetWithResult } from '../cauldron/cauldronOptimizer';
@@ -10,6 +11,8 @@ import { calculate } from '../engine/calculate';
 import type { CalculationResult, ItemStat } from '../engine/calculate';
 import type { AbilitySettings, AppSettings, Lang, ProductionTarget, SurplusPolicy } from '../types';
 import { chooseRecipeForItem } from '../engine/itemSourceResolver';
+import { getHeatConsumptionMultiplier, getProductionSpeedMultiplier } from '../data/abilityTables';
+import { recipeById } from '../data/recipes';
 import { GraphTab, type GraphFocusRequest } from './GraphTab';
 
 type CauldronTabProps = {
@@ -281,6 +284,39 @@ function CauldronRecipePlanPanel({ lang, plan }: { lang: Lang; plan: CauldronTar
   );
 }
 
+
+function recipeOutputAmountForTarget(recipeId: string, outputItemId: string): number {
+  const recipe = recipeById[recipeId];
+  if (!recipe) return 0;
+  return recipe.outputs
+    .filter((output) => output.itemId === outputItemId)
+    .reduce((sum, output) => sum + output.amount * (output.probability ?? 1), 0);
+}
+
+function targetRatePerMinuteFromTarget(
+  target: ProductionTarget,
+  abilities: AbilitySettings,
+  recipePreferences: Record<string, string>,
+): number {
+  const value = Number(target.value);
+  const safeValue = Number.isFinite(value) && value > 0 ? value : 1;
+  if (target.mode === 'rate') return safeValue;
+
+  const productionSpeedMultiplier = getProductionSpeedMultiplier(abilities);
+  const heatConsumptionMultiplier = getHeatConsumptionMultiplier(abilities);
+  const cauldronTarget = CAULDRON_TARGETS[target.outputItemId];
+  if (cauldronTarget) {
+    return safeValue * calcEffectiveCauldronStats(cauldronTarget.targetValue, productionSpeedMultiplier, heatConsumptionMultiplier).outputPerMin;
+  }
+
+  const recipeId = target.recipeId || chooseRecipeForItem(target.outputItemId, recipePreferences)?.id || '';
+  const recipe = recipeById[recipeId];
+  if (!recipe || recipe.timeSec <= 0) return safeValue;
+  const outputAmount = recipeOutputAmountForTarget(recipe.id, target.outputItemId);
+  if (outputAmount <= 0) return safeValue;
+  return safeValue * outputAmount * 60 / recipe.timeSec * productionSpeedMultiplier;
+}
+
 function optimizedStatusText(status: CauldronOptimizedPlan['status'], lang: Lang): string {
   const labels: Record<CauldronOptimizedPlan['status'], { ja: string; en: string }> = {
     perfect: { ja: '完全閉鎖', en: 'Perfect closed' },
@@ -386,12 +422,13 @@ function CauldronOptimizedPlanPanel({ lang, optimization }: { lang: Lang; optimi
 }
 
 export function CauldronTab({ lang, state, settings, abilities, recipePreferences, surplusPolicies, completedGraphNodeIds, onToggleCompleted, focusRequest }: CauldronTabProps) {
-  const targetItemId = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId)?.outputItemId ?? state.candidateTargetItemId;
-  const targetRatePerMinute = state.targets.find((target) => (target.enabled ?? true) !== false && target.outputItemId === targetItemId)?.value ?? 1;
+  const target = state.targets.find((entry) => (entry.enabled ?? true) !== false && entry.outputItemId) ?? state.targets[0];
+  const targetItemId = target?.outputItemId ?? state.candidateTargetItemId;
+  const targetRatePerMinute = target ? targetRatePerMinuteFromTarget(target, abilities, recipePreferences) : 1;
   const planned = useMemo(
     () => planCauldronTarget({
       targetItemId,
-      amount: Math.max(1, Number(targetRatePerMinute) || 1),
+      amount: targetRatePerMinute,
       machineId: state.machineId,
       settings,
       abilities,

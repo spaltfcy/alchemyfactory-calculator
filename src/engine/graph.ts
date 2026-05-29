@@ -297,6 +297,35 @@ function cauldronRecipeValueLabel(stat: RecipeStat | undefined, lang: Lang): str
   return lines.length ? lines.join('\n') : undefined;
 }
 
+
+function cauldronRecipePhysicsLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
+  if (!stat) return undefined;
+  const lines: string[] = [];
+  if (Number.isFinite(stat.cauldronEffectiveTimeSec)) {
+    lines.push(formatNumber(stat.cauldronEffectiveTimeSec ?? 0, 2) + (lang === 'ja' ? '秒/個' : ' sec/item'));
+  }
+  if (Number.isFinite(stat.cauldronEffectiveHeatPerSec)) {
+    lines.push((lang === 'ja' ? '熱 ' : 'Heat ') + formatNumber(stat.cauldronEffectiveHeatPerSec ?? 0, 1) + 'P/s');
+  }
+  const valueLabel = cauldronRecipeValueLabel(stat, lang);
+  if (valueLabel) lines.push(valueLabel);
+  return lines.length ? lines.join('\n') : undefined;
+}
+
+function cauldronRecipeMachineCountLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
+  if (!stat) return undefined;
+  const machineCount = formatGraphMachineCount(stat.actualMachines);
+  const productionRate = stat.positiveNetProductionRate;
+  const perMachineRate = stat.cauldronOutputPerMin ?? stat.perMachineProductionRate;
+  const lines = [
+    (lang === 'ja' ? machineCount + '台 (' : machineCount + ' machines (') + formatRate(productionRate) + '/min)',
+  ];
+  if (Number.isFinite(perMachineRate) && perMachineRate > 0) {
+    lines.push((lang === 'ja' ? '1台 ' : '1 machine ') + formatRate(perMachineRate) + '/min');
+  }
+  return lines.join('\n');
+}
+
 function cauldronRecipeIoLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
   if (!stat) return undefined;
   return lang === 'ja' ? '入力3 → 出力1' : '3 inputs → 1 output';
@@ -332,8 +361,8 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const isCauldronRecipe = rs?.machineId === 'cauldron' || rs?.machineId === 'advanced_cauldron' || endpoint.recipeId.startsWith('cauldron:');
     const machineLabel = recipeMachineLabel(rs, recipe?.machineId ?? '', lang);
     const ioLabel = isCauldronRecipe ? cauldronRecipeIoLabel(rs, lang) : recipeMachineIoLabel(rs);
-    const countLabel = isCauldronRecipe ? undefined : recipeMachineCountLabel(endpoint.recipeId, rs, lang);
-    const subLabel = isCauldronRecipe ? cauldronRecipeValueLabel(rs, lang) : undefined;
+    const countLabel = isCauldronRecipe ? cauldronRecipeMachineCountLabel(rs, lang) : recipeMachineCountLabel(endpoint.recipeId, rs, lang);
+    const subLabel = isCauldronRecipe ? cauldronRecipePhysicsLabel(rs, lang) : undefined;
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const requiredStartupItemIds = result.initialInvestment?.requiredByRecipe?.[endpoint.recipeId] ?? [];

@@ -47,6 +47,12 @@ export type RecipeStat = {
   cauldronInputRawScore?: number;
   cauldronInputAdjustedScore?: number;
   cauldronDuplicatePenalty?: number;
+  cauldronBaseTimeSec?: number;
+  cauldronBaseHeatPerSec?: number;
+  cauldronEffectiveTimeSec?: number;
+  cauldronEffectiveHeatPerSec?: number;
+  cauldronOutputPerMin?: number;
+  cauldronHeatPerMinPerMachine?: number;
 };
 
 export type CalculatedEndpoint =
