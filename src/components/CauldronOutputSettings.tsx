@@ -1,5 +1,5 @@
 import type { ChangeEvent, KeyboardEvent } from 'react';
-import type { Lang, ProductionTarget, TargetDefaults } from '../types';
+import type { ExternalSourceMode, Lang, ProductionTarget, TargetDefaults } from '../types';
 import { ITEMS, itemById } from '../data/items';
 import { DEFAULT_RECIPE_BY_ITEM_ID, getRecipesProducing } from '../data/recipes';
 import { CAULDRON_TARGETS } from '../cauldron/cauldronData';
@@ -11,7 +11,10 @@ export type CauldronOutputSettingsProps = {
   lang: Lang;
   targets: ProductionTarget[];
   targetDefaults: TargetDefaults;
+  fuelSourceMode: ExternalSourceMode;
+  fertilizerSourceMode: ExternalSourceMode;
   onChange: (targets: ProductionTarget[]) => void;
+  onChangeSupportModes: (patch: { fuelSourceMode?: ExternalSourceMode; fertilizerSourceMode?: ExternalSourceMode }) => void;
   onFocusGraphNode?: (nodeId: string) => void;
   getFocusGraphNodeId?: (target: ProductionTarget) => string | undefined;
   onUserMessage?: (input: UserMessageInput) => UserMessageLog;
@@ -88,7 +91,10 @@ export function CauldronOutputSettings({
   lang,
   targets,
   targetDefaults,
+  fuelSourceMode,
+  fertilizerSourceMode,
   onChange,
+  onChangeSupportModes,
   onFocusGraphNode,
   getFocusGraphNodeId,
   onUserMessage,
@@ -129,6 +135,10 @@ export function CauldronOutputSettings({
   const itemLabel = lang === 'ja' ? 'アイテム' : 'Item';
   const outputLabel = lang === 'ja' ? '出力' : 'Output';
   const modeLabel = t('mode', lang);
+  const fuelLabel = lang === 'ja' ? '燃料' : 'Fuel';
+  const fertilizerLabel = lang === 'ja' ? '肥料' : 'Fertilizer';
+  const internalLabel = lang === 'ja' ? '内部生産' : 'Internal';
+  const externalLabel = lang === 'ja' ? '外部供給' : 'External';
 
   return (
     <section className="item-output-settings panel cauldron-output-settings">
@@ -172,6 +182,23 @@ export function CauldronOutputSettings({
             </select>
           </label>
         </div>
+      </div>
+
+      <div className="cauldron-support-source-settings" aria-label={lang === 'ja' ? '燃料・肥料供給' : 'Fuel and fertilizer supply'}>
+        <label className="item-output-field cauldron-support-source-field">
+          <span>{fuelLabel}</span>
+          <select value={fuelSourceMode} onChange={(event: ChangeEvent<HTMLSelectElement>) => onChangeSupportModes({ fuelSourceMode: event.target.value as ExternalSourceMode })}>
+            <option value="internal">{internalLabel}</option>
+            <option value="external">{externalLabel}</option>
+          </select>
+        </label>
+        <label className="item-output-field cauldron-support-source-field">
+          <span>{fertilizerLabel}</span>
+          <select value={fertilizerSourceMode} onChange={(event: ChangeEvent<HTMLSelectElement>) => onChangeSupportModes({ fertilizerSourceMode: event.target.value as ExternalSourceMode })}>
+            <option value="internal">{internalLabel}</option>
+            <option value="external">{externalLabel}</option>
+          </select>
+        </label>
       </div>
     </section>
   );

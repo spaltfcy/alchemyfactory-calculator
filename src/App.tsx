@@ -23,7 +23,7 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.27';
+const APP_VERSION = '0.10.28';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -128,6 +128,8 @@ function normalizeMergedCauldronState(
       ? DEFAULT_STATE.cauldronState.candidateTargetItemId
       : (cauldronState.candidateTargetItemId || migratedTarget.outputItemId || DEFAULT_STATE.cauldronState.candidateTargetItemId),
     inputItemIds: needsCauldronDefaultMigration ? DEFAULT_STATE.cauldronState.inputItemIds : cauldronState.inputItemIds,
+    fuelSourceMode: cauldronState.fuelSourceMode === 'external' ? 'external' : DEFAULT_STATE.cauldronState.fuelSourceMode,
+    fertilizerSourceMode: cauldronState.fertilizerSourceMode === 'external' ? 'external' : DEFAULT_STATE.cauldronState.fertilizerSourceMode,
   };
 }
 
@@ -653,7 +655,10 @@ export function App() {
                 lang={lang}
                 targets={state.cauldronState.targets.slice(0, 1)}
                 targetDefaults={state.settings.targetDefaults}
+                fuelSourceMode={state.cauldronState.fuelSourceMode}
+                fertilizerSourceMode={state.cauldronState.fertilizerSourceMode}
                 onChange={(targets) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, targets: targets.slice(0, 1) } }))}
+                onChangeSupportModes={(patch) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, ...patch } }))}
                 onFocusGraphNode={focusCauldronGraphNode}
                 getFocusGraphNodeId={cauldronFocusNodeId}
                 onUserMessage={addUserMessage}

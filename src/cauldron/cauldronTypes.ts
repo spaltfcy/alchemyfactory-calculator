@@ -1,4 +1,4 @@
-import type { LocalizedText, ProductionTarget } from '../types';
+import type { ExternalSourceMode, LocalizedText, ProductionTarget } from '../types';
 
 export type CauldronDataStatus = 'unverified' | 'verified' | 'conflict';
 export type CauldronObservedStatus = 'todo' | 'matched' | 'mismatch' | 'unknown';
@@ -73,6 +73,8 @@ export type CauldronObjectiveViolationCode =
   | 'FERTILIZER_NOT_CLOSED'
   | 'CAULDRON_INPUT_SLOT_MISMATCH'
   | 'SUPPORT_CLOSURE_NOT_FINITE'
+  | 'FUEL_SUPPORT_CLOSURE_NOT_FINITE'
+  | 'FERTILIZER_SUPPORT_CLOSURE_NOT_FINITE'
   | 'FUEL_PROFILE_UNRESOLVED'
   | 'FERTILIZER_PROFILE_UNRESOLVED';
 
@@ -213,6 +215,8 @@ export type CauldronState = {
   candidateTargetItemId: string;
   maxCandidates: number;
   allowDuplicateInputs: boolean;
+  fuelSourceMode: ExternalSourceMode;
+  fertilizerSourceMode: ExternalSourceMode;
   targetItemIdsText: string;
   startupItemIdsText: string;
   observedOutputItemId: string;

@@ -4,7 +4,7 @@ import { DEFAULT_MACHINE_PREFERENCES } from './data/machinePreferences';
 import { DEFAULT_PARADOX_SETTINGS } from './data/paradox';
 
 export const DEFAULT_STATE: AppState = {
-  version: 32,
+  version: 33,
   language: 'ja',
   activeTab: 'graph',
   tablePreferences: {
@@ -105,6 +105,8 @@ export const DEFAULT_STATE: AppState = {
     candidateTargetItemId: 'coke',
     maxCandidates: 20,
     allowDuplicateInputs: true,
+    fuelSourceMode: 'internal',
+    fertilizerSourceMode: 'internal',
     targetItemIdsText: 'sol',
     startupItemIdsText: '',
     observedOutputItemId: '',

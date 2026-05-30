@@ -433,8 +433,10 @@ export function CauldronTab({ lang, state, settings, abilities, recipePreference
       settings,
       abilities,
       recipePreferences,
+      fuelSourceMode: state.fuelSourceMode,
+      fertilizerSourceMode: state.fertilizerSourceMode,
     }),
-    [abilities, recipePreferences, settings, state.machineId, targetItemId, targetRatePerMinute],
+    [abilities, recipePreferences, settings, state.fuelSourceMode, state.fertilizerSourceMode, state.machineId, targetItemId, targetRatePerMinute],
   );
   const optimization = planned.optimization;
   const result = planned.result;

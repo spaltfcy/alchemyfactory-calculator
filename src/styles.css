@@ -1995,6 +1995,21 @@ a {
   min-width: 0;
 }
 
+.cauldron-support-source-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.cauldron-support-source-field {
+  min-width: 0;
+}
+
+.cauldron-support-source-field select {
+  width: 100%;
+}
+
 .cauldron-tab {
   display: flex;
   flex-direction: column;

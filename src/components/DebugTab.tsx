@@ -1225,6 +1225,8 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
     const targetItemId = typeof requestRecord.targetItemId === 'string' ? requestRecord.targetItemId : state.cauldronState.candidateTargetItemId;
     const targetRatePerMinute = typeof requestRecord.targetRatePerMinute === 'number' ? requestRecord.targetRatePerMinute : 1;
     const machineId = requestRecord.machineId === 'advanced_cauldron' ? 'advanced_cauldron' : state.cauldronState.machineId;
+    const fuelSourceMode = requestRecord.fuelSourceMode === 'external' ? 'external' : requestRecord.fuelSourceMode === 'internal' ? 'internal' : state.cauldronState.fuelSourceMode;
+    const fertilizerSourceMode = requestRecord.fertilizerSourceMode === 'external' ? 'external' : requestRecord.fertilizerSourceMode === 'internal' ? 'internal' : state.cauldronState.fertilizerSourceMode;
     const planned = planCauldronTarget({
       targetItemId,
       amount: targetRatePerMinute,
@@ -1232,10 +1234,12 @@ export function DebugTab({ lang, state, setState, appVersion, gameVersion, userM
       settings: state.settings,
       abilities: state.abilities,
       recipePreferences: state.recipePreferences,
+      fuelSourceMode,
+      fertilizerSourceMode,
     });
     const objectiveViolations = (planned.optimization.bestPlan?.metrics.objectiveViolations ?? []) as CauldronObjectiveViolation[];
     const build = {
-      request: { ...requestRecord, targetItemId, targetRatePerMinute, machineId, planner: 'bridgeOnly' },
+      request: { ...requestRecord, targetItemId, targetRatePerMinute, machineId, fuelSourceMode, fertilizerSourceMode, planner: 'bridgeOnly' },
       result: planned.result,
       summary: {
         status: planned.result.calculationStatus === 'ok' ? 'ok' as const : 'invalid' as const,
