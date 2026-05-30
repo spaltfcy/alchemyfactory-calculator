@@ -369,6 +369,12 @@ type CandidateAttempt = {
   selectionKey: CauldronCandidateSelectionKey;
 };
 
+type CauldronInputRouteMetrics = {
+  worstTier: number;
+  tierSum: number;
+  cauldronDepth: number;
+};
+
 function collectNodeSourceKinds(node: CauldronPlanNode): { purchased: Set<string>; unresolved: Set<string>; plantDerivedInput: Set<string> } {
   const buckets = { purchased: new Set<string>(), unresolved: new Set<string>(), plantDerivedInput: new Set<string>() };
   function visit(current: CauldronPlanNode): void {
@@ -384,9 +390,58 @@ function collectNodeSourceKinds(node: CauldronPlanNode): { purchased: Set<string
   return buckets;
 }
 
+function isLowTargetCauldronIntermediate(itemId: string): boolean {
+  const targetValue = CAULDRON_TARGETS[itemId]?.targetValue;
+  return targetValue !== undefined && targetValue <= 1_000;
+}
+
+function isMidTargetCauldronIntermediate(itemId: string): boolean {
+  const targetValue = CAULDRON_TARGETS[itemId]?.targetValue;
+  return targetValue !== undefined && targetValue > 1_000 && targetValue <= 10_000;
+}
+
+function cauldronNodeDepth(node: CauldronPlanNode): number {
+  if (node.kind === 'source') return 0;
+  const own = node.kind === 'cauldron' || isCauldronMachineId(node.recipe.machineId) ? 1 : 0;
+  let childMax = 0;
+  for (const child of node.children) childMax = Math.max(childMax, cauldronNodeDepth(child.node));
+  return own + childMax;
+}
+
+function inputRouteTier(itemId: string, node: CauldronPlanNode, failureCount: number): number {
+  if (failureCount > 0) return 90;
+  if (node.kind === 'source') {
+    if (node.sourceKind === 'unresolved') return 90;
+    if (node.sourceKind === 'purchase') return 80;
+    if (node.sourceKind === 'startup') return 18;
+    if (node.sourceKind === 'plantDerivedInput') return 26;
+  }
+  const counts = countNodes(node);
+  if (counts.missing.length > 0) return 90;
+  if (counts.purchased.length > 0) return 80;
+  if (isLowTargetCauldronIntermediate(itemId)) return counts.depth <= 3 ? 14 : 22;
+  if (node.kind === 'cauldron') return isMidTargetCauldronIntermediate(itemId) ? 36 : 55;
+  if (node.kind === 'normal' && isCauldronMachineId(node.recipe.machineId)) return isMidTargetCauldronIntermediate(itemId) ? 36 : 55;
+  if (counts.recipes <= 2 && counts.depth <= 3) return 20;
+  if (counts.recipes <= 4 && counts.depth <= 5) return 32;
+  if (counts.initial.length > 0) return 38;
+  return 50;
+}
+
+function collectInputRouteMetrics(node: CauldronPlanNode, failures: CauldronPlannerFailure[]): CauldronInputRouteMetrics {
+  if (node.kind !== 'cauldron') return { worstTier: 0, tierSum: 0, cauldronDepth: cauldronNodeDepth(node) };
+  const tiers = node.children.map((child) => inputRouteTier(child.itemId, child.node, failures.length));
+  return {
+    worstTier: tiers.length > 0 ? Math.max(...tiers) : 90,
+    tierSum: tiers.reduce((sum, tier) => sum + tier, 0),
+    cauldronDepth: cauldronNodeDepth(node),
+  };
+}
+
 function selectionKeyForCandidateAttempt(candidate: CauldronRuntimeCandidate, node: CauldronPlanNode, failures: CauldronPlannerFailure[]): CauldronCandidateSelectionKey {
   const buckets = collectNodeSourceKinds(node);
   const counts = countNodes(node);
+  const route = collectInputRouteMetrics(node, failures);
   const unresolvedCount = buckets.unresolved.size + failures.length;
   const constantPurchaseCount = buckets.purchased.size;
   const plantDerivedInputCount = buckets.plantDerivedInput.size;
@@ -394,19 +449,23 @@ function selectionKeyForCandidateAttempt(candidate: CauldronRuntimeCandidate, no
     ? 5
     : constantPurchaseCount > 0
       ? 4
-      : plantDerivedInputCount > 0
-        ? 3
-        : 0;
+      : 0;
   const preferenceRanks = candidate.inputItemIds.map((itemId) => cauldronInputPreferenceRank(itemId) ?? 999);
   return {
     classRank,
     unresolvedCount,
     constantPurchaseCount,
+    existingReuseCount: 0,
+    alreadyProducedReuseCount: 0,
     plantDerivedInputCount,
     fertilizerOpenCount: 0,
     fuelOpenCount: 0,
     heatOpenCount: 0,
     worstInputPreferenceRank: Math.max(...preferenceRanks),
+    worstInputRouteTier: route.worstTier,
+    inputRouteTierSum: route.tierSum,
+    cauldronChainDepth: route.cauldronDepth,
+    supportClosureRank: 0,
     routeRecipeCount: counts.recipes,
     routeDepth: counts.depth,
     duplicateInputCount: candidate.duplicateItemCount,
@@ -421,13 +480,19 @@ function compareCandidateSelectionKey(a: CauldronCandidateSelectionKey, b: Cauld
     'classRank',
     'unresolvedCount',
     'constantPurchaseCount',
+    'existingReuseCount',
+    'alreadyProducedReuseCount',
+    'worstInputRouteTier',
+    'inputRouteTierSum',
+    'cauldronChainDepth',
+    'supportClosureRank',
+    'routeRecipeCount',
+    'routeDepth',
     'plantDerivedInputCount',
     'fertilizerOpenCount',
     'fuelOpenCount',
     'heatOpenCount',
     'worstInputPreferenceRank',
-    'routeRecipeCount',
-    'routeDepth',
     'duplicateInputCount',
     'overTargetInputCount',
     'weightedDistance',
@@ -457,7 +522,7 @@ function resolveCauldronOutput(
   allowNestedCauldronInputs = true,
 ): ResolveResult {
   if (!CAULDRON_TARGETS[itemId]) return failedResult('NOT_CAULDRON_TARGET', itemId, policy, amount);
-  const allCandidates = findCauldronCandidatesForOutput(itemId, { maxCandidates: MAX_RUNTIME_CANDIDATES_TO_EXPAND * 3 });
+  const allCandidates = findCauldronCandidatesForOutput(itemId, { maxCandidates: MAX_RUNTIME_CANDIDATES_TO_EXPAND * 6 });
   const candidates = allCandidates
     .filter((candidate) => allowNestedCauldronInputs || !candidate.inputItemIds.some(isCauldronProducibleInput))
     .slice(0, MAX_RUNTIME_CANDIDATES_TO_EXPAND);
@@ -1082,6 +1147,8 @@ type SupportClosureApplication = {
   solution: SupportClosureSolution;
   fuelProfile?: SupportProductionProfile;
   fertilizerProfile?: SupportProductionProfile;
+  fuelBaseReuseRank?: number;
+  fertilizerBaseReuseRank?: number;
 };
 
 function plannerRecipeBaseRecipeId(plannerRecipeId: string): string | undefined {
@@ -1180,6 +1247,29 @@ function scaledFlow(flow: CalculatedFlow, multiplier: number, prefix: string): C
   };
 }
 
+function endpointKey(endpoint: CalculatedFlow['from'] | CalculatedFlow['to']): string {
+  return JSON.stringify(endpoint);
+}
+
+function mergeOrPushFlow(result: CalculationResult, flow: CalculatedFlow): void {
+  const existing = result.flows.find((current) => (
+    current.itemId === flow.itemId
+    && current.role === flow.role
+    && current.displayRateLabel === flow.displayRateLabel
+    && endpointKey(current.from) === endpointKey(flow.from)
+    && endpointKey(current.to) === endpointKey(flow.to)
+  ));
+  if (!existing) {
+    result.flows.push(flow);
+    return;
+  }
+  existing.rate += flow.rate;
+  const transport = flowTransportForItem(existing.itemId, existing.rate, 60);
+  existing.belts = transport.belts;
+  existing.transportKind = transport.transportKind;
+  existing.transportUnits = transport.transportUnits;
+}
+
 function addRoleFlow(result: CalculationResult, role: 'fuel' | 'fertilizer', sourceEndpoint: CalculatedFlow['from'], recipeId: string, itemId: string, rate: number, flowIndex: number): void {
   if (!Number.isFinite(rate) || rate <= OBJECTIVE_EPS) return;
   const transport = flowTransportForItem(itemId, rate, 60);
@@ -1214,7 +1304,7 @@ function mergeSupportProfileResult(result: CalculationResult, profile: SupportPr
       sourceEndpoint = flow.from;
       continue;
     }
-    result.flows.push(scaledFlow(flow, multiplier, prefix));
+    mergeOrPushFlow(result, scaledFlow(flow, multiplier, prefix));
   }
   return sourceEndpoint;
 }
@@ -1392,24 +1482,49 @@ function evaluateSupportPair(input: {
   };
 }
 
-function supportSolutionSortKey(solution: SupportClosureSolution, fuelProfile?: SupportProductionProfile, fertilizerProfile?: SupportProductionProfile): number[] {
+function supportBaseReuseRank(base: CalculationResult, itemId: string): number {
+  if (!itemId) return 9;
+  const stat = base.itemStats[itemId];
+  if (!stat) return 6;
+  if ((stat.surplus ?? 0) > OBJECTIVE_EPS) return 0;
+  if ((stat.targetActual ?? 0) > OBJECTIVE_EPS) return 1;
+  if ((stat.produced ?? 0) > OBJECTIVE_EPS) return 2;
+  if ((stat.reused ?? 0) > OBJECTIVE_EPS) return 3;
+  return 6;
+}
+
+function supportProfileComplexity(profile?: SupportProductionProfile): number {
+  if (!profile) return 9999;
+  const recipeCount = Object.keys(profile.result.recipeStats).length;
+  const unresolvedCount = profile.unresolvedItemIds.length;
+  const purchaseCount = Object.values(profile.result.itemStats).filter((stat) => (stat.purchased ?? 0) > OBJECTIVE_EPS).length;
+  return recipeCount + unresolvedCount * 100 + purchaseCount * 20;
+}
+
+function supportSolutionSortKey(application: SupportClosureApplication): number[] {
+  const solution = application.solution;
+  const fuelProfile = application.fuelProfile;
+  const fertilizerProfile = application.fertilizerProfile;
   const fuelUnresolved = fuelProfile?.unresolvedItemIds.length ?? 0;
   const fertilizerUnresolved = fertilizerProfile?.unresolvedItemIds.length ?? 0;
   return [
     solution.fuelClosed ? 0 : 1,
     solution.fertilizerClosed ? 0 : 1,
     solution.finite ? 0 : 1,
+    application.fuelBaseReuseRank ?? 6,
+    application.fertilizerBaseReuseRank ?? 6,
     fuelUnresolved + fertilizerUnresolved,
     solution.fuelSourceMode === 'internal' ? 0 : 1,
     solution.fertilizerSourceMode === 'internal' ? 0 : 1,
+    supportProfileComplexity(fuelProfile) + supportProfileComplexity(fertilizerProfile),
     solution.fuelRequiredPerMin + solution.fertilizerRequiredPerMin,
   ];
 }
 
 function compareSupportApplication(a: SupportClosureApplication | undefined, b: SupportClosureApplication): SupportClosureApplication {
   if (!a) return b;
-  const ak = supportSolutionSortKey(a.solution, a.fuelProfile, a.fertilizerProfile);
-  const bk = supportSolutionSortKey(b.solution, b.fuelProfile, b.fertilizerProfile);
+  const ak = supportSolutionSortKey(a);
+  const bk = supportSolutionSortKey(b);
   for (let i = 0; i < Math.max(ak.length, bk.length); i += 1) {
     const av = ak[i] ?? 0;
     const bv = bk[i] ?? 0;
@@ -1468,7 +1583,13 @@ function solveSupportClosure(
         fertilizerProfile,
       });
       solution.candidatesTried = candidatesTried;
-      best = compareSupportApplication(best, { solution, fuelProfile, fertilizerProfile });
+      best = compareSupportApplication(best, {
+        solution,
+        fuelProfile,
+        fertilizerProfile,
+        fuelBaseReuseRank: supportBaseReuseRank(base, fuelItemId),
+        fertilizerBaseReuseRank: supportBaseReuseRank(base, fertilizerItemId),
+      });
     }
   }
 

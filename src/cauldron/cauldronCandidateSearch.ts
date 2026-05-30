@@ -100,6 +100,20 @@ function cauldronInputCandidateRank(itemId: string): number {
   return cauldronInputPreferenceRank(itemId) ?? CAULDRON_INPUT_EXCLUDE_RANK;
 }
 
+function cauldronInputScreenRank(itemId: string): number {
+  const item = itemById[itemId];
+  if (!item || CAULDRON_INPUT_VALUES[itemId] === undefined) return CAULDRON_INPUT_EXCLUDE_RANK;
+  const targetValue = item.cauldronTargetValue;
+  // Low and mid-low cauldron intermediates such as clay, coke, salt, black powder,
+  // sulfur, copper powder, and unstable catalysts are often the practical glue in
+  // downstream routes. Do not let the broad "cauldron_producible" bucket push
+  // them behind hundreds of raw plant triples before the planner can evaluate the
+  // actual route. This is still data-driven: it uses target value, not item names.
+  if (targetValue !== undefined && targetValue <= 1_000) return 1;
+  if (targetValue !== undefined && targetValue <= 10_000) return 3;
+  return cauldronInputCandidateRank(itemId);
+}
+
 export const PREFERRED_CAULDRON_INPUT_ITEM_IDS = ITEMS
   .filter((item) => item.cauldronValue !== undefined && cauldronInputPreferenceRank(item.id) !== undefined)
   .map((item) => item.id)
@@ -121,7 +135,7 @@ export function isPlantDerivedCauldronInputItem(itemId: string): boolean {
 }
 
 function cauldronCandidatePreferenceRanks(candidate: CauldronRuntimeCandidate): number[] {
-  return candidate.inputItemIds.map(cauldronInputCandidateRank);
+  return candidate.inputItemIds.map(cauldronInputScreenRank);
 }
 
 function cauldronCandidateWorstPreferenceRank(candidate: CauldronRuntimeCandidate): number {

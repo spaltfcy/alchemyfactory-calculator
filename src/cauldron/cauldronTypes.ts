@@ -92,11 +92,17 @@ export type CauldronCandidateSelectionKey = {
   classRank: number;
   unresolvedCount: number;
   constantPurchaseCount: number;
+  existingReuseCount: number;
+  alreadyProducedReuseCount: number;
   plantDerivedInputCount: number;
   fertilizerOpenCount: number;
   fuelOpenCount: number;
   heatOpenCount: number;
   worstInputPreferenceRank: number;
+  worstInputRouteTier: number;
+  inputRouteTierSum: number;
+  cauldronChainDepth: number;
+  supportClosureRank: number;
   routeRecipeCount: number;
   routeDepth: number;
   duplicateInputCount: number;
