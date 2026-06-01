@@ -3,7 +3,6 @@ import { getRecipesProducing, RECIPES } from '../data/recipes';
 import { text } from '../i18n';
 import type { Item, Lang, LocalizedText, Recipe } from '../types';
 import { CAULDRON_TARGETS, STATIC_CAULDRON_RECIPES } from './cauldronData';
-import { generateCauldronCandidatesForOutput } from './cauldronMath';
 import type { CauldronPlanItem, CauldronTargetPlan } from './cauldronTypes';
 
 const itemById: Record<string, Item> = Object.fromEntries(ITEMS.map((item) => [item.id, item]));
@@ -71,17 +70,15 @@ function analyzeItem(
 
   const cauldronTarget = CAULDRON_TARGETS[itemId];
   if (cauldronTarget) {
-    const candidateCount = generateCauldronCandidatesForOutput(itemId, { maxCandidates: 9999 }).length;
     return {
       itemId,
       label,
       amount,
       status: 'cauldronTarget',
       reason: {
-        ja: `錬金釜ターゲット値あり。候補${candidateCount}件。速度/熱は${cauldronTarget.timeSec === undefined ? '未確認' : '一部あり'}。`,
-        en: `Has a cauldron target value. ${candidateCount} candidates. Time/heat is ${cauldronTarget.timeSec === undefined ? 'unverified' : 'partially known'}.`,
+        ja: `錬金釜ターゲット値あり。速度/熱は${cauldronTarget.timeSec === undefined ? '未確認' : '一部あり'}。`,
+        en: `Has a cauldron target value. Time/heat is ${cauldronTarget.timeSec === undefined ? 'unverified' : 'partially known'}.`,
       },
-      candidateCount,
       children: [],
     };
   }

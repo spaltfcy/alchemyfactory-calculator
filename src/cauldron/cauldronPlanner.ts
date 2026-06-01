@@ -1,6 +1,7 @@
 import { CAULDRON_INPUT_VALUES, CAULDRON_TARGETS } from './cauldronData';
 import {
-  findCauldronCandidatesForOutput,
+  cauldronCandidateStagesForOutput,
+  iterateCauldronCandidatesForOutputStage,
   isPreferredCauldronInputItem,
   cauldronInputCount,
   cauldronInputPreferenceRank,
@@ -19,16 +20,12 @@ import { FUEL_HEAT_VALUE_BY_ITEM_ID, FUEL_ITEM_IDS, HEAT_CONSUMER_BY_MACHINE_ID 
 import { FERTILIZER_ITEM_IDS, FERTILIZER_NUTRIENT_VALUE_BY_ITEM_ID } from '../data/fertilizer';
 import { getConveyorItemsPerMinute, getFertilizerNutritionMultiplier, getFuelHeatValueMultiplier, getHeatConsumptionMultiplier, getProductionSpeedMultiplier } from '../data/abilityTables';
 import { calcEffectiveCauldronStats } from './cauldronPhysics';
-import {
-  cauldronCandidateStaticBurden,
-  compareCauldronCandidatesByMaterialBurden,
-  pruneDominatedCauldronCandidates,
-} from './cauldronInputSupplyProfiles';
 import { chooseRecipeForItem } from '../engine/itemSourceResolver';
 import { flowTransportForItem } from '../engine/flowTransport';
 
 const MAX_DEPTH = 9;
-const HARD_RUNTIME_CANDIDATE_EVALUATION_LIMIT = 30;
+const HARD_STAGE_CANDIDATE_EVALUATION_LIMIT = 90;
+const MIN_STAGE_EVALUATIONS_BEFORE_EARLY_STOP = 4;
 
 export type CauldronPlannerPolicy = {
   allowNormalForNonCauldronTarget: boolean;
@@ -443,121 +440,35 @@ function collectInputRouteMetrics(node: CauldronPlanNode, failures: CauldronPlan
   };
 }
 
-function collectPurchaseCopperPerMin(node: CauldronPlanNode): number {
-  if (node.kind === 'source') {
-    if (node.sourceKind !== 'purchase') return 0;
-    return (itemById[node.itemId]?.buyPriceCopper ?? 0) * node.amount;
-  }
-  return node.children.reduce((sum, child) => sum + collectPurchaseCopperPerMin(child.node), 0);
-}
-
-function collectHeatDemandPerMin(node: CauldronPlanNode, abilities: AbilitySettings): number {
-  if (node.kind === 'source') return 0;
-  if (node.kind === 'cauldron') {
-    const stats = cauldronStatsForTargetItem(node.itemId, getProductionSpeedMultiplier(abilities), getHeatConsumptionMultiplier(abilities));
-    const outputRate = stats?.outputPerMin ?? 1;
-    const machines = outputRate > 0 ? node.amount / outputRate : 0;
-    return machines * (stats?.heatPerMinPerMachine ?? 0)
-      + node.children.reduce((sum, child) => sum + collectHeatDemandPerMin(child.node, abilities), 0);
-  }
-  const machine = machineById[node.recipe.machineId];
-  const own = (machine && HEAT_CONSUMER_BY_MACHINE_ID[machine.id])
-    ? Math.max(0, node.runsPerMinute) * node.recipe.timeSec * 0
-    : 0;
-  return own + node.children.reduce((sum, child) => sum + collectHeatDemandPerMin(child.node, abilities), 0);
-}
-
-function collectFertilizerNutrientsPerMin(node: CauldronPlanNode): number {
-  if (node.kind === 'source') return 0;
-  const own = node.kind === 'normal'
-    ? (node.recipe.nutrientInputPerRun ?? 0) * node.runsPerMinute
-    : 0;
-  return own + node.children.reduce((sum, child) => sum + collectFertilizerNutrientsPerMin(child.node), 0);
-}
-
-function collectUnusedByproductMetrics(node: CauldronPlanNode): { count: number; value: number; reused: number } {
-  if (node.kind === 'source') return { count: 0, value: 0, reused: 0 };
-  let count = 0;
-  let value = 0;
-  let reused = 0;
-  if (node.kind === 'normal') {
-    const consumedInChildren = new Set(node.children.map((child) => child.itemId));
-    for (const output of node.recipe.outputs) {
-      if (output.itemId === node.itemId) continue;
-      const produced = output.amount * (output.probability ?? 1) * node.runsPerMinute;
-      if (produced <= OBJECTIVE_EPS) continue;
-      if (consumedInChildren.has(output.itemId)) reused += 1;
-      else {
-        count += 1;
-        value += produced * (CAULDRON_INPUT_VALUES[output.itemId]?.value ?? 0);
-      }
-    }
-  }
-  for (const child of node.children) {
-    const next = collectUnusedByproductMetrics(child.node);
-    count += next.count;
-    value += next.value;
-    reused += next.reused;
-  }
-  return { count, value, reused };
-}
-
-function selectCandidatesForPlanner(candidates: CauldronRuntimeCandidate[]): CauldronRuntimeCandidate[] {
-  const pruned = pruneDominatedCauldronCandidates(candidates);
-  const sorted = pruned.sort(compareCauldronCandidatesByMaterialBurden);
-  // This is an emergency browser-safety guard, not a ranking policy. Normal targets
-  // should be reduced by dominance pruning before hitting this value.
-  return sorted.slice(0, HARD_RUNTIME_CANDIDATE_EVALUATION_LIMIT);
-}
-
 function selectionKeyForCandidateAttempt(candidate: CauldronRuntimeCandidate, node: CauldronPlanNode, failures: CauldronPlannerFailure[]): CauldronCandidateSelectionKey {
   const buckets = collectNodeSourceKinds(node);
   const counts = countNodes(node);
   const route = collectInputRouteMetrics(node, failures);
-  const staticBurden = cauldronCandidateStaticBurden(candidate, node.amount);
-  const byproduct = collectUnusedByproductMetrics(node);
   const unresolvedCount = buckets.unresolved.size + failures.length;
   const constantPurchaseCount = buckets.purchased.size;
   const plantDerivedInputCount = buckets.plantDerivedInput.size;
-  const purchaseCopperPerMin = collectPurchaseCopperPerMin(node) + staticBurden.purchaseCopperPerMin;
-  const purchaseCopperPerOutput = node.amount > OBJECTIVE_EPS ? purchaseCopperPerMin / node.amount : purchaseCopperPerMin;
   const classRank = unresolvedCount > 0
     ? 5
-    : staticBurden.currencyInputCount > 0 || staticBurden.purchaseOnlyInputCount > 0
+    : constantPurchaseCount > 0
       ? 4
-      : constantPurchaseCount > 0
-        ? 3
-        : 0;
+      : 0;
   const preferenceRanks = candidate.inputItemIds.map((itemId) => cauldronInputPreferenceRank(itemId) ?? 999);
   return {
     classRank,
     unresolvedCount,
-    currencyInputCount: staticBurden.currencyInputCount,
-    purchaseOnlyInputCount: staticBurden.purchaseOnlyInputCount,
     constantPurchaseCount,
-    purchaseCopperPerMin,
-    purchaseCopperPerOutput,
-    nonPlantExpensiveInputCount: staticBurden.nonPlantExpensiveInputCount,
-    nonPlantOverpayCauldronValue: staticBurden.nonPlantOverpayCauldronValue,
-    plantOverpayCauldronValue: staticBurden.plantOverpayCauldronValue,
-    unusedByproductCount: byproduct.count,
-    unusedByproductCauldronValue: byproduct.value,
-    byproductReuseCount: byproduct.reused,
     existingReuseCount: 0,
     alreadyProducedReuseCount: 0,
     plantDerivedInputCount,
-    fertilizerNutrientsPerMin: collectFertilizerNutrientsPerMin(node),
-    heatRequiredPerMin: 0,
     fertilizerOpenCount: 0,
     fuelOpenCount: 0,
     heatOpenCount: 0,
     worstInputPreferenceRank: Math.max(...preferenceRanks),
-    worstInputRouteTier: Math.max(route.worstTier, staticBurden.worstInputRouteTier),
-    inputRouteTierSum: route.tierSum + staticBurden.inputRouteTierSum,
+    worstInputRouteTier: route.worstTier,
+    inputRouteTierSum: route.tierSum,
     cauldronChainDepth: route.cauldronDepth,
     supportClosureRank: 0,
     routeRecipeCount: counts.recipes,
-    machineCount: 0,
     routeDepth: counts.depth,
     duplicateInputCount: candidate.duplicateItemCount,
     overTargetInputCount: candidate.overTargetInputCount,
@@ -570,29 +481,17 @@ function compareCandidateSelectionKey(a: CauldronCandidateSelectionKey, b: Cauld
   const fields: Array<keyof CauldronCandidateSelectionKey> = [
     'classRank',
     'unresolvedCount',
-    'currencyInputCount',
-    'purchaseOnlyInputCount',
     'constantPurchaseCount',
-    'purchaseCopperPerOutput',
-    'nonPlantExpensiveInputCount',
-    'nonPlantOverpayCauldronValue',
-    'unusedByproductCount',
-    'unusedByproductCauldronValue',
-    'fertilizerNutrientsPerMin',
-    'heatRequiredPerMin',
     'worstInputRouteTier',
     'inputRouteTierSum',
     'routeRecipeCount',
-    'machineCount',
     'routeDepth',
     'cauldronChainDepth',
-    'existingReuseCount',
-    'alreadyProducedReuseCount',
-    'byproductReuseCount',
     'plantDerivedInputCount',
     'duplicateInputCount',
     'overTargetInputCount',
-    'plantOverpayCauldronValue',
+    'existingReuseCount',
+    'alreadyProducedReuseCount',
     'supportClosureRank',
     'fertilizerOpenCount',
     'fuelOpenCount',
@@ -614,6 +513,47 @@ function compareCandidateAttempt(a: CandidateAttempt, b: CandidateAttempt): numb
   return a.candidate.inputItemIds.join('\u0000').localeCompare(b.candidate.inputItemIds.join('\u0000'));
 }
 
+function stageAcceptanceKey(attempt: CandidateAttempt): number[] {
+  const key = attempt.selectionKey;
+  return [
+    key.classRank,
+    key.unresolvedCount,
+    key.constantPurchaseCount,
+    key.worstInputRouteTier,
+    key.inputRouteTierSum,
+    key.routeRecipeCount,
+    key.routeDepth,
+    key.cauldronChainDepth,
+    key.duplicateInputCount,
+    key.weightedDistance,
+  ];
+}
+
+function isCleanEnoughStageAttempt(attempt: CandidateAttempt): boolean {
+  const key = attempt.selectionKey;
+  return attempt.failures.length === 0
+    && key.classRank <= 0
+    && key.unresolvedCount === 0
+    && key.constantPurchaseCount === 0
+    && key.worstInputRouteTier < 80;
+}
+
+function isClearlyGoodStageAttempt(attempt: CandidateAttempt): boolean {
+  if (!isCleanEnoughStageAttempt(attempt)) return false;
+  const key = attempt.selectionKey;
+  return true;
+}
+
+function compareStageAcceptanceKey(a: CandidateAttempt, b: CandidateAttempt): number {
+  const ak = stageAcceptanceKey(a);
+  const bk = stageAcceptanceKey(b);
+  for (let i = 0; i < Math.max(ak.length, bk.length); i += 1) {
+    const diff = (ak[i] ?? 0) - (bk[i] ?? 0);
+    if (Math.abs(diff) > 1e-9) return diff;
+  }
+  return compareCandidateAttempt(a, b);
+}
+
 function resolveCauldronOutput(
   itemId: string,
   amount: number,
@@ -624,40 +564,55 @@ function resolveCauldronOutput(
   memo: ResolveMemo,
   allowNestedCauldronInputs = true,
 ): ResolveResult {
-  const target = CAULDRON_TARGETS[itemId];
-  if (!target) return failedResult('NOT_CAULDRON_TARGET', itemId, policy, amount);
-  if (target.targetValue < 1) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
-  const allCandidates = findCauldronCandidatesForOutput(itemId);
-  const candidates = selectCandidatesForPlanner(
-    allCandidates.filter((candidate) => allowNestedCauldronInputs || !candidate.inputItemIds.some(isCauldronProducibleInput)),
-  );
-  if (candidates.length === 0) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
+  if (!CAULDRON_TARGETS[itemId]) return failedResult('NOT_CAULDRON_TARGET', itemId, policy, amount);
+  const stages = cauldronCandidateStagesForOutput(itemId);
+  if (stages.length === 0) return failedResult('NO_CAULDRON_CANDIDATE', itemId, policy, amount);
 
-  const attempts: CandidateAttempt[] = [];
+  let bestOverall: CandidateAttempt | undefined;
   const candidateFailures: CauldronPlannerFailure[] = [];
-  for (const candidate of candidates) {
-    const children: CauldronPlanChild[] = [];
-    const failures: CauldronPlannerFailure[] = [];
-    candidate.inputItemIds.forEach((childItemId, index) => {
-      const slotIndex = index as 0 | 1 | 2;
-      const child = resolveCauldronInputMaterial(childItemId, amount, policy, recipePreferences, depth - 1, path, memo);
-      if (!child.ok) failures.push(...child.failures);
-      children.push({ slotIndex, itemId: childItemId, amount, node: child.node ?? sourceNode(childItemId, amount, 'unresolved') });
-    });
+  let evaluatedTotal = 0;
 
-    const node: CauldronPlanNode = { kind: 'cauldron', itemId, amount, candidate, children };
-    attempts.push({ candidate, node, failures, selectionKey: selectionKeyForCandidateAttempt(candidate, node, failures) });
-    if (failures.length > 0) candidateFailures.push(makeFailure('INPUT_NOT_PLANT_DERIVED', itemId, candidate.inputItemIds, failures));
+  for (const stage of stages) {
+    if (!stage.reachable || stage.inputItemIds.length === 0) continue;
+
+    let bestInStage: CandidateAttempt | undefined;
+    let evaluatedInStage = 0;
+
+    for (const candidate of iterateCauldronCandidatesForOutputStage(itemId, stage)) {
+      if (!allowNestedCauldronInputs && candidate.inputItemIds.some(isCauldronProducibleInput)) continue;
+      evaluatedInStage += 1;
+      evaluatedTotal += 1;
+
+      const children: CauldronPlanChild[] = [];
+      const failures: CauldronPlannerFailure[] = [];
+      candidate.inputItemIds.forEach((childItemId, index) => {
+        const slotIndex = index as 0 | 1 | 2;
+        const child = resolveCauldronInputMaterial(childItemId, amount, policy, recipePreferences, depth - 1, path, memo);
+        if (!child.ok) failures.push(...child.failures);
+        children.push({ slotIndex, itemId: childItemId, amount, node: child.node ?? sourceNode(childItemId, amount, 'unresolved') });
+      });
+
+      const node: CauldronPlanNode = { kind: 'cauldron', itemId, amount, candidate, children };
+      const attempt: CandidateAttempt = { candidate, node, failures, selectionKey: selectionKeyForCandidateAttempt(candidate, node, failures) };
+
+      if (!bestInStage || compareCandidateAttempt(attempt, bestInStage) < 0) bestInStage = attempt;
+      if (!bestOverall || compareCandidateAttempt(attempt, bestOverall) < 0) bestOverall = attempt;
+      if (failures.length > 0 && candidateFailures.length < 12) candidateFailures.push(makeFailure('INPUT_NOT_PLANT_DERIVED', itemId, candidate.inputItemIds, failures));
+
+      if (evaluatedInStage >= MIN_STAGE_EVALUATIONS_BEFORE_EARLY_STOP && bestInStage && isClearlyGoodStageAttempt(bestInStage)) break;
+      if (evaluatedInStage >= HARD_STAGE_CANDIDATE_EVALUATION_LIMIT) break;
+    }
+
+    if (bestInStage && compareStageAcceptanceKey(bestInStage, bestOverall ?? bestInStage) <= 0 && isCleanEnoughStageAttempt(bestInStage)) {
+      return { ok: true, node: bestInStage.node, failures: [] };
+    }
   }
 
-  attempts.sort(compareCandidateAttempt);
-  const best = attempts[0];
-  if (best && best.failures.length === 0) return { ok: true, node: best.node, failures: [] };
-  if (policy.allowPartialGraph && best) return { ok: false, node: best.node, failures: best.failures.length > 0 ? best.failures : [makeFailure('NO_CAULDRON_CANDIDATE', itemId)] };
+  if (bestOverall && bestOverall.failures.length === 0) return { ok: true, node: bestOverall.node, failures: [] };
+  if (policy.allowPartialGraph && bestOverall) return { ok: false, node: bestOverall.node, failures: bestOverall.failures.length > 0 ? bestOverall.failures : [makeFailure('NO_CAULDRON_CANDIDATE', itemId)] };
 
   return { ok: false, failures: [makeFailure('NO_CAULDRON_CANDIDATE', itemId, undefined, candidateFailures.slice(0, 12))] };
 }
-
 function resolveNormalOutput(
   itemId: string,
   amount: number,
@@ -2123,7 +2078,6 @@ function planItemFromNode(node: CauldronPlanNode): CauldronPlanItem {
       ? { ja: '錬金釜で作成します。', en: 'Produced with a cauldron.' }
       : { ja: '非錬金釜ターゲットを通常レシピで通過展開しています。', en: 'Non-cauldron target bridged through a normal recipe.' },
     recipeId: node.kind === 'normal' ? node.recipeId : undefined,
-    candidateCount: node.kind === 'cauldron' ? findCauldronCandidatesForOutput(node.itemId).length : undefined,
     selectedInputItemIds: node.kind === 'cauldron' ? [...node.candidate.inputItemIds] as [string, string, string] : undefined,
     children: node.children.filter((child) => !isStartupSourceNode(child.node)).map((child) => planItemFromNode(child.node)),
   };

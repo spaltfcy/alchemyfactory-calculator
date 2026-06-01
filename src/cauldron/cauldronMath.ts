@@ -88,6 +88,7 @@ export function generateCauldronCandidatesForOutput(
   const inputItemIds = [...new Set(options?.inputItemIds ?? CAULDRON_INPUT_ITEM_IDS)]
     .filter((itemId) => itemId !== outputItemId && CAULDRON_INPUT_VALUES[itemId]);
   const allowDuplicateInputs = options?.allowDuplicateInputs ?? true;
+  const maxCandidates = Math.max(1, Math.floor(options?.maxCandidates ?? 20));
   const candidates: CauldronCandidate[] = [];
 
   for (let i = 0; i < inputItemIds.length; i += 1) {
@@ -109,6 +110,16 @@ export function generateCauldronCandidatesForOutput(
           targetTimeSec: target.timeSec,
           targetHeatPerSec: target.heatPerSec,
         });
+        if (candidates.length >= maxCandidates) {
+          candidates.sort(
+            (a, b) =>
+              a.distanceRatio - b.distanceRatio ||
+              Math.abs(1 - a.valueEfficiency) - Math.abs(1 - b.valueEfficiency) ||
+              b.duplicatePenalty - a.duplicatePenalty ||
+              a.inputItemIds.join('|').localeCompare(b.inputItemIds.join('|')),
+          );
+          return candidates.slice(0, maxCandidates);
+        }
       }
     }
   }
@@ -121,5 +132,5 @@ export function generateCauldronCandidatesForOutput(
       a.inputItemIds.join('|').localeCompare(b.inputItemIds.join('|')),
   );
 
-  return candidates.slice(0, Math.max(1, Math.floor(options?.maxCandidates ?? 20)));
+  return candidates.slice(0, maxCandidates);
 }

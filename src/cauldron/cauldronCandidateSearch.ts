@@ -6,6 +6,7 @@ import { CAULDRON_INPUT_PREFERENCE_ORDER } from '../types';
 import type { CauldronInputPreference } from '../types';
 
 const EPS = 1e-9;
+const CURRENCY_ITEM_IDS = new Set(['copper_coin', 'silver_coin', 'gold_coin']);
 
 export type CauldronRuntimeCandidate = {
   outputItemId: string;
@@ -23,7 +24,24 @@ export type CauldronRuntimeCandidate = {
   targetMultiplier: number;
   baseTimeSec: number;
   baseHeatPerSec: number;
+  stageId?: CauldronCandidateStageId;
 };
+
+export type CauldronCandidateStageId =
+  | 'plantSimple'
+  | 'plantWithLightIntermediate'
+  | 'lowCostPurchase'
+  | 'mixedHighValue'
+  | 'fallback';
+
+export type CauldronCandidateStage = {
+  id: CauldronCandidateStageId;
+  label: string;
+  inputItemIds: string[];
+  reachable: boolean;
+};
+
+export type AcceptedAdjustedRange = { min: number; max: number };
 
 export function duplicatePenaltyForCauldronInput(inputItemIds: CauldronInputTuple): number {
   const uniqueCount = new Set(inputItemIds).size;
@@ -53,27 +71,13 @@ export function predictCauldronOutput(inputItemIds: CauldronInputTuple): { outpu
   if (rawScore === undefined) return undefined;
   const duplicatePenalty = duplicatePenaltyForCauldronInput(inputItemIds);
   const adjustedScore = rawScore * duplicatePenalty;
-  let best: { outputItemId: string; weightedDistance: number; targetValue: number } | undefined;
-
-  for (const target of Object.values(CAULDRON_TARGETS)) {
-    const multiplier = target.multiplier ?? 1;
-    if (!Number.isFinite(target.targetValue) || !Number.isFinite(multiplier) || multiplier <= 0) continue;
-    const weightedDistance = Math.abs(adjustedScore - target.targetValue) * multiplier;
-    if (
-      !best
-      || weightedDistance < best.weightedDistance - EPS
-      || (Math.abs(weightedDistance - best.weightedDistance) <= EPS && target.targetValue < best.targetValue)
-      || (Math.abs(weightedDistance - best.weightedDistance) <= EPS && target.targetValue === best.targetValue && target.itemId.localeCompare(best.outputItemId) < 0)
-    ) {
-      best = { outputItemId: target.itemId, weightedDistance, targetValue: target.targetValue };
-    }
-  }
-
+  const best = predictCauldronOutputForAdjustedScoreDetailed(adjustedScore);
   return best ? { outputItemId: best.outputItemId, weightedDistance: best.weightedDistance, adjustedScore, rawScore, duplicatePenalty } : undefined;
 }
 
-function predictCauldronOutputForAdjustedScore(adjustedScore: number): string | undefined {
+function predictCauldronOutputForAdjustedScoreDetailed(adjustedScore: number): { outputItemId: string; weightedDistance: number; targetValue: number } | undefined {
   let best: { outputItemId: string; weightedDistance: number; targetValue: number } | undefined;
+
   for (const target of Object.values(CAULDRON_TARGETS)) {
     const multiplier = target.multiplier ?? 1;
     if (!Number.isFinite(target.targetValue) || !Number.isFinite(multiplier) || multiplier <= 0) continue;
@@ -87,24 +91,31 @@ function predictCauldronOutputForAdjustedScore(adjustedScore: number): string | 
       best = { outputItemId: target.itemId, weightedDistance, targetValue: target.targetValue };
     }
   }
-  return best?.outputItemId;
+
+  return best;
 }
 
-type AcceptedAdjustedRange = { min: number; max: number };
+function predictCauldronOutputForAdjustedScore(adjustedScore: number): string | undefined {
+  return predictCauldronOutputForAdjustedScoreDetailed(adjustedScore)?.outputItemId;
+}
+
 const acceptedRangeCache = new Map<string, AcceptedAdjustedRange>();
 
-function acceptedAdjustedRangeForOutput(outputItemId: string): AcceptedAdjustedRange | undefined {
+export function acceptedAdjustedRangeForOutput(outputItemId: string): AcceptedAdjustedRange | undefined {
   const target = CAULDRON_TARGETS[outputItemId];
   if (!target) return undefined;
   const cached = acceptedRangeCache.get(outputItemId);
   if (cached) return cached;
-  const center = target.targetValue;
-  if (predictCauldronOutputForAdjustedScore(center) !== outputItemId) return undefined;
-  const maxTarget = Math.max(...Object.values(CAULDRON_TARGETS).map((entry) => entry.targetValue).filter(Number.isFinite));
 
-  let lowBad = 0;
-  if (predictCauldronOutputForAdjustedScore(lowBad) === outputItemId) {
-    lowBad = 0;
+  const center = target.targetValue;
+  if (!Number.isFinite(center) || predictCauldronOutputForAdjustedScore(center) !== outputItemId) return undefined;
+
+  const targetValues = Object.values(CAULDRON_TARGETS).map((entry) => entry.targetValue).filter((value) => Number.isFinite(value));
+  const maxTarget = Math.max(center, ...targetValues);
+
+  let low: number;
+  if (predictCauldronOutputForAdjustedScore(0) === outputItemId) {
+    low = 0;
   } else {
     let lo = 0;
     let hi = center;
@@ -113,44 +124,27 @@ function acceptedAdjustedRangeForOutput(outputItemId: string): AcceptedAdjustedR
       if (predictCauldronOutputForAdjustedScore(mid) === outputItemId) hi = mid;
       else lo = mid;
     }
-    lowBad = hi;
+    low = hi;
   }
 
-  let high = Math.max(center * 2 + 1, maxTarget * 1.25 + 1);
-  while (predictCauldronOutputForAdjustedScore(high) === outputItemId && high < maxTarget * 8 + 1_000) high *= 2;
+  let highProbe = Math.max(center * 2 + 1, maxTarget * 1.25 + 1);
+  let guard = 0;
+  while (predictCauldronOutputForAdjustedScore(highProbe) === outputItemId && highProbe < maxTarget * 8 + 1_000 && guard < 32) {
+    highProbe *= 2;
+    guard += 1;
+  }
+
   let lo = center;
-  let hi = high;
+  let hi = highProbe;
   for (let i = 0; i < 64; i += 1) {
     const mid = (lo + hi) / 2;
     if (predictCauldronOutputForAdjustedScore(mid) === outputItemId) lo = mid;
     else hi = mid;
   }
 
-  const range = { min: Math.max(0, lowBad - 1e-7), max: lo + 1e-7 };
+  const range = { min: Math.max(0, low - 1e-7), max: lo + 1e-7 };
   acceptedRangeCache.set(outputItemId, range);
   return range;
-}
-
-function lowerBoundByValue(itemIds: readonly string[], value: number, startIndex: number): number {
-  let lo = startIndex;
-  let hi = itemIds.length;
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    if (CAULDRON_INPUT_VALUES[itemIds[mid]].value < value) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
-}
-
-function upperBoundByValue(itemIds: readonly string[], value: number, startIndex: number): number {
-  let lo = startIndex;
-  let hi = itemIds.length;
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    if (CAULDRON_INPUT_VALUES[itemIds[mid]].value <= value) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
 }
 
 const CAULDRON_INPUT_EXCLUDE_RANK = 999;
@@ -168,10 +162,7 @@ export function cauldronInputPreferenceRank(itemId: string): number | undefined 
   const explicit = explicitCauldronInputPreferenceRank(itemId);
   if (explicit !== undefined) return explicit;
 
-  // 06. 錬金釜から作れるアイテム。明示分類が無いターゲットはこの扱いにする。
   if (item.cauldronTargetValue !== undefined) return CAULDRON_INPUT_PREFERENCE_ORDER.cauldron_producible;
-
-  // 08. 購入品そのもの。種を直接釜に入れる場合もここに落ちるため、かなり低優先になる。
   if (item.buyPriceCopper !== undefined) return CAULDRON_INPUT_PREFERENCE_ORDER.purchased_raw;
 
   return undefined;
@@ -179,13 +170,6 @@ export function cauldronInputPreferenceRank(itemId: string): number | undefined 
 
 function cauldronInputCandidateRank(itemId: string): number {
   return cauldronInputPreferenceRank(itemId) ?? CAULDRON_INPUT_EXCLUDE_RANK;
-}
-
-function cauldronInputScreenRank(itemId: string): number {
-  // Keep this only as a stable display/debug fallback. The runtime planner now
-  // evaluates material burden after it expands candidate inputs, so low target
-  // values must not be allowed to outrank cheaper and cleaner material routes.
-  return cauldronInputCandidateRank(itemId);
 }
 
 export const PREFERRED_CAULDRON_INPUT_ITEM_IDS = ITEMS
@@ -197,7 +181,6 @@ export const PREFERRED_CAULDRON_INPUT_ITEM_IDS = ITEMS
     return CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b);
   });
 
-// Backward-compatible alias for the current planner. The pool is no longer limited to plant-derived items.
 export const PLANT_DERIVED_CAULDRON_INPUT_ITEM_IDS = PREFERRED_CAULDRON_INPUT_ITEM_IDS;
 
 export function isPreferredCauldronInputItem(itemId: string): boolean {
@@ -206,18 +189,6 @@ export function isPreferredCauldronInputItem(itemId: string): boolean {
 
 export function isPlantDerivedCauldronInputItem(itemId: string): boolean {
   return isPreferredCauldronInputItem(itemId);
-}
-
-function cauldronCandidatePreferenceRanks(candidate: CauldronRuntimeCandidate): number[] {
-  return candidate.inputItemIds.map(cauldronInputScreenRank);
-}
-
-function cauldronCandidateWorstPreferenceRank(candidate: CauldronRuntimeCandidate): number {
-  return Math.max(...cauldronCandidatePreferenceRanks(candidate));
-}
-
-function cauldronCandidatePreferenceRankSum(candidate: CauldronRuntimeCandidate): number {
-  return cauldronCandidatePreferenceRanks(candidate).reduce((sum, rank) => sum + rank, 0);
 }
 
 function duplicateMetrics(inputItemIds: CauldronInputTuple): { duplicateItemCount: number; maxDuplicateCount: number } {
@@ -249,7 +220,7 @@ function overTargetMetrics(outputItemId: string, inputItemIds: CauldronInputTupl
   return { overTargetInputCount, overTargetExcessTotal, overTargetExcessMax };
 }
 
-function buildRuntimeCandidate(outputItemId: string, inputItemIds: CauldronInputTuple, prediction: NonNullable<ReturnType<typeof predictCauldronOutput>>): CauldronRuntimeCandidate {
+function buildRuntimeCandidate(outputItemId: string, inputItemIds: CauldronInputTuple, prediction: NonNullable<ReturnType<typeof predictCauldronOutput>>, stageId?: CauldronCandidateStageId): CauldronRuntimeCandidate {
   const target = CAULDRON_TARGETS[outputItemId];
   const targetValue = target?.targetValue ?? 0;
   return {
@@ -265,112 +236,8 @@ function buildRuntimeCandidate(outputItemId: string, inputItemIds: CauldronInput
     targetMultiplier: target?.multiplier ?? 1,
     baseTimeSec: calcBaseCauldronTimeSec(targetValue),
     baseHeatPerSec: calcBaseCauldronHeatPerSec(targetValue),
+    stageId,
   };
-}
-
-function sortRuntimeCandidates(candidates: CauldronRuntimeCandidate[]): CauldronRuntimeCandidate[] {
-  return candidates.sort((a, b) => {
-    const duplicateItemCount = a.duplicateItemCount - b.duplicateItemCount;
-    if (duplicateItemCount !== 0) return duplicateItemCount;
-
-    const maxDuplicateCount = a.maxDuplicateCount - b.maxDuplicateCount;
-    if (maxDuplicateCount !== 0) return maxDuplicateCount;
-
-    const worstRank = cauldronCandidateWorstPreferenceRank(a) - cauldronCandidateWorstPreferenceRank(b);
-    if (worstRank !== 0) return worstRank;
-
-    const rankSum = cauldronCandidatePreferenceRankSum(a) - cauldronCandidatePreferenceRankSum(b);
-    if (rankSum !== 0) return rankSum;
-
-    const overTargetInputCount = a.overTargetInputCount - b.overTargetInputCount;
-    if (overTargetInputCount !== 0) return overTargetInputCount;
-
-    const overTargetExcessTotal = a.overTargetExcessTotal - b.overTargetExcessTotal;
-    if (Math.abs(overTargetExcessTotal) > EPS) return overTargetExcessTotal;
-
-    const distance = a.weightedDistance - b.weightedDistance;
-    if (Math.abs(distance) > EPS) return distance;
-
-    const overTargetExcessMax = a.overTargetExcessMax - b.overTargetExcessMax;
-    if (Math.abs(overTargetExcessMax) > EPS) return overTargetExcessMax;
-
-    const score = a.adjustedScore - b.adjustedScore;
-    if (Math.abs(score) > EPS) return score;
-
-    return a.inputItemIds.join('\u0000').localeCompare(b.inputItemIds.join('\u0000'));
-  });
-}
-
-const candidateCache = new Map<string, CauldronRuntimeCandidate[]>();
-
-type FindCandidateOptions = {
-  maxCandidates?: number;
-  inputItemIds?: readonly string[];
-};
-
-function normalizeInputPool(inputItemIds?: readonly string[]): string[] {
-  const source = inputItemIds && inputItemIds.length > 0 ? inputItemIds : CAULDRON_INPUT_ITEM_IDS;
-  return [...new Set(source)]
-    .filter((itemId) => CAULDRON_INPUT_VALUES[itemId])
-    .sort((a, b) => CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b));
-}
-
-function normalizeInputPoolForOutput(outputItemId: string, inputItemIds?: readonly string[]): string[] {
-  // A cauldron recipe that consumes the same item it outputs is self-referential for
-  // the current one-output planner. Remove it before generating triples so it never
-  // appears in candidate lists, debug logs, or graphs. Duplicate input slots for
-  // other items remain allowed because the game applies duplicate penalties.
-  return normalizeInputPool(inputItemIds).filter((itemId) => itemId !== outputItemId);
-}
-
-export function findCauldronCandidatesForOutput(outputItemId: string, options: FindCandidateOptions = {}): CauldronRuntimeCandidate[] {
-  if (!CAULDRON_TARGETS[outputItemId]) return [];
-  const itemIds = normalizeInputPoolForOutput(outputItemId, options.inputItemIds);
-  const maxCandidates = options.maxCandidates === undefined ? undefined : Math.max(1, Math.floor(options.maxCandidates));
-  const cacheKey = `${outputItemId}:${maxCandidates ?? 'all'}:${itemIds.join('|')}`;
-  const cached = candidateCache.get(cacheKey);
-  if (cached) return cached;
-
-  const candidates: CauldronRuntimeCandidate[] = [];
-  const acceptedRange = acceptedAdjustedRangeForOutput(outputItemId);
-  if (!acceptedRange) return [];
-  for (let i = 0; i < itemIds.length; i += 1) {
-    const vi = CAULDRON_INPUT_VALUES[itemIds[i]].value;
-    for (let j = i; j < itemIds.length; j += 1) {
-      const vj = CAULDRON_INPUT_VALUES[itemIds[j]].value;
-      const duplicatePenaltyForPair = i === j ? 0.5 : 0.65;
-      const pairMinRaw = acceptedRange.min / duplicatePenaltyForPair - vi - vj;
-      const pairMaxRaw = acceptedRange.max / duplicatePenaltyForPair - vi - vj;
-      const allDistinctMinRaw = acceptedRange.min - vi - vj;
-      const allDistinctMaxRaw = acceptedRange.max - vi - vj;
-      const minNeeded = Math.min(pairMinRaw, allDistinctMinRaw);
-      const maxNeeded = Math.max(pairMaxRaw, allDistinctMaxRaw);
-      let kStart = lowerBoundByValue(itemIds, minNeeded, j);
-      const kEnd = upperBoundByValue(itemIds, maxNeeded, j);
-      for (let k = kStart; k < kEnd; k += 1) {
-        const inputItemIds: CauldronInputTuple = [itemIds[i], itemIds[j], itemIds[k]];
-        const prediction = predictCauldronOutput(inputItemIds);
-        if (!prediction || prediction.outputItemId !== outputItemId) continue;
-        candidates.push(buildRuntimeCandidate(outputItemId, inputItemIds, prediction));
-      }
-    }
-  }
-
-  const sorted = sortRuntimeCandidates(candidates);
-  const result = maxCandidates === undefined ? sorted : sorted.slice(0, maxCandidates);
-  candidateCache.set(cacheKey, result);
-  return result;
-}
-
-export function findPreferredCauldronCandidatesForOutput(outputItemId: string, options: { maxCandidates?: number } = {}): CauldronRuntimeCandidate[] {
-  return findCauldronCandidatesForOutput(outputItemId, {
-    maxCandidates: options.maxCandidates,
-    inputItemIds: PREFERRED_CAULDRON_INPUT_ITEM_IDS,
-  });
-}
-
-export function findPlantDerivedCauldronCandidatesForOutput(outputItemId: string, options: { maxCandidates?: number } = {}): CauldronRuntimeCandidate[] {
-  return findPreferredCauldronCandidatesForOutput(outputItemId, options);
 }
 
 export function cauldronInputCount(): number {
@@ -383,4 +250,148 @@ export function preferredCauldronInputCount(): number {
 
 export function plantDerivedCauldronInputCount(): number {
   return preferredCauldronInputCount();
+}
+
+function inputPreference(itemId: string): CauldronInputPreference | undefined {
+  const preference = itemById[itemId]?.cauldronInputPreference;
+  return preference === 'exclude' ? undefined : preference;
+}
+
+function isPlantPreference(preference: CauldronInputPreference | undefined): boolean {
+  return preference === 'nursery_output'
+    || preference === 'nursery_processed'
+    || preference === 'nursery_burned'
+    || preference === 'nursery_multi_processed';
+}
+
+function isPlantSimplePreference(preference: CauldronInputPreference | undefined): boolean {
+  return preference === 'nursery_output' || preference === 'nursery_processed' || preference === 'nursery_burned';
+}
+
+function isPurchasedPreference(preference: CauldronInputPreference | undefined): boolean {
+  return preference === 'purchased_raw'
+    || preference === 'purchased_processed'
+    || preference === 'purchased_burned'
+    || preference === 'purchased_multi_processed';
+}
+
+function isCurrencyItem(itemId: string): boolean {
+  return CURRENCY_ITEM_IDS.has(itemId);
+}
+
+function inputItemIdsForStage(stageId: CauldronCandidateStageId, outputItemId: string): string[] {
+  const all = PREFERRED_CAULDRON_INPUT_ITEM_IDS.filter((itemId) => itemId !== outputItemId && CAULDRON_INPUT_VALUES[itemId] !== undefined);
+  const out = all.filter((itemId) => {
+    const item = itemById[itemId];
+    const preference = inputPreference(itemId);
+    const target = CAULDRON_TARGETS[itemId]?.targetValue;
+    const buyPrice = item?.buyPriceCopper;
+
+    if (stageId === 'plantSimple') return isPlantSimplePreference(preference);
+    if (stageId === 'plantWithLightIntermediate') {
+      return isPlantPreference(preference) || (target !== undefined && target <= 1_000 && !isCurrencyItem(itemId));
+    }
+    if (stageId === 'lowCostPurchase') {
+      return isPlantPreference(preference)
+        || (target !== undefined && target <= 10_000 && !isCurrencyItem(itemId))
+        || (isPurchasedPreference(preference) && !isCurrencyItem(itemId) && (buyPrice ?? Number.POSITIVE_INFINITY) <= 500);
+    }
+    if (stageId === 'mixedHighValue') {
+      return isPlantPreference(preference)
+        || preference === 'cauldron_producible'
+        || preference === 'world_tree_derived'
+        || (isPurchasedPreference(preference) && !isCurrencyItem(itemId));
+    }
+    return !isCurrencyItem(itemId) || outputItemId !== 'plank';
+  });
+
+  return [...new Set(out)].sort((a, b) => CAULDRON_INPUT_VALUES[a].value - CAULDRON_INPUT_VALUES[b].value || a.localeCompare(b));
+}
+
+function stageReachable(inputItemIds: readonly string[], range: AcceptedAdjustedRange): boolean {
+  if (inputItemIds.length === 0) return false;
+  const values = inputItemIds.map((itemId) => CAULDRON_INPUT_VALUES[itemId].value).sort((a, b) => a - b);
+  const minAdjusted = values[0] * 3 * 0.5;
+  const maxThree = [...values].sort((a, b) => b - a).slice(0, 3);
+  const maxAdjusted = maxThree.length >= 3 ? maxThree.reduce((sum, value) => sum + value, 0) : values[values.length - 1] * 3 * 0.5;
+  return maxAdjusted >= range.min - EPS && minAdjusted <= range.max + EPS;
+}
+
+export function cauldronCandidateStagesForOutput(outputItemId: string): CauldronCandidateStage[] {
+  const range = acceptedAdjustedRangeForOutput(outputItemId);
+  if (!range) return [];
+  const stageIds: CauldronCandidateStageId[] = ['plantSimple', 'plantWithLightIntermediate', 'lowCostPurchase', 'mixedHighValue', 'fallback'];
+  return stageIds.map((id) => {
+    const inputItemIds = inputItemIdsForStage(id, outputItemId);
+    return { id, label: id, inputItemIds, reachable: stageReachable(inputItemIds, range) };
+  });
+}
+
+function lowerBoundByValue(itemIds: readonly string[], value: number, startIndex: number): number {
+  let lo = startIndex;
+  let hi = itemIds.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (CAULDRON_INPUT_VALUES[itemIds[mid]].value < value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function upperBoundByValue(itemIds: readonly string[], value: number, startIndex: number): number {
+  let lo = startIndex;
+  let hi = itemIds.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (CAULDRON_INPUT_VALUES[itemIds[mid]].value <= value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function* emitCandidateForTuple(outputItemId: string, inputItemIds: CauldronInputTuple, stageId: CauldronCandidateStageId): Generator<CauldronRuntimeCandidate> {
+  const prediction = predictCauldronOutput(inputItemIds);
+  if (!prediction || prediction.outputItemId !== outputItemId) return;
+  yield buildRuntimeCandidate(outputItemId, inputItemIds, prediction, stageId);
+}
+
+export function* iterateCauldronCandidatesForOutputStage(outputItemId: string, stage: CauldronCandidateStage): Generator<CauldronRuntimeCandidate> {
+  const range = acceptedAdjustedRangeForOutput(outputItemId);
+  if (!range || !stage.reachable || stage.inputItemIds.length === 0) return;
+  const itemIds = stage.inputItemIds;
+
+  for (let i = 0; i < itemIds.length; i += 1) {
+    const first = itemIds[i];
+    const firstValue = CAULDRON_INPUT_VALUES[first].value;
+    for (let j = i; j < itemIds.length; j += 1) {
+      const second = itemIds[j];
+      const baseRaw = firstValue + CAULDRON_INPUT_VALUES[second].value;
+
+      if (i === j) {
+        const thirdSame = second;
+        const adjustedSame = (baseRaw + CAULDRON_INPUT_VALUES[thirdSame].value) * 0.5;
+        if (adjustedSame >= range.min - EPS && adjustedSame <= range.max + EPS) {
+          yield* emitCandidateForTuple(outputItemId, [first, second, thirdSame], stage.id);
+        }
+
+        const minThird = range.min / 0.65 - baseRaw;
+        const maxThird = range.max / 0.65 - baseRaw;
+        const from = lowerBoundByValue(itemIds, minThird, j + 1);
+        const to = upperBoundByValue(itemIds, maxThird, j + 1);
+        for (let k = from; k < to; k += 1) yield* emitCandidateForTuple(outputItemId, [first, second, itemIds[k]], stage.id);
+      } else {
+        const thirdEqualsSecond = second;
+        const adjustedDuplicate = (baseRaw + CAULDRON_INPUT_VALUES[thirdEqualsSecond].value) * 0.65;
+        if (adjustedDuplicate >= range.min - EPS && adjustedDuplicate <= range.max + EPS) {
+          yield* emitCandidateForTuple(outputItemId, [first, second, thirdEqualsSecond], stage.id);
+        }
+
+        const minThird = range.min - baseRaw;
+        const maxThird = range.max - baseRaw;
+        const from = lowerBoundByValue(itemIds, minThird, j + 1);
+        const to = upperBoundByValue(itemIds, maxThird, j + 1);
+        for (let k = from; k < to; k += 1) yield* emitCandidateForTuple(outputItemId, [first, second, itemIds[k]], stage.id);
+      }
+    }
+  }
 }
