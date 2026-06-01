@@ -91,10 +91,22 @@ export type CauldronObjectiveViolation = {
 export type CauldronCandidateSelectionKey = {
   classRank: number;
   unresolvedCount: number;
+  currencyInputCount: number;
+  purchaseOnlyInputCount: number;
   constantPurchaseCount: number;
+  purchaseCopperPerMin: number;
+  purchaseCopperPerOutput: number;
+  nonPlantExpensiveInputCount: number;
+  nonPlantOverpayCauldronValue: number;
+  plantOverpayCauldronValue: number;
+  unusedByproductCount: number;
+  unusedByproductCauldronValue: number;
+  byproductReuseCount: number;
   existingReuseCount: number;
   alreadyProducedReuseCount: number;
   plantDerivedInputCount: number;
+  fertilizerNutrientsPerMin: number;
+  heatRequiredPerMin: number;
   fertilizerOpenCount: number;
   fuelOpenCount: number;
   heatOpenCount: number;
@@ -104,6 +116,7 @@ export type CauldronCandidateSelectionKey = {
   cauldronChainDepth: number;
   supportClosureRank: number;
   routeRecipeCount: number;
+  machineCount: number;
   routeDepth: number;
   duplicateInputCount: number;
   overTargetInputCount: number;

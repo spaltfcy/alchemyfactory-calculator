@@ -72,6 +72,87 @@ export function predictCauldronOutput(inputItemIds: CauldronInputTuple): { outpu
   return best ? { outputItemId: best.outputItemId, weightedDistance: best.weightedDistance, adjustedScore, rawScore, duplicatePenalty } : undefined;
 }
 
+function predictCauldronOutputForAdjustedScore(adjustedScore: number): string | undefined {
+  let best: { outputItemId: string; weightedDistance: number; targetValue: number } | undefined;
+  for (const target of Object.values(CAULDRON_TARGETS)) {
+    const multiplier = target.multiplier ?? 1;
+    if (!Number.isFinite(target.targetValue) || !Number.isFinite(multiplier) || multiplier <= 0) continue;
+    const weightedDistance = Math.abs(adjustedScore - target.targetValue) * multiplier;
+    if (
+      !best
+      || weightedDistance < best.weightedDistance - EPS
+      || (Math.abs(weightedDistance - best.weightedDistance) <= EPS && target.targetValue < best.targetValue)
+      || (Math.abs(weightedDistance - best.weightedDistance) <= EPS && target.targetValue === best.targetValue && target.itemId.localeCompare(best.outputItemId) < 0)
+    ) {
+      best = { outputItemId: target.itemId, weightedDistance, targetValue: target.targetValue };
+    }
+  }
+  return best?.outputItemId;
+}
+
+type AcceptedAdjustedRange = { min: number; max: number };
+const acceptedRangeCache = new Map<string, AcceptedAdjustedRange>();
+
+function acceptedAdjustedRangeForOutput(outputItemId: string): AcceptedAdjustedRange | undefined {
+  const target = CAULDRON_TARGETS[outputItemId];
+  if (!target) return undefined;
+  const cached = acceptedRangeCache.get(outputItemId);
+  if (cached) return cached;
+  const center = target.targetValue;
+  if (predictCauldronOutputForAdjustedScore(center) !== outputItemId) return undefined;
+  const maxTarget = Math.max(...Object.values(CAULDRON_TARGETS).map((entry) => entry.targetValue).filter(Number.isFinite));
+
+  let lowBad = 0;
+  if (predictCauldronOutputForAdjustedScore(lowBad) === outputItemId) {
+    lowBad = 0;
+  } else {
+    let lo = 0;
+    let hi = center;
+    for (let i = 0; i < 64; i += 1) {
+      const mid = (lo + hi) / 2;
+      if (predictCauldronOutputForAdjustedScore(mid) === outputItemId) hi = mid;
+      else lo = mid;
+    }
+    lowBad = hi;
+  }
+
+  let high = Math.max(center * 2 + 1, maxTarget * 1.25 + 1);
+  while (predictCauldronOutputForAdjustedScore(high) === outputItemId && high < maxTarget * 8 + 1_000) high *= 2;
+  let lo = center;
+  let hi = high;
+  for (let i = 0; i < 64; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (predictCauldronOutputForAdjustedScore(mid) === outputItemId) lo = mid;
+    else hi = mid;
+  }
+
+  const range = { min: Math.max(0, lowBad - 1e-7), max: lo + 1e-7 };
+  acceptedRangeCache.set(outputItemId, range);
+  return range;
+}
+
+function lowerBoundByValue(itemIds: readonly string[], value: number, startIndex: number): number {
+  let lo = startIndex;
+  let hi = itemIds.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (CAULDRON_INPUT_VALUES[itemIds[mid]].value < value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function upperBoundByValue(itemIds: readonly string[], value: number, startIndex: number): number {
+  let lo = startIndex;
+  let hi = itemIds.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (CAULDRON_INPUT_VALUES[itemIds[mid]].value <= value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 const CAULDRON_INPUT_EXCLUDE_RANK = 999;
 
 function explicitCauldronInputPreferenceRank(itemId: string): number | undefined {
@@ -101,16 +182,9 @@ function cauldronInputCandidateRank(itemId: string): number {
 }
 
 function cauldronInputScreenRank(itemId: string): number {
-  const item = itemById[itemId];
-  if (!item || CAULDRON_INPUT_VALUES[itemId] === undefined) return CAULDRON_INPUT_EXCLUDE_RANK;
-  const targetValue = item.cauldronTargetValue;
-  // Low and mid-low cauldron intermediates such as clay, coke, salt, black powder,
-  // sulfur, copper powder, and unstable catalysts are often the practical glue in
-  // downstream routes. Do not let the broad "cauldron_producible" bucket push
-  // them behind hundreds of raw plant triples before the planner can evaluate the
-  // actual route. This is still data-driven: it uses target value, not item names.
-  if (targetValue !== undefined && targetValue <= 1_000) return 1;
-  if (targetValue !== undefined && targetValue <= 10_000) return 3;
+  // Keep this only as a stable display/debug fallback. The runtime planner now
+  // evaluates material burden after it expands candidate inputs, so low target
+  // values must not be allowed to outrank cheaper and cleaner material routes.
   return cauldronInputCandidateRank(itemId);
 }
 
@@ -258,9 +332,22 @@ export function findCauldronCandidatesForOutput(outputItemId: string, options: F
   if (cached) return cached;
 
   const candidates: CauldronRuntimeCandidate[] = [];
+  const acceptedRange = acceptedAdjustedRangeForOutput(outputItemId);
+  if (!acceptedRange) return [];
   for (let i = 0; i < itemIds.length; i += 1) {
+    const vi = CAULDRON_INPUT_VALUES[itemIds[i]].value;
     for (let j = i; j < itemIds.length; j += 1) {
-      for (let k = j; k < itemIds.length; k += 1) {
+      const vj = CAULDRON_INPUT_VALUES[itemIds[j]].value;
+      const duplicatePenaltyForPair = i === j ? 0.5 : 0.65;
+      const pairMinRaw = acceptedRange.min / duplicatePenaltyForPair - vi - vj;
+      const pairMaxRaw = acceptedRange.max / duplicatePenaltyForPair - vi - vj;
+      const allDistinctMinRaw = acceptedRange.min - vi - vj;
+      const allDistinctMaxRaw = acceptedRange.max - vi - vj;
+      const minNeeded = Math.min(pairMinRaw, allDistinctMinRaw);
+      const maxNeeded = Math.max(pairMaxRaw, allDistinctMaxRaw);
+      let kStart = lowerBoundByValue(itemIds, minNeeded, j);
+      const kEnd = upperBoundByValue(itemIds, maxNeeded, j);
+      for (let k = kStart; k < kEnd; k += 1) {
         const inputItemIds: CauldronInputTuple = [itemIds[i], itemIds[j], itemIds[k]];
         const prediction = predictCauldronOutput(inputItemIds);
         if (!prediction || prediction.outputItemId !== outputItemId) continue;
