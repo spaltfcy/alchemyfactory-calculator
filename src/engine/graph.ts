@@ -6,9 +6,14 @@ import { machineById } from '../data/machines';
 import { recipeById } from '../data/recipes';
 import { text } from '../i18n';
 import { CAULDRON_INPUT_VALUES } from '../cauldron/cauldronData';
-import { formatNumber, formatRate } from '../utils/format';
+import { ceilToStep, formatNumber, formatRate, safeCeil } from '../utils/format';
 
 export type PlannerHandleSide = 'left' | 'right' | 'top' | 'bottom';
+
+export type FlowGraphBuildOptions = {
+  hiddenRoles?: CalculatedFlowRole[];
+  roundNumbersToInteger?: boolean;
+};
 
 export type PlannerHandleData = {
   id: string;
@@ -79,6 +84,19 @@ function recipeName(recipeId: string, lang: Lang, stat?: Pick<RecipeStat, 'displ
   return recipe ? text(recipe.name, lang) : recipeId;
 }
 
+
+function formatGraphNumber(value: number, digits = 2, options?: FlowGraphBuildOptions): string {
+  if (!Number.isFinite(value)) return '-';
+  if (options?.roundNumbersToInteger) return formatNumber(ceilToStep(value, 1), 0);
+  return formatNumber(value, digits);
+}
+
+function formatGraphRate(value: number, options?: FlowGraphBuildOptions): string {
+  if (!Number.isFinite(value)) return '-';
+  if (options?.roundNumbersToInteger) return formatNumber(ceilToStep(value, 1), 0);
+  return formatRate(value);
+}
+
 function beltLabel(belts: number, lang: Lang): string {
   return (lang === 'ja' ? '⚙ ' : '⚙ ') + formatNumber(belts, 0) + (lang === 'ja' ? '本' : '');
 }
@@ -94,8 +112,9 @@ function transportLabel(
 function rateLabel(
   flow: Pick<CalculatedFlow, 'rate' | 'belts'> & Partial<Pick<CalculatedFlow, 'transportKind' | 'transportUnits'>>,
   lang: Lang,
+  options?: FlowGraphBuildOptions,
 ): string {
-  return formatRate(flow.rate) + '/min ・ ' + transportLabel(flow, lang);
+  return formatGraphRate(flow.rate, options) + '/min ・ ' + transportLabel(flow, lang);
 }
 
 function marker(color: string) {
@@ -133,7 +152,7 @@ function targetSide(role: CalculatedFlowRole): PlannerHandleSide {
   return 'left';
 }
 
-function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
+function makeEdge(flow: CalculatedFlow, color: string, lang: Lang, options?: FlowGraphBuildOptions): Edge {
   const isSelfLoop = flow.from.type === 'recipe' && flow.to.type === 'recipe' && flow.from.recipeId === flow.to.recipeId;
   const edgeColor = isSelfLoop ? INITIAL_INVESTMENT_FLOW_COLOR : color;
   const labelName = flow.role === 'fuel'
@@ -152,7 +171,7 @@ function makeEdge(flow: CalculatedFlow, color: string, lang: Lang): Edge {
     data: {
       itemId: flow.itemId,
       itemName: labelName,
-      rateLabel: flow.displayRateLabel ?? (flow.role === 'steam' ? formatRate(flow.rate) + '/min' : rateLabel(flow, lang)),
+      rateLabel: flow.displayRateLabel ?? (flow.role === 'steam' ? formatGraphRate(flow.rate, options) + '/min' : rateLabel(flow, lang, options)),
       color: edgeColor,
       cycleSide: isSelfLoop ? 1 : 0,
       labelShiftY: isSelfLoop ? -42 : 0,
@@ -211,18 +230,18 @@ function buildInitialEndpointNode(groupId: string, endpoint: InitialInvestmentEn
   };
 }
 
-function initialInvestmentEdgeLabel(flow: InitialInvestmentFlow, lang: Lang): string {
+function initialInvestmentEdgeLabel(flow: InitialInvestmentFlow, lang: Lang, options?: FlowGraphBuildOptions): string {
   if (flow.from.type === 'itemSource' && flow.from.sourceMode === 'cycleInput') {
-    return lang === 'ja' ? '初期投入 ' + formatNumber(flow.rate, 2) + '個' : 'Startup input x' + formatNumber(flow.rate, 2);
+    return lang === 'ja' ? '初期投入 ' + formatGraphNumber(flow.rate, 2, options) + '個' : 'Startup input x' + formatGraphNumber(flow.rate, 2, options);
   }
-  return rateLabel(flow, lang);
+  return rateLabel(flow, lang, options);
 }
 
 function initialInvestmentEdgeRole(flow: InitialInvestmentFlow): string {
   return flow.from.type === 'itemSource' && flow.from.sourceMode === 'cycleInput' ? 'cycleInput' : 'initialInvestment';
 }
 
-function makeInitialEdge(groupId: string, flow: InitialInvestmentFlow, lang: Lang): Edge {
+function makeInitialEdge(groupId: string, flow: InitialInvestmentFlow, lang: Lang, options?: FlowGraphBuildOptions): Edge {
   const startup = flow.from.type === 'itemSource' && flow.from.sourceMode === 'cycleInput';
   return {
     id: flow.id,
@@ -235,7 +254,7 @@ function makeInitialEdge(groupId: string, flow: InitialInvestmentFlow, lang: Lan
     data: {
       itemId: flow.itemId,
       itemName: startup ? itemName(flow.itemId, lang) + (lang === 'ja' ? '（初期投入）' : ' (startup)') : itemName(flow.itemId, lang),
-      rateLabel: initialInvestmentEdgeLabel(flow, lang),
+      rateLabel: initialInvestmentEdgeLabel(flow, lang, options),
       color: INITIAL_INVESTMENT_FLOW_COLOR,
       cycleSide: 0,
       labelShiftY: 0,
@@ -254,8 +273,9 @@ function nodeSubtitle(lines: string[]): string {
   return lines.filter(Boolean).join('\n');
 }
 
-function formatGraphMachineCount(value: number): string {
+function formatGraphMachineCount(value: number, options?: FlowGraphBuildOptions): string {
   if (!Number.isFinite(value) || value <= 0) return '0';
+  if (options?.roundNumbersToInteger) return formatNumber(safeCeil(value), 0);
   if (value < 0.01) return '0.01';
   return formatNumber(value, 3);
 }
@@ -269,11 +289,11 @@ function sumPositiveRates(rates: Record<string, number> | undefined): number {
   return Object.values(rates).reduce((sum, rate) => (Number.isFinite(rate) && rate > 0 ? sum + rate : sum), 0);
 }
 
-function recipeMachineIoLabel(stat: RecipeStat | undefined): string | undefined {
+function recipeMachineIoLabel(stat: RecipeStat | undefined, options?: FlowGraphBuildOptions): string | undefined {
   if (!stat || !Number.isFinite(stat.actualMachines) || stat.actualMachines <= 0) return undefined;
   const inputPerMachine = sumPositiveRates(stat.inputRates) / stat.actualMachines;
   const outputPerMachine = sumPositiveRates(stat.outputRates) / stat.actualMachines;
-  return 'in ' + formatRate(inputPerMachine) + '/min, out ' + formatRate(outputPerMachine) + '/min';
+  return 'in ' + formatGraphRate(inputPerMachine, options) + '/min, out ' + formatGraphRate(outputPerMachine, options) + '/min';
 }
 
 function cauldronValueText(value: number | undefined): string | undefined {
@@ -298,30 +318,30 @@ function cauldronRecipeValueLabel(stat: RecipeStat | undefined, lang: Lang): str
 }
 
 
-function cauldronRecipePhysicsLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
+function cauldronRecipePhysicsLabel(stat: RecipeStat | undefined, lang: Lang, options?: FlowGraphBuildOptions): string | undefined {
   if (!stat) return undefined;
   const lines: string[] = [];
   if (Number.isFinite(stat.cauldronEffectiveTimeSec)) {
-    lines.push(formatNumber(stat.cauldronEffectiveTimeSec ?? 0, 2) + (lang === 'ja' ? '秒/個' : ' sec/item'));
+    lines.push(formatGraphNumber(stat.cauldronEffectiveTimeSec ?? 0, 2, options) + (lang === 'ja' ? '秒/個' : ' sec/item'));
   }
   if (Number.isFinite(stat.cauldronEffectiveHeatPerSec)) {
-    lines.push((lang === 'ja' ? '熱 ' : 'Heat ') + formatNumber(stat.cauldronEffectiveHeatPerSec ?? 0, 1) + 'P/s');
+    lines.push((lang === 'ja' ? '熱 ' : 'Heat ') + formatGraphNumber(stat.cauldronEffectiveHeatPerSec ?? 0, 1, options) + 'P/s');
   }
   const valueLabel = cauldronRecipeValueLabel(stat, lang);
   if (valueLabel) lines.push(valueLabel);
   return lines.length ? lines.join('\n') : undefined;
 }
 
-function cauldronRecipeMachineCountLabel(stat: RecipeStat | undefined, lang: Lang): string | undefined {
+function cauldronRecipeMachineCountLabel(stat: RecipeStat | undefined, lang: Lang, options?: FlowGraphBuildOptions): string | undefined {
   if (!stat) return undefined;
-  const machineCount = formatGraphMachineCount(stat.actualMachines);
+  const machineCount = formatGraphMachineCount(stat.actualMachines, options);
   const productionRate = stat.positiveNetProductionRate;
   const perMachineRate = stat.cauldronOutputPerMin ?? stat.perMachineProductionRate;
   const lines = [
-    (lang === 'ja' ? machineCount + '台 (' : machineCount + ' machines (') + formatRate(productionRate) + '/min)',
+    (lang === 'ja' ? machineCount + '台 (' : machineCount + ' machines (') + formatGraphRate(productionRate, options) + '/min)',
   ];
   if (Number.isFinite(perMachineRate) && perMachineRate > 0) {
-    lines.push((lang === 'ja' ? '1台 ' : '1 machine ') + formatRate(perMachineRate) + '/min');
+    lines.push((lang === 'ja' ? '1台 ' : '1 machine ') + formatGraphRate(perMachineRate, options) + '/min');
   }
   return lines.join('\n');
 }
@@ -341,28 +361,28 @@ function isSteamBoilerRecipe(recipeId: string): boolean {
   return recipeId === 'steam_boiler_low' || recipeId === 'steam_boiler_medium' || recipeId === 'steam_boiler_high';
 }
 
-function recipeMachineCountLabel(recipeId: string, stat: RecipeStat | undefined, lang: Lang): string | undefined {
+function recipeMachineCountLabel(recipeId: string, stat: RecipeStat | undefined, lang: Lang, options?: FlowGraphBuildOptions): string | undefined {
   if (!stat) return undefined;
   const productionRate = stat.positiveNetProductionRate;
-  const machineCount = formatGraphMachineCount(stat.actualMachines);
+  const machineCount = formatGraphMachineCount(stat.actualMachines, options);
   if (isSteamBoilerRecipe(recipeId)) {
-    if (lang === 'ja') return '約' + machineCount + '台 (' + formatRate(productionRate) + '/min)';
-    return 'approx. ' + machineCount + ' machines (' + formatRate(productionRate) + '/min)';
+    if (lang === 'ja') return '約' + machineCount + '台 (' + formatGraphRate(productionRate, options) + '/min)';
+    return 'approx. ' + machineCount + ' machines (' + formatGraphRate(productionRate, options) + '/min)';
   }
-  if (lang === 'ja') return machineCount + '台 (' + formatRate(productionRate) + '/min)';
-  return machineCount + ' machines (' + formatRate(productionRate) + '/min)';
+  if (lang === 'ja') return machineCount + '台 (' + formatGraphRate(productionRate, options) + '/min)';
+  return machineCount + ' machines (' + formatGraphRate(productionRate, options) + '/min)';
 }
 
-function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResult, lang: Lang): Node {
+function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResult, lang: Lang, options?: FlowGraphBuildOptions): Node {
   const id = endpointNodeId(endpoint);
   if (endpoint.type === 'recipe') {
     const rs = result.recipeStats[endpoint.recipeId];
     const recipe = recipeById[endpoint.recipeId];
     const isCauldronRecipe = rs?.machineId === 'cauldron' || rs?.machineId === 'advanced_cauldron' || endpoint.recipeId.startsWith('cauldron:');
     const machineLabel = recipeMachineLabel(rs, recipe?.machineId ?? '', lang);
-    const ioLabel = isCauldronRecipe ? cauldronRecipeIoLabel(rs, lang) : recipeMachineIoLabel(rs);
-    const countLabel = isCauldronRecipe ? cauldronRecipeMachineCountLabel(rs, lang) : recipeMachineCountLabel(endpoint.recipeId, rs, lang);
-    const subLabel = isCauldronRecipe ? cauldronRecipePhysicsLabel(rs, lang) : undefined;
+    const ioLabel = isCauldronRecipe ? cauldronRecipeIoLabel(rs, lang) : recipeMachineIoLabel(rs, options);
+    const countLabel = isCauldronRecipe ? cauldronRecipeMachineCountLabel(rs, lang, options) : recipeMachineCountLabel(endpoint.recipeId, rs, lang, options);
+    const subLabel = isCauldronRecipe ? cauldronRecipePhysicsLabel(rs, lang, options) : undefined;
     const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
     const requiredStartupItemIds = result.initialInvestment?.requiredByRecipe?.[endpoint.recipeId] ?? [];
@@ -422,7 +442,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       data: {
         label,
         kind: 'item',
-        subLabel: modeLabel ? modeLabel + (endpoint.sourceMode !== 'plantDerivedInput' && rate > 0 ? ' ' + formatRate(rate) + '/min' : '') : undefined,
+        subLabel: modeLabel ? modeLabel + (endpoint.sourceMode !== 'plantDerivedInput' && rate > 0 ? ' ' + formatGraphRate(rate, options) + '/min' : '') : undefined,
         badges: badges.length ? badges : undefined,
         isPurchasedSource: endpoint.sourceMode === 'buy',
       } satisfies PlannerNodeData,
@@ -438,7 +458,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
       data: {
         label: labelBase,
         kind: 'final',
-        subLabel: formatRate(stat?.targetRequested ?? 0) + ' → ' + formatRate(stat?.targetActual ?? 0) + '/min',
+        subLabel: formatGraphRate(stat?.targetRequested ?? 0, options) + ' → ' + formatGraphRate(stat?.targetActual ?? 0, options) + '/min',
       } satisfies PlannerNodeData,
     };
   }
@@ -450,7 +470,7 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     data: {
       label: labelBase + (discard ? (lang === 'ja' ? '（破棄）' : ' (discard)') : (lang === 'ja' ? '（余剰）' : ' (surplus)')),
       kind: discard ? 'discard' : 'surplus',
-      subLabel: (discard ? (lang === 'ja' ? '破棄 ' : 'Discard ') : (lang === 'ja' ? '余剰 ' : 'Surplus ')) + formatRate(discard ? (stat?.discarded ?? 0) : (stat?.surplus ?? 0)) + '/min',
+      subLabel: (discard ? (lang === 'ja' ? '破棄 ' : 'Discard ') : (lang === 'ja' ? '余剰 ' : 'Surplus ')) + formatGraphRate(discard ? (stat?.discarded ?? 0) : (stat?.surplus ?? 0), options) + '/min',
     } satisfies PlannerNodeData,
   };
 }
@@ -580,9 +600,12 @@ export function buildFlowGraph(
   lang: Lang,
   settings: AppSettings,
   completedGraphNodeIds: Record<string, boolean>,
+  options: FlowGraphBuildOptions = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes = new Map<string, Node>();
+  const hiddenRoles = new Set(options.hiddenRoles ?? []);
   const flows = (result.flows ?? []).filter((flow) => {
+    if (hiddenRoles.has(flow.role)) return false;
     if (flow.rate <= 0) return false;
     if (!settings.showSurplus && (flow.role === 'surplus' || flow.role === 'discard')) return false;
     if (!settings.showDiscardedByproducts && flow.role === 'discard') return false;
@@ -590,23 +613,23 @@ export function buildFlowGraph(
   });
 
   for (const flow of flows) {
-    addNode(nodes, buildEndpointNode(flow.from, result, lang));
-    addNode(nodes, buildEndpointNode(flow.to, result, lang));
+    addNode(nodes, buildEndpointNode(flow.from, result, lang, options));
+    addNode(nodes, buildEndpointNode(flow.to, result, lang, options));
   }
   for (const rs of Object.values(result.recipeStats)) {
     if (rs.runsPerMinute <= 0) continue;
-    addNode(nodes, buildEndpointNode({ type: 'recipe', recipeId: rs.recipeId }, result, lang));
+    addNode(nodes, buildEndpointNode({ type: 'recipe', recipeId: rs.recipeId }, result, lang, options));
   }
 
   const colorByFlowId = assignNormalColors(flows);
-  const edges = flows.map((flow) => makeEdge(flow, colorByFlowId.get(flow.id) ?? DEFAULT_OUTPUT_COLOR, lang));
+  const edges = flows.map((flow) => makeEdge(flow, colorByFlowId.get(flow.id) ?? DEFAULT_OUTPUT_COLOR, lang, options));
 
   if (settings.showInitialInvestmentLines !== false) {
     for (const group of result.initialInvestment?.groups ?? []) {
       for (const flow of group.flows) {
         addNode(nodes, buildInitialEndpointNode(group.id, flow.from, lang));
         addNode(nodes, buildInitialEndpointNode(group.id, flow.to, lang));
-        edges.push(makeInitialEdge(group.id, flow, lang));
+        edges.push(makeInitialEdge(group.id, flow, lang, options));
       }
       for (const rs of Object.values(group.recipeStats)) {
         addNode(nodes, buildInitialEndpointNode(group.id, { type: 'recipe', recipeId: rs.recipeId }, lang));

@@ -20,7 +20,7 @@ import {
 } from '@xyflow/react';
 import type { AppSettings, Lang } from '../types';
 import type { CalculationResult } from '../engine/calculate';
-import { buildFlowGraph, type PlannerHandleSide } from '../engine/graph';
+import { buildFlowGraph, type FlowGraphBuildOptions, type PlannerHandleSide } from '../engine/graph';
 import { layoutWithElk } from '../engine/layout';
 import { PlannerNode } from './PlannerNode';
 
@@ -58,6 +58,7 @@ type GraphTabProps = {
   focusRequest?: GraphFocusRequest;
   captureId?: string;
   debug?: boolean;
+  graphOptions?: FlowGraphBuildOptions;
 };
 
 type GraphControlsProps = {
@@ -562,7 +563,7 @@ function GraphControls({ lang, isInteractive, onToggleInteractive }: GraphContro
   );
 }
 
-export function GraphTab({ lang, result, settings, completedGraphNodeIds, onToggleCompleted, focusRequest, captureId = 'graph', debug = false }: GraphTabProps) {
+export function GraphTab({ lang, result, settings, completedGraphNodeIds, onToggleCompleted, focusRequest, captureId = 'graph', debug = false, graphOptions }: GraphTabProps) {
   const flowRef = useRef<ReactFlowInstance | null>(null);
   const graphElementRef = useRef<HTMLDivElement | null>(null);
   const latestLayoutId = useRef(0);
@@ -603,7 +604,7 @@ export function GraphTab({ lang, result, settings, completedGraphNodeIds, onTogg
     window.addEventListener('alchemyfactory:capture-live-graph', onCaptureGraph);
     return () => window.removeEventListener('alchemyfactory:capture-live-graph', onCaptureGraph);
   }, [captureId, lang]);
-  const raw = useMemo(() => buildFlowGraph(graphResult, lang, settings, {}), [graphResult, lang, settings]);
+  const raw = useMemo(() => buildFlowGraph(graphResult, lang, settings, {}, graphOptions), [graphResult, lang, settings, graphOptions]);
 
   useEffect(() => {
     completedRef.current = completedGraphNodeIds;

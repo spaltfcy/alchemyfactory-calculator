@@ -441,6 +441,14 @@ export function CauldronTab({ lang, state, settings, abilities, recipePreference
   const optimization = planned.optimization;
   const result = planned.result;
 
+  const graphOptions = useMemo(() => ({
+    hiddenRoles: [
+      ...(state.showFuelLines === false ? ['fuel' as const] : []),
+      ...(state.showFertilizerLines === false ? ['fertilizer' as const] : []),
+    ],
+    roundNumbersToInteger: state.roundGraphNumbersToInteger === true,
+  }), [state.showFuelLines, state.showFertilizerLines, state.roundGraphNumbersToInteger]);
+
   return (
     <div className="cauldron-tab">
       <CauldronOptimizedPlanPanel lang={lang} optimization={optimization} />
@@ -453,6 +461,7 @@ export function CauldronTab({ lang, state, settings, abilities, recipePreference
           onToggleCompleted={onToggleCompleted}
           focusRequest={focusRequest}
           captureId="cauldron"
+          graphOptions={graphOptions}
           debug={false}
         />
       </div>

@@ -2206,3 +2206,31 @@ a {
   flex: 1;
   min-height: 0;
 }
+
+.cauldron-graph-option-settings {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.cauldron-graph-option-heading {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.cauldron-graph-option-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.cauldron-graph-option-checkbox input {
+  width: 1rem;
+  height: 1rem;
+}

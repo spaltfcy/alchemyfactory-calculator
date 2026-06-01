@@ -223,6 +223,9 @@ export type CauldronState = {
   allowDuplicateInputs: boolean;
   fuelSourceMode: ExternalSourceMode;
   fertilizerSourceMode: ExternalSourceMode;
+  showFuelLines: boolean;
+  showFertilizerLines: boolean;
+  roundGraphNumbersToInteger: boolean;
   targetItemIdsText: string;
   startupItemIdsText: string;
   observedOutputItemId: string;

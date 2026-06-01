@@ -23,7 +23,7 @@ import { getMachinePreferences } from './data/machinePreferences';
 import { getParadoxSettings, isParadoxableItem } from './data/paradox';
 import { recipeById } from './data/recipes';
 
-const APP_VERSION = '0.10.32';
+const APP_VERSION = '0.10.33';
 const GAME_VERSION = '0.4.4.4323';
 
 type RuntimeFlags = {
@@ -130,6 +130,9 @@ function normalizeMergedCauldronState(
     inputItemIds: needsCauldronDefaultMigration ? DEFAULT_STATE.cauldronState.inputItemIds : cauldronState.inputItemIds,
     fuelSourceMode: cauldronState.fuelSourceMode === 'external' ? 'external' : DEFAULT_STATE.cauldronState.fuelSourceMode,
     fertilizerSourceMode: cauldronState.fertilizerSourceMode === 'external' ? 'external' : DEFAULT_STATE.cauldronState.fertilizerSourceMode,
+    showFuelLines: cauldronState.showFuelLines === false ? false : DEFAULT_STATE.cauldronState.showFuelLines,
+    showFertilizerLines: cauldronState.showFertilizerLines === false ? false : DEFAULT_STATE.cauldronState.showFertilizerLines,
+    roundGraphNumbersToInteger: cauldronState.roundGraphNumbersToInteger === true,
   };
 }
 
@@ -657,8 +660,12 @@ export function App() {
                 targetDefaults={state.settings.targetDefaults}
                 fuelSourceMode={state.cauldronState.fuelSourceMode}
                 fertilizerSourceMode={state.cauldronState.fertilizerSourceMode}
+                showFuelLines={state.cauldronState.showFuelLines}
+                showFertilizerLines={state.cauldronState.showFertilizerLines}
+                roundGraphNumbersToInteger={state.cauldronState.roundGraphNumbersToInteger}
                 onChange={(targets) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, targets: targets.slice(0, 1) } }))}
                 onChangeSupportModes={(patch) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, ...patch } }))}
+                onChangeGraphOptions={(patch) => setState((current) => ({ ...current, cauldronState: { ...current.cauldronState, ...patch } }))}
                 onFocusGraphNode={focusCauldronGraphNode}
                 getFocusGraphNodeId={cauldronFocusNodeId}
                 onUserMessage={addUserMessage}

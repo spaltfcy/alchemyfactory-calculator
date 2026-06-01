@@ -13,8 +13,12 @@ export type CauldronOutputSettingsProps = {
   targetDefaults: TargetDefaults;
   fuelSourceMode: ExternalSourceMode;
   fertilizerSourceMode: ExternalSourceMode;
+  showFuelLines: boolean;
+  showFertilizerLines: boolean;
+  roundGraphNumbersToInteger: boolean;
   onChange: (targets: ProductionTarget[]) => void;
   onChangeSupportModes: (patch: { fuelSourceMode?: ExternalSourceMode; fertilizerSourceMode?: ExternalSourceMode }) => void;
+  onChangeGraphOptions: (patch: { showFuelLines?: boolean; showFertilizerLines?: boolean; roundGraphNumbersToInteger?: boolean }) => void;
   onFocusGraphNode?: (nodeId: string) => void;
   getFocusGraphNodeId?: (target: ProductionTarget) => string | undefined;
   onUserMessage?: (input: UserMessageInput) => UserMessageLog;
@@ -93,8 +97,12 @@ export function CauldronOutputSettings({
   targetDefaults,
   fuelSourceMode,
   fertilizerSourceMode,
+  showFuelLines,
+  showFertilizerLines,
+  roundGraphNumbersToInteger,
   onChange,
   onChangeSupportModes,
+  onChangeGraphOptions,
   onFocusGraphNode,
   getFocusGraphNodeId,
   onUserMessage,
@@ -139,6 +147,10 @@ export function CauldronOutputSettings({
   const fertilizerLabel = lang === 'ja' ? '肥料' : 'Fertilizer';
   const internalLabel = lang === 'ja' ? '内部生産' : 'Internal';
   const externalLabel = lang === 'ja' ? '外部供給' : 'External';
+  const graphLineLabel = lang === 'ja' ? 'グラフ表示' : 'Graph lines';
+  const showFuelLineLabel = lang === 'ja' ? '燃料線' : 'Fuel lines';
+  const showFertilizerLineLabel = lang === 'ja' ? '肥料線' : 'Fertilizer lines';
+  const integerRoundLabel = lang === 'ja' ? '整数丸め' : 'Round numbers';
 
   return (
     <section className="item-output-settings panel cauldron-output-settings">
@@ -198,6 +210,22 @@ export function CauldronOutputSettings({
             <option value="internal">{internalLabel}</option>
             <option value="external">{externalLabel}</option>
           </select>
+        </label>
+      </div>
+
+      <div className="cauldron-graph-option-settings" aria-label={graphLineLabel}>
+        <div className="cauldron-graph-option-heading">{graphLineLabel}</div>
+        <label className="cauldron-graph-option-checkbox">
+          <input type="checkbox" checked={showFuelLines} onChange={(event: ChangeEvent<HTMLInputElement>) => onChangeGraphOptions({ showFuelLines: event.target.checked })} />
+          <span>{showFuelLineLabel}</span>
+        </label>
+        <label className="cauldron-graph-option-checkbox">
+          <input type="checkbox" checked={showFertilizerLines} onChange={(event: ChangeEvent<HTMLInputElement>) => onChangeGraphOptions({ showFertilizerLines: event.target.checked })} />
+          <span>{showFertilizerLineLabel}</span>
+        </label>
+        <label className="cauldron-graph-option-checkbox">
+          <input type="checkbox" checked={roundGraphNumbersToInteger} onChange={(event: ChangeEvent<HTMLInputElement>) => onChangeGraphOptions({ roundGraphNumbersToInteger: event.target.checked })} />
+          <span>{integerRoundLabel}</span>
         </label>
       </div>
     </section>
