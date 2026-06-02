@@ -11,6 +11,9 @@ import { ceilToStep, formatNumber, formatRate, safeCeil } from '../utils/format'
 export type PlannerHandleSide = 'left' | 'right' | 'top' | 'bottom';
 
 export type FlowGraphBuildOptions = {
+  /** Hide only matching edges. Source/target nodes are still kept so support resources remain visible. */
+  hiddenEdgeRoles?: CalculatedFlowRole[];
+  /** Deprecated alias kept for callers that have not been migrated. Treated as hiddenEdgeRoles. */
   hiddenRoles?: CalculatedFlowRole[];
   roundNumbersToInteger?: boolean;
 };
@@ -33,7 +36,7 @@ export type PlannerNodeData = {
   tooltip?: string;
   sourceHandles?: PlannerHandleData[];
   targetHandles?: PlannerHandleData[];
-  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' | 'buy' | 'surplusReuse' | 'cauldron' }>;
+  badges?: Array<{ text: string; kind: 'heat' | 'info' | 'warning' | 'buy' | 'surplusReuse' | 'cauldron' | 'fuel' | 'fertilizer' }>;
   isCauldronRecipe?: boolean;
   isSurplusReuseAdded?: boolean;
   isInitialInvestment?: boolean;
@@ -361,6 +364,28 @@ function isSteamBoilerRecipe(recipeId: string): boolean {
   return recipeId === 'steam_boiler_low' || recipeId === 'steam_boiler_medium' || recipeId === 'steam_boiler_high';
 }
 
+function endpointHasOutgoingRole(result: CalculationResult, endpoint: CalculatedEndpoint, role: CalculatedFlowRole): boolean {
+  const nodeId = endpointNodeId(endpoint);
+  return result.flows.some((flow) => endpointNodeId(flow.from) === nodeId && flow.role === role && flow.rate > 0);
+}
+
+function endpointHasIncomingRole(result: CalculationResult, endpoint: CalculatedEndpoint, role: CalculatedFlowRole): boolean {
+  const nodeId = endpointNodeId(endpoint);
+  return result.flows.some((flow) => endpointNodeId(flow.to) === nodeId && flow.role === role && flow.rate > 0);
+}
+
+function supportRoleRate(result: CalculationResult, endpoint: CalculatedEndpoint, role: 'fuel' | 'fertilizer'): number {
+  const nodeId = endpointNodeId(endpoint);
+  return result.flows
+    .filter((flow) => endpointNodeId(flow.from) === nodeId && flow.role === role && flow.rate > 0)
+    .reduce((sum, flow) => sum + flow.rate, 0);
+}
+
+function supportRoleBadgeText(role: 'fuel' | 'fertilizer', lang: Lang): string {
+  if (role === 'fuel') return lang === 'ja' ? '燃料用' : 'Fuel';
+  return lang === 'ja' ? '肥料用' : 'Fertilizer';
+}
+
 function recipeMachineCountLabel(recipeId: string, stat: RecipeStat | undefined, lang: Lang, options?: FlowGraphBuildOptions): string | undefined {
   if (!stat) return undefined;
   const productionRate = stat.positiveNetProductionRate;
@@ -383,13 +408,18 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const ioLabel = isCauldronRecipe ? cauldronRecipeIoLabel(rs, lang) : recipeMachineIoLabel(rs, options);
     const countLabel = isCauldronRecipe ? cauldronRecipeMachineCountLabel(rs, lang, options) : recipeMachineCountLabel(endpoint.recipeId, rs, lang, options);
     const subLabel = isCauldronRecipe ? cauldronRecipePhysicsLabel(rs, lang, options) : undefined;
-    const hasHeat = result.flows.some((flow) => flow.to.type === 'recipe' && flow.to.recipeId === endpoint.recipeId && flow.role === 'fuel');
-    const isFuelSource = result.flows.some((flow) => flow.from.type === 'recipe' && flow.from.recipeId === endpoint.recipeId && flow.role === 'fuel');
+    const hasHeat = endpointHasIncomingRole(result, endpoint, 'fuel');
+    const hasFertilizer = endpointHasIncomingRole(result, endpoint, 'fertilizer');
+    const isFuelSource = endpointHasOutgoingRole(result, endpoint, 'fuel');
+    const isFertilizerSource = endpointHasOutgoingRole(result, endpoint, 'fertilizer');
     const requiredStartupItemIds = result.initialInvestment?.requiredByRecipe?.[endpoint.recipeId] ?? [];
     const badges: PlannerNodeData['badges'] = [];
     if (isCauldronRecipe) badges.push({ text: rs?.machineId === 'advanced_cauldron' ? (lang === 'ja' ? '高性能錬金釜' : 'Advanced cauldron') : (lang === 'ja' ? '錬金釜' : 'Cauldron'), kind: 'cauldron' });
+    if (isFuelSource) badges.push({ text: supportRoleBadgeText('fuel', lang), kind: 'fuel' });
+    if (isFertilizerSource) badges.push({ text: supportRoleBadgeText('fertilizer', lang), kind: 'fertilizer' });
     if (rs?.surplusReuseAdded) badges.push({ text: lang === 'ja' ? '♻ 余剰再利用' : '♻ Surplus reuse', kind: 'surplusReuse' });
     if (hasHeat) badges.push({ text: lang === 'ja' ? '要:熱源' : 'Heat', kind: 'heat' });
+    if (hasFertilizer) badges.push({ text: lang === 'ja' ? '要:肥料' : 'Needs fertilizer', kind: 'fertilizer' });
     for (const itemId of requiredStartupItemIds) badges.push({ text: (lang === 'ja' ? '⚠ 要:' : '⚠ Need:') + itemName(itemId, lang), kind: 'warning' });
     const surplusReuseTooltip = rs?.surplusReuseAdded
       ? (lang === 'ja'
@@ -435,6 +465,8 @@ function buildEndpointNode(endpoint: CalculatedEndpoint, result: CalculationResu
     const badges: PlannerNodeData['badges'] = endpoint.sourceMode === 'buy'
       ? [{ text: lang === 'ja' ? '購入' : 'Buy', kind: 'buy' }]
       : [];
+    if (endpointHasOutgoingRole(result, endpoint, 'fuel')) badges.push({ text: supportRoleBadgeText('fuel', lang), kind: 'fuel' });
+    if (endpointHasOutgoingRole(result, endpoint, 'fertilizer')) badges.push({ text: supportRoleBadgeText('fertilizer', lang), kind: 'fertilizer' });
     return {
       id,
       type: 'plannerNode',
@@ -603,16 +635,16 @@ export function buildFlowGraph(
   options: FlowGraphBuildOptions = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes = new Map<string, Node>();
-  const hiddenRoles = new Set(options.hiddenRoles ?? []);
-  const flows = (result.flows ?? []).filter((flow) => {
-    if (hiddenRoles.has(flow.role)) return false;
+  const hiddenEdgeRoles = new Set(options.hiddenEdgeRoles ?? options.hiddenRoles ?? []);
+  const nodeFlows = (result.flows ?? []).filter((flow) => {
     if (flow.rate <= 0) return false;
     if (!settings.showSurplus && (flow.role === 'surplus' || flow.role === 'discard')) return false;
     if (!settings.showDiscardedByproducts && flow.role === 'discard') return false;
     return true;
   });
+  const flows = nodeFlows.filter((flow) => !hiddenEdgeRoles.has(flow.role));
 
-  for (const flow of flows) {
+  for (const flow of nodeFlows) {
     addNode(nodes, buildEndpointNode(flow.from, result, lang, options));
     addNode(nodes, buildEndpointNode(flow.to, result, lang, options));
   }

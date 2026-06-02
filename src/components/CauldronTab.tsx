@@ -5,6 +5,7 @@ import { buildCauldronGraphResult, cauldronRequestForTarget } from '../cauldron/
 import { generateCauldronCandidatesForOutput } from '../cauldron/cauldronMath';
 import { optimizeCauldronTargetWithResult } from '../cauldron/cauldronOptimizer';
 import { planCauldronTarget } from '../cauldron/cauldronPlanner';
+import { buildRoundedCauldronGraphResult } from '../cauldron/cauldronGraphRounding';
 import { cauldronItemName, parseItemIdsText } from '../cauldron/cauldronSearch';
 import type { CauldronOptimizationResult, CauldronOptimizedPlan, CauldronPlanItem, CauldronTargetPlan, CauldronState } from '../cauldron/cauldronTypes';
 import { calculate } from '../engine/calculate';
@@ -440,9 +441,13 @@ export function CauldronTab({ lang, state, settings, abilities, recipePreference
   );
   const optimization = planned.optimization;
   const result = planned.result;
+  const graphResult = useMemo(
+    () => state.roundGraphNumbersToInteger === true ? buildRoundedCauldronGraphResult(result) : result,
+    [result, state.roundGraphNumbersToInteger],
+  );
 
   const graphOptions = useMemo(() => ({
-    hiddenRoles: [
+    hiddenEdgeRoles: [
       ...(state.showFuelLines === false ? ['fuel' as const] : []),
       ...(state.showFertilizerLines === false ? ['fertilizer' as const] : []),
     ],
@@ -455,7 +460,7 @@ export function CauldronTab({ lang, state, settings, abilities, recipePreference
       <div className="cauldron-graph-region">
         <GraphTab
           lang={lang}
-          result={result}
+          result={graphResult}
           settings={settings}
           completedGraphNodeIds={completedGraphNodeIds}
           onToggleCompleted={onToggleCompleted}
